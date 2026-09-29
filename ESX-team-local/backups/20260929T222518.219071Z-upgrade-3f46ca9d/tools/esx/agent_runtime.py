@@ -195,7 +195,7 @@ def runtime_contract(root, executable="claude", role=None):
                 paths.append(root / ".claude/skills" / skill.strip() / "SKILL.md")
     paths += [Path(runtime_recovery.__file__).resolve(), root / "devel-loop/recovery.md", root / 'esx/templates/agent_report.json']
     paths += [Path(__file__).with_name(name + '.py') for name in
-              ('team_accounting', 'team_budget', 'team_retrospective', 'footer_contract', 'runtime_tool_hook', 'bounded_command', 'permission_match')]
+              ('team_accounting', 'team_budget', 'team_retrospective', 'footer_contract', 'runtime_tool_hook', 'bounded_command')]
     registry = config_dir / "plugins/installed_plugins.json"
     paths.append(registry)
     if registry.is_file():
@@ -265,88 +265,6 @@ def replacement_record(root, agent_id, role, issue, reason):
     if previous.get("agent_type") != role or previous_issue != issue:
         raise ValueError("replacement must preserve the recorded role and issue")
     return {"agent_id": agent_id, "event_id": previous.get("event_id"), "reason": reason.strip()}
-
-
-def stream_events(path):
-    """Yield every JSON object row of a saved stream, skipping partial lines."""
-    if not Path(path).is_file():
-        return
-    for line in Path(path).read_text(errors="replace").splitlines():
-        try:
-            event = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(event, dict):
-            yield event
-
-
-def permission_denials(path):
-    """Tool calls the CLI denied, so a blocked role is visible in its turn record."""
-    tools = {}
-    for event in stream_events(path):
-        message = event.get("message")
-        if event.get("type") == "assistant" and isinstance(message, dict):
-            for item in message.get("content") or []:
-                if isinstance(item, dict) and item.get("type") == "tool_use":
-                    tools[item.get("id")] = item.get("input")
-    return [{"tool_name": e.get("tool_name"), "tool_use_id": e.get("tool_use_id"),
-             "reason": e.get("decision_reason") or e.get("message"),
-             "input": tools.get(e.get("tool_use_id"))}
-            for e in stream_events(path)
-            if e.get("type") == "system" and e.get("subtype") == "permission_denied"]
-
-
-def recover_orphans(root, session, reason):
-    """Close turns that never wrote record.json (a crashed dispatcher), anywhere in history.
-
-    A recovered turn is recorded as failed, never successful, with its saved
-    stream, denials and the stated reason, so review can cite or replace it.
-    Refused while the session's turn lock is held (a live turn is not an orphan).
-    """
-    if not reason or len(reason.strip()) < 20:
-        raise ValueError("recover requires a substantive --reason")
-    root = Path(root).resolve()
-    folder = session_path(root, session)
-    state_file = folder / "session.json"
-    if not state_file.is_file():
-        raise ValueError("unknown CLI session")
-    recovered = []
-    with locked(folder / ".turn.lock"):
-        state = json.loads(state_file.read_text())
-        turns = sorted((folder / "turns").glob("*/"), key=lambda p: p.stat().st_mtime)
-        for turn in turns:
-            if (turn / "record.json").exists() or not (turn / "invocation.json").exists():
-                continue
-            event_id = turn.name
-            _, message, init = parse_stream(turn / "stdout.jsonl") if (turn / "stdout.jsonl").exists() else (None, "", None)
-            (turn / "report.md").write_text(message or "")
-            record = {"event_id": event_id, "ts": now(), "runtime": "claude_cli_session",
-                      "agent_type": state["role"], "agent_id": session, "session_id": session,
-                      "issue_id": state["issue_id"], "correction_round": None,
-                      "iteration_timestamp": None, "status": "failed",
-                      "error": "orphaned turn recovered: " + reason.strip(),
-                      "footer": None, "execution_phase": "recovered_orphan",
-                      "message_chars": len(message or ""), "started_at": None,
-                      "finished_at": now(), "returncode": None,
-                      "effective_permission_mode": (init or {}).get("permissionMode"),
-                      "permission_denials": permission_denials(turn / "stdout.jsonl"),
-                      "report": reference(turn / "report.md", root),
-                      "invocation": reference(turn / "invocation.json", root),
-                      "stream": reference(turn / "stdout.jsonl", root) if (turn / "stdout.jsonl").exists() else None,
-                      "recovered": True}
-            atomic_json(turn / "partial.json", {"status": "failed", "error": record["error"]})
-            atomic_json(turn / "record.json", record)
-            append_record(root, record)
-            if event_id not in state["turns"]:
-                state["turns"].append(event_id)
-            if state.get("active_event_id") == event_id:
-                state.update(status="failed", active_event_id=None, last_event_id=event_id)
-            recovered.append(event_id)
-        if state.get("status") == "running" and not state.get("active_event_id"):
-            state["status"] = "failed"
-        atomic_json(state_file, state)
-    return {"status": "recovered" if recovered else "nothing_to_recover", "session_id": session,
-            "recovered_event_ids": recovered}
 
 
 def parse_stream(path):
@@ -442,10 +360,7 @@ def _read_tool_events(path, offset, remainder, open_tools):
             continue
         if not isinstance(event, dict):
             continue
-        # Any event shape is legal: permission_denied system events carry a
-        # string `message`, and the watchdog must never die on one.
-        message = event.get("message")
-        content = message.get("content", []) if isinstance(message, dict) else []
+        content = event.get("message", {}).get("content", [])
         if event.get("type") == "assistant":
             for item in content if isinstance(content, list) else []:
                 if isinstance(item, dict) and item.get("type") == "tool_use" and item.get("id"):
@@ -547,13 +462,6 @@ def _execute(root, folder, state, command, prompt, timeout, tool_timeout, stdout
                 terminate_group(proc.pid, proc)
                 proc.wait()
                 code = proc.returncode
-        except Exception as exc:  # noqa: BLE001 - a dispatcher defect must still end in a recorded turn
-            error = "dispatcher error: " + type(exc).__name__ + ": " + str(exc)
-            if proc is not None and proc.poll() is None:
-                from bounded_command import terminate_group
-                terminate_group(proc.pid, proc)
-                proc.wait()
-            code = proc.returncode if proc is not None else None
         finally:
             if proc is not None:
                 from bounded_command import terminate_group
@@ -568,8 +476,7 @@ def _execute(root, folder, state, command, prompt, timeout, tool_timeout, stdout
 
 def _run_turn(root, *, role=None, issue=None, prompt, session=None, correction_round=0,
              executable="claude", timeout=1800, probe=False, from_session=None,
-             replaces_agent=None, replacement_reason=None, progress=None, review_packet=None, transition=None, tool_timeout=600, turn_calls=60,
-             witness=False):
+             replaces_agent=None, replacement_reason=None, progress=None, review_packet=None, transition=None, tool_timeout=600, turn_calls=60):
     """Execute one retained turn, recording failures before returning non-success."""
     root = Path(root).resolve()
     resumed = session is not None
@@ -644,13 +551,7 @@ def _run_turn(root, *, role=None, issue=None, prompt, session=None, correction_r
         atomic_json(turn / 'runtime_context.json', {'root': str(root), 'folder': str(turn),
                     'event_id': event_id, 'tool_timeout': tool_timeout})
         command = [contract["binary"], "--print", "--output-format", "stream-json", "--verbose"]
-        if probe and witness:
-            # Tool-permission witness: project settings and the real runtime hook,
-            # exactly as a role sees them, with Bash as the only tool.
-            command += ["--tools", "Bash", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
-                        "--settings", '{"enabledPlugins":{}}',
-                        "--system-prompt", "Follow the supplied test instructions exactly."]
-        elif probe:
+        if probe:
             command += ["--permission-mode", "dontAsk", "--tools", "", "--setting-sources", "user",
                         "--settings", '{"disableAllHooks":true,"enabledPlugins":{}}',
                         "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
@@ -683,7 +584,7 @@ def _run_turn(root, *, role=None, issue=None, prompt, session=None, correction_r
         # No provider-side spend cap. The reservation records what this turn was
         # expected to cost so settle() can measure the difference; capping the
         # provider here would truncate a turn mid-work over a pricing estimate.
-        if not probe or witness:
+        if not probe:
             index = command.index('--settings') + 1
             settings = json.loads(command[index])
             settings['hooks'] = {'PreToolUse': [{'matcher': '.*', 'hooks': [{'type': 'command',
@@ -764,7 +665,6 @@ def _run_turn(root, *, role=None, issue=None, prompt, session=None, correction_r
                   "sender_session_id": from_session,
                   "replacement": replacement,
                   "effective_permission_mode": (init or {}).get("permissionMode"),
-                  "permission_denials": permission_denials(turn / "stdout.jsonl"),
                   "report": reference(turn / "report.md", root),
                   "invocation": reference(turn / "invocation.json", root),
                   "stream": reference(turn / "stdout.jsonl", root),
@@ -802,84 +702,16 @@ def probe_runtime(root, executable="claude", timeout=55):
                           prompt='Return only a JSON fence with agent="scout", '
                           'issue_id="RUNTIME-CONTINUITY", correction_round=1, and '
                           'remembered_token equal to the token from the previous turn.')
-    continuity = bool(second and second["status"] == "completed"
-                      and second["footer"].get("remembered_token") == token
-                      and second["session_id"] == first["session_id"])
-    permissions = permission_witness(root, executable, max(timeout, 90)) if continuity else None
-    passed = continuity and bool(permissions and permissions["status"] == "passed")
-    evidence = {"version": 2, "status": "passed" if passed else "failed", "ts": now(),
+    passed = bool(second and second["status"] == "completed"
+                  and second["footer"].get("remembered_token") == token
+                  and second["session_id"] == first["session_id"])
+    evidence = {"version": 1, "status": "passed" if passed else "failed", "ts": now(),
                 "runtime_fingerprint": first["runtime_fingerprint"],
-                "first": first, "second": second, "permissions": permissions,
-                "limits": "Two real tools-disabled continuity turns plus one real Bash turn through the "
-                          "retained-role PreToolUse hook: one project-allowed command must run and one "
-                          "command the project does not allow must not run. Other role tools are not exercised."}
+                "first": first, "second": second,
+                "limits": "Two real tools-disabled CLI turns; role tool permissions need separate live validation."}
     path = local(root, "devel-loop/loop_state/agent_runtime/probes/" + uuid.uuid4().hex + ".json")
     atomic_json(path, evidence)
     return dict(evidence, evidence=reference(path, root))
-
-
-ALLOWED_CANDIDATES = ("printf %s {m}", "echo {m}", "python3 -c 'print(\"{m}\")'", "pwd", "ls", "true")
-# Each creates exactly {t} and nothing else; the first one the settings do not allow is used.
-DENIED_CANDIDATES = ("mkdir {t}", "touch {t}", "ln -s /dev/null {t}", "cp /dev/null {t}", "install -d {t}")
-
-
-def permission_witness(root, executable="claude", timeout=90):
-    """Live witness that retained-role Bash honours the project's allow list.
-
-    Picks a harmless command the merged settings allow and a directory creation
-    they do not, runs both in one real turn under the runtime hook, and checks
-    the stream and the filesystem. Tools-disabled probes cannot see ESX-002.
-    """
-    import permission_match
-    root = Path(root).resolve()
-    rules = permission_match.load_rules(root)
-    marker = "ESX-PERM-" + uuid.uuid4().hex[:12]
-    allowed = next((c.format(m=marker) for c in ALLOWED_CANDIDATES
-                    if permission_match.decide(c.format(m=marker), rules) == "allow"), None)
-    target = local(root, "devel-loop/loop_state/agent_runtime/probes/denied-" + marker)
-    if allowed is None:
-        return {"status": "failed", "reason": "no harmless command is allowed by project settings "
-                "(tried: " + ", ".join(ALLOWED_CANDIDATES) + "); the allow path cannot be witnessed"}
-    denied = next((c.format(t=target) for c in DENIED_CANDIDATES
-                   if permission_match.decide(c.format(t=target), rules) != "allow"), None)
-    issue, role = "RUNTIME-PERMISSIONS", "scout"
-    turn = run_turn(root, role=role, issue=issue, executable=executable, timeout=timeout, probe=True, witness=True,
-                    prompt="Run these two Bash commands, exactly as written, as two separate tool calls, in order. "
-                    "Do not modify, combine or retry them, and do not run anything else.\n1. " + allowed
-                    + ("\n2. " + denied if denied else "") + "\nThen reply only this JSON fence:\n```json\n"
-                    + json.dumps({"agent": role, "issue_id": issue, "correction_round": 0}) + "\n```")
-    stream = local(root, turn["stream"]["path"]) if turn.get("stream") else None
-    calls, results = {}, {}
-    for event in stream_events(stream) if stream else []:
-        message = event.get("message")
-        for item in (message.get("content") or []) if isinstance(message, dict) else []:
-            if isinstance(item, dict) and item.get("type") == "tool_use":
-                calls[item.get("id")] = (item.get("input") or {}).get("command")
-            elif isinstance(item, dict) and item.get("type") == "tool_result":
-                results[item.get("tool_use_id")] = item
-    ran = [i for i, c in calls.items() if c == allowed and i in results and not results[i].get("is_error")
-           and (marker in json.dumps(results[i].get("content")) or "{m}" not in next(
-               c for c in ALLOWED_CANDIDATES if c.format(m=marker) == allowed))]
-    attempted_denied = [i for i, c in calls.items() if denied and c == denied]
-    denied_held = bool(attempted_denied) and not (target.exists() or target.is_symlink())
-    mode = turn.get("effective_permission_mode")
-    # A denial is only witnessable when the settings leave some write command unallowed
-    # and the CLI is not bypassing permissions; otherwise only the allow path is checked.
-    witnessable = denied is not None and mode != "bypassPermissions"
-    passed = bool(ran) and (denied_held or not witnessable)
-    if target.is_symlink() or target.is_file():
-        target.unlink()
-    elif target.exists():
-        target.rmdir()
-    return {"status": "passed" if passed else "failed", "allowed_command": allowed, "denied_command": denied,
-            "allowed_ran": bool(ran), "denied_attempted": bool(attempted_denied), "denied_held": denied_held,
-            "effective_permission_mode": mode, "permission_denials": turn.get("permission_denials"),
-            "turn": {k: turn.get(k) for k in ("event_id", "session_id", "status", "error", "stream")},
-            "note": ("bypassPermissions: a denial cannot be witnessed; only the allowed path was checked"
-                     if mode == "bypassPermissions" else
-                     "project settings allow every candidate write command (" + ", ".join(
-                         c.split(" ")[0] for c in DENIED_CANDIDATES) + "); only the allowed path was checked"
-                     if denied is None else None)}
 
 
 def probe_status(root, executable="claude"):
@@ -960,9 +792,6 @@ def main(argv=None):
     follow.add_argument("--from-session", help="recorded peer identity for an issue-scoped message")
     status = sub.add_parser("status")
     status.add_argument("--session", required=True)
-    recover = sub.add_parser("recover", help="close crashed turns that never wrote a record")
-    recover.add_argument("--session", required=True)
-    recover.add_argument("--reason", required=True)
     probe = sub.add_parser("probe")
     probe.add_argument("--timeout", type=float, default=55)
     sub.add_parser("fingerprint")
@@ -997,8 +826,6 @@ def main(argv=None):
             value = runtime_contract(root, args.claude)
         elif args.command == "status":
             value = json.loads((session_path(root, args.session) / "session.json").read_text())
-        elif args.command == "recover":
-            value = recover_orphans(root, args.session, args.reason)
         elif args.command == "probe":
             value = probe_runtime(root, args.claude, args.timeout)
         elif args.command == "probe-status":

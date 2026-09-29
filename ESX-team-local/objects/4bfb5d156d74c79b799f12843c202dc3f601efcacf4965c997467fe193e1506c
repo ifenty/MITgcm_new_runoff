@@ -74,9 +74,6 @@ Fix in ESX-Team upstream (github.com/ifenty/ESX-Team):
 Acceptance: with the wrapper rule removed, a role session runs an allowlisted command,
 is denied a non-allowlisted one, and the probe fails on the current hook.
 
-### Resolution evidence (2026-09-29)
-Fixed upstream in ESX-Team 1.5.1 (8c7ea7d) and 1.5.2 (c92ebe4), both deployed here with no conflicts. The hook now judges the original command with `permission_match` and explicitly allows only allowlisted commands. The live probe runs an allowed and a denied Bash witness, and passes here (`devel-loop/loop_state/probe-152.json`). A matcher witness on this project's rules allows ecco pytest, quoted multi-line `python3 -c` and `cd && python3`. Heredocs, file redirects and unlisted commands get no decision; deny wins through `&&` and `|`. Wrapper allow rule and `Bash(mkdir *)` removed. Awaiting formal closeout.
-
 ## UNRESOLVED: ESX dispatch adapter crashes on Claude Code permission_denied events
 
 **Date Identified**: 2026-09-29T22:05:00Z
@@ -107,9 +104,6 @@ Upstream the guard to ESX-Team, with a unit test that feeds a `permission_denied
 (string `message`) and a normal assistant event through `_read_tool_events`.
 Audit other `event.get(...).get(...)` chains in the adapter for the same assumption.
 Acceptance: the test passes upstream, and the local copy matches upstream after the next kit update.
-
-### Resolution evidence (2026-09-29)
-Fixed upstream in ESX-Team 1.5.1 (tolerant stream parser, recorded failed turn on dispatcher error, `permission_denials` in turn records). The local guard was reverted to 1.5.0 bytes before the upgrade. `agent_runtime.py recover` closed orphaned turn 8154aebc in Bob session a7e61b17. Awaiting formal closeout.
 
 ## UNRESOLVED: Define the sparse-runoff NetCDF schema and its integrity checker
 

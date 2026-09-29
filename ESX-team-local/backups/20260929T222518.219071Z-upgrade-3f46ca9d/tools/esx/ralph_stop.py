@@ -63,7 +63,7 @@ def parse_state(text):
         raise ValueError('completion_promise must be text or null')
     return {'iteration': int(fields['iteration']), 'limit': int(fields['max_iterations']),
             'promise': promise, 'prompt': match[2], 'header': match[1],
-            'active': fields.get('active', 'true'), 'header_fields': fields}
+            'active': fields.get('active', 'true')}
 
 
 def current_text(path):
@@ -155,43 +155,6 @@ def loop_lock(root):
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
-MAX_DISPATCH_WAITS = 3
-
-
-def dispatch_in_flight(root):
-    """True when a retained CLI turn for the active issue holds its turn lock.
-
-    Native Agent-tool subagents are invisible here (the kit observes only their
-    stop), so they still consume an iteration if Arch ends a turn to wait.
-    """
-    import fcntl as _fcntl
-    start = Path(root) / 'devel-loop/loop_state/issue-start.json'
-    sessions = Path(root) / 'devel-loop/loop_state/agent_runtime/sessions'
-    try:
-        issue = json.loads(start.read_text()).get('id') if start.is_file() else None
-    except (OSError, ValueError):
-        return False
-    if not issue or not sessions.is_dir():
-        return False
-    for state_file in sessions.glob('*/session.json'):
-        try:
-            state = json.loads(state_file.read_text())
-        except (OSError, ValueError):
-            continue
-        if state.get('issue_id') != issue or state.get('status') != 'running':
-            continue
-        lock = state_file.parent / '.turn.lock'
-        if not lock.exists():
-            continue
-        with lock.open('a') as handle:
-            try:
-                _fcntl.flock(handle, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
-            except BlockingIOError:
-                return True
-            _fcntl.flock(handle, _fcntl.LOCK_UN)
-    return False
-
-
 def step(root, hook_input):
     """Apply a Stop to the project's ESX state with one shared lifecycle lock."""
     if os.environ.get('ESX_AGENT_RUNTIME_CHILD') == '1':
@@ -246,41 +209,16 @@ def _step_locked(root, hook_input):
                     'systemMessage': f'Loop iteration budget {limit} reached; notification finalization only.'}
         return archive(root, state, original, 'END', n, f'iteration budget {limit} reached')
     if parsed['promise']:
-        normalize = lambda value: ' '.join(value.split())
-        def fulfilled(text):
-            promises = re.findall(r'<promise>(.*?)</promise>', text or '', re.S)
-            return any(normalize(p) == normalize(parsed['promise']) for p in promises)
-        # The CLI supplies the current turn's final text directly; the transcript
-        # file may lag behind it (TEAM-LOOP-PROMISE-FLUSH-RACE-001), so it is only
-        # a fallback for runtimes that omit last_assistant_message.
-        last = hook_input.get('last_assistant_message')
-        if isinstance(last, str) and fulfilled(last):
-            return archive(root, state, original, 'END', n, 'current completion promise fulfilled')
         try:
-            if fulfilled(current_text(hook_input.get('transcript_path', ''))):
+            text = current_text(hook_input.get('transcript_path', ''))
+            promises = re.findall(r'<promise>(.*?)</promise>', text, re.S)
+            normalize = lambda value: ' '.join(value.split())
+            if any(normalize(p) == normalize(parsed['promise']) for p in promises):
                 return archive(root, state, original, 'END', n, 'current completion promise fulfilled')
         except (OSError, ValueError, TypeError, UnicodeError) as exc:
             log(root, 'DEGRADED', n, f'promise check unavailable; continuing within saved budget: {exc}')
-    raw_waits = parsed['header_fields'].get('dispatch_waits', '0')
-    waits = int(raw_waits) if raw_waits.isdigit() else MAX_DISPATCH_WAITS
-    if waits < MAX_DISPATCH_WAITS and dispatch_in_flight(root):
-        # Waiting on a live retained dispatch is not an iteration of work
-        # (TEAM-LOOP-WAIT-BURNS-ITERATION-001); a small cap keeps the loop finite.
-        header = parsed['header']
-        if re.search(r'(?m)^dispatch_waits:', header):
-            header = re.sub(r'(?m)^dispatch_waits:.*$', 'dispatch_waits: ' + str(waits + 1), header)
-        else:
-            header += '\ndispatch_waits: ' + str(waits + 1)
-        from project import atomic_bytes
-        atomic_bytes(state, ('---\n' + header + '\n---\n' + parsed['prompt']).encode())
-        log(root, 'WAIT', n, f'retained dispatch in flight; iteration not advanced ({waits + 1}/{MAX_DISPATCH_WAITS})')
-        return {'decision': 'block', 'reason': 'A retained ESX dispatch for the active issue is still running. '
-                'Wait in-turn for its completion record (do not end the turn to wait), then continue with '
-                'tools/esx/loop_gate.py --next.',
-                'systemMessage': f'ESX iteration {n} held: dispatch in flight ({waits + 1}/{MAX_DISPATCH_WAITS}).'}
     header = re.sub(r'(?m)^[ \t]*iteration[ \t]*:[ \t]*[^\r\n]*$',
                     'iteration: ' + str(n + 1), parsed['header'])
-    header = re.sub(r'(?m)^dispatch_waits:.*\n?', '', header).rstrip('\n')
     updated = ('---\n' + header + '\n---\n' + parsed['prompt']).encode()
     temporary = None
     try:

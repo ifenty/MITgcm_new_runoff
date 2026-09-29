@@ -1,0 +1,8 @@
+MITgcm/
+/devel-loop/loop_state/
+/.claude/ralph-loop*
+/.claude/esx-loop*
+/.claude/settings.local.json
+**/__pycache__/
+*.pyc
+/ESX-team-local/upgrade.lock

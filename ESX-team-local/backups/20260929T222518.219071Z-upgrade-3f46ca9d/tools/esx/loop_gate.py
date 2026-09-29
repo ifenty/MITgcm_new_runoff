@@ -342,20 +342,6 @@ class Gate:
             if row['blocker'] and row['blocker'].split(' — ', 1)[0] in closed:
                 print(f"UNBLOCKABLE: {row['id']}; inspect the dependency and update its status")
         if actionable:
-            import project
-            missing = project.missing_inputs(self.root, config(self.root))
-            if missing:
-                # Every verification suite fingerprints these first; implementing
-                # now would produce work that cannot reach review on this checkout
-                # (TEAM-VERIFY-EXTERNAL-INPUTS-PREFLIGHT-001).
-                print(f'NEXT: ENVIRONMENT BLOCKER: {len(missing)} configured external_inputs are missing, so '
-                      'verify.py cannot produce evidence here. Restore them (or run on a checkout that has them); '
-                      'otherwise mark each actionable issue Blocked-By: EXTERNAL with this reason, then run --next.')
-                for name in missing[:10]:
-                    print('  missing: ' + name)
-                if len(missing) > 10:
-                    print(f'  ... {len(missing) - 10} more')
-                return 0
             notice = self.self_assessment_notice()
             if notice:
                 print(notice)

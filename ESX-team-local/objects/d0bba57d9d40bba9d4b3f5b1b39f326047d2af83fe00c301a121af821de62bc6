@@ -819,8 +819,6 @@ def probe_runtime(root, executable="claude", timeout=55):
 
 
 ALLOWED_CANDIDATES = ("printf %s {m}", "echo {m}", "python3 -c 'print(\"{m}\")'", "pwd", "ls", "true")
-# Each creates exactly {t} and nothing else; the first one the settings do not allow is used.
-DENIED_CANDIDATES = ("mkdir {t}", "touch {t}", "ln -s /dev/null {t}", "cp /dev/null {t}", "install -d {t}")
 
 
 def permission_witness(root, executable="claude", timeout=90):
@@ -837,16 +835,18 @@ def permission_witness(root, executable="claude", timeout=90):
     allowed = next((c.format(m=marker) for c in ALLOWED_CANDIDATES
                     if permission_match.decide(c.format(m=marker), rules) == "allow"), None)
     target = local(root, "devel-loop/loop_state/agent_runtime/probes/denied-" + marker)
+    denied = "mkdir " + str(target)
     if allowed is None:
         return {"status": "failed", "reason": "no harmless command is allowed by project settings "
                 "(tried: " + ", ".join(ALLOWED_CANDIDATES) + "); the allow path cannot be witnessed"}
-    denied = next((c.format(t=target) for c in DENIED_CANDIDATES
-                   if permission_match.decide(c.format(t=target), rules) != "allow"), None)
+    if permission_match.decide(denied, rules) == "allow":
+        return {"status": "failed", "reason": "project settings allow `mkdir` everywhere, so no denied "
+                "command is available to witness", "allowed_command": allowed}
     issue, role = "RUNTIME-PERMISSIONS", "scout"
     turn = run_turn(root, role=role, issue=issue, executable=executable, timeout=timeout, probe=True, witness=True,
                     prompt="Run these two Bash commands, exactly as written, as two separate tool calls, in order. "
                     "Do not modify, combine or retry them, and do not run anything else.\n1. " + allowed
-                    + ("\n2. " + denied if denied else "") + "\nThen reply only this JSON fence:\n```json\n"
+                    + "\n2. " + denied + "\nThen reply only this JSON fence:\n```json\n"
                     + json.dumps({"agent": role, "issue_id": issue, "correction_round": 0}) + "\n```")
     stream = local(root, turn["stream"]["path"]) if turn.get("stream") else None
     calls, results = {}, {}
@@ -860,26 +860,18 @@ def permission_witness(root, executable="claude", timeout=90):
     ran = [i for i, c in calls.items() if c == allowed and i in results and not results[i].get("is_error")
            and (marker in json.dumps(results[i].get("content")) or "{m}" not in next(
                c for c in ALLOWED_CANDIDATES if c.format(m=marker) == allowed))]
-    attempted_denied = [i for i, c in calls.items() if denied and c == denied]
-    denied_held = bool(attempted_denied) and not (target.exists() or target.is_symlink())
+    attempted_denied = [i for i, c in calls.items() if c == denied]
+    denied_held = bool(attempted_denied) and not target.exists()
     mode = turn.get("effective_permission_mode")
-    # A denial is only witnessable when the settings leave some write command unallowed
-    # and the CLI is not bypassing permissions; otherwise only the allow path is checked.
-    witnessable = denied is not None and mode != "bypassPermissions"
-    passed = bool(ran) and (denied_held or not witnessable)
-    if target.is_symlink() or target.is_file():
-        target.unlink()
-    elif target.exists():
+    passed = bool(ran) and (denied_held or mode == "bypassPermissions")
+    if target.exists():
         target.rmdir()
     return {"status": "passed" if passed else "failed", "allowed_command": allowed, "denied_command": denied,
             "allowed_ran": bool(ran), "denied_attempted": bool(attempted_denied), "denied_held": denied_held,
             "effective_permission_mode": mode, "permission_denials": turn.get("permission_denials"),
             "turn": {k: turn.get(k) for k in ("event_id", "session_id", "status", "error", "stream")},
             "note": ("bypassPermissions: a denial cannot be witnessed; only the allowed path was checked"
-                     if mode == "bypassPermissions" else
-                     "project settings allow every candidate write command (" + ", ".join(
-                         c.split(" ")[0] for c in DENIED_CANDIDATES) + "); only the allowed path was checked"
-                     if denied is None else None)}
+                     if mode == "bypassPermissions" else None)}
 
 
 def probe_status(root, executable="claude"):

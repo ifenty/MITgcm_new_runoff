@@ -198,12 +198,6 @@ def command(argv):
     return [sys.executable if s == '{python}' else s for s in argv]
 
 
-def missing_inputs(root, cfg):
-    """Configured external inputs absent from this checkout (e.g. gitignored captures)."""
-    return [name for name in cfg.get('external_inputs', [])
-            if not (Path(name) if Path(name).is_absolute() else Path(root) / name).is_file()]
-
-
 def environment(root, cfg):
     """Measure declared tools, environment and actual external-input file bytes.
 
@@ -215,11 +209,6 @@ def environment(root, cfg):
         run = subprocess.run(command(argv), cwd=root, capture_output=True, text=True, timeout=30)
         require(run.returncode == 0, f'toolchain probe failed: {argv}')
         probes.append({'argv': command(argv), 'stdout': run.stdout, 'stderr': run.stderr})
-    missing = missing_inputs(root, cfg)
-    if missing:
-        raise ValueError(f'{len(missing)} of {len(cfg["external_inputs"])} configured external_inputs are '
-                         'missing from this checkout, so no verification evidence can be measured: '
-                         + ', '.join(missing[:5]) + (' ...' if len(missing) > 5 else ''))
     inputs = {}
     for name in cfg['external_inputs']:
         path = Path(name) if Path(name).is_absolute() else root / name
