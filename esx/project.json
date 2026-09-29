@@ -147,7 +147,7 @@
   },
   "communication": {
     "provider": "slack",
-    "channel": "C0C5GTG31MX",
+    "channel": "C0C5EV9TFCJ",
     "message_prefix": "[new-runoff]",
     "authorization_reference": "esx/project_profile.md#runtime-and-operations (communication)"
   },

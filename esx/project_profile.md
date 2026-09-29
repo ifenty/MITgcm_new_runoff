@@ -182,7 +182,7 @@ This is the scientific contract agents read. Executable paths and commands are i
   - Commit project and ESX records to this repo's `main` and push to
     `origin main` (github.com/ifenty/MITgcm_new_runoff).
 - Communication provider/channel, audience and authorization reference: Slack
-  channel `C0C5GTG31MX`, created 2026-09-29 by the owner for this project, with
+  channel `C0C5EV9TFCJ`, created 2026-09-29 by the owner for this project, with
   the prefix `[new-runoff]`. Audience: the owner. The owner's approval of this
   channel is standing authorization to post routine issue start/resolution
   updates, not to commit outside the policy above or to deploy.
