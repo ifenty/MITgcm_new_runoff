@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "project_id": "",
+  "project_name": "",
+  "mission": "",
+  "source_paths": [],
+  "test_paths": [],
+  "configuration_paths": [],
+  "output_paths": [
+    "results",
+    "figures"
+  ],
+  "external_inputs": [],
+  "mirrored_paths": [],
+  "archive_paths": [],
+  "environment_variables": [
+    "PATH",
+    "CONDA_PREFIX",
+    "OMP_NUM_THREADS",
+    "LANG",
+    "LC_ALL",
+    "PYTHONOPTIMIZE"
+  ],
+  "toolchain_commands": [
+    [
+      "{python}",
+      "--version"
+    ]
+  ],
+  "command_timeout_seconds": 3600,
+  "verification": {
+    "structural": [
+      [
+        "{python}",
+        "tools/esx/audit.py"
+      ]
+    ],
+    "focused": [],
+    "scientific": []
+  },
+  "communication": {
+    "provider": "disabled",
+    "channel": "",
+    "message_prefix": "",
+    "authorization_reference": ""
+  },
+  "commit_policy": {
+    "mode": "owner_authorization",
+    "authorization_reference": ""
+  }
+}

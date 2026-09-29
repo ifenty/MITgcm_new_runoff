@@ -1,0 +1,16 @@
+{
+  "issue_id": "",
+  "after_round": 0,
+  "status": "",
+  "decision": "",
+  "premise": "",
+  "next_change": "",
+  "acceptance": "",
+  "reproduction": {
+    "cmd": "",
+    "executed": false,
+    "exit": null,
+    "result": ""
+  },
+  "evidence_refs": []
+}

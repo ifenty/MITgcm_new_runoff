@@ -1,0 +1,61 @@
+{
+  "id": "",
+  "timestamp": "",
+  "outcome": "",
+  "summary": "",
+  "workflow": {},
+  "scope_decisions": [],
+  "subagents": {},
+  "agent_continuity": {},
+  "lessons": [],
+  "git": {
+    "committed": false,
+    "reason": ""
+  },
+  "communication": {
+    "status": "pending",
+    "detail": ""
+  },
+  "verification": {
+    "final_owner": "",
+    "structural": {
+      "path": "",
+      "sha256": ""
+    },
+    "scientific": {
+      "path": "",
+      "sha256": ""
+    },
+    "receipt": {
+      "path": "",
+      "sha256": ""
+    }
+  },
+  "maintenance": {
+    "baseline": {
+      "path": "",
+      "sha256": ""
+    },
+    "orientation": {
+      "path": "",
+      "sha256": ""
+    },
+    "documentation": {
+      "path": "",
+      "sha256": ""
+    }
+  },
+  "map_delta": {
+    "status": "",
+    "reason": "",
+    "references": []
+  },
+  "next_step": "",
+  "blocked_by": "",
+  "deliverables": [],
+  "timings": {},
+  "candidate": {
+    "path": "",
+    "sha256": ""
+  }
+}

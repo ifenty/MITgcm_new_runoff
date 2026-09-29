@@ -1,0 +1,36 @@
+{
+  "agent": "",
+  "issue_id": "",
+  "iteration_timestamp": "",
+  "skills_used": [],
+  "orientation": {
+    "path": "",
+    "sha256": ""
+  },
+  "summary": "",
+  "files_touched": [],
+  "evidence": [],
+  "limits": [],
+  "candidate_signature": "",
+  "verdict": "",
+  "must_fix": [],
+  "independent_check": {
+    "cmd": "",
+    "exit": null,
+    "executed": false,
+    "evidence": {
+      "path": "",
+      "sha256": ""
+    },
+    "coverage": ""
+  },
+  "documentation_review": {
+    "report": {
+      "path": "",
+      "sha256": ""
+    },
+    "status": "",
+    "notes": ""
+  },
+  "correction_round": 0
+}
