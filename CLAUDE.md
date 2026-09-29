@@ -12,10 +12,13 @@ It must work on every MITgcm grid type, and each tile keeps only its own target 
 
 ## Where things are
 
-- `draft_plan.md` holds the design decisions, open questions, the NetCDF spec, relevant MITgcm code, build and test commands, and the verification oracles. Read it before starting work, and update it when decisions change.
-- `MITgcm/` is a clone of the user's fork `ifenty/MITgcm` (branch `new_runoff`); all code changes go there. Commit to `new_runoff` often and push it to `origin` (the fork). Never commit or push to MITgcm/MITgcm (`upstream`), or to the fork's `master`. `../MITgcm` is an unrelated upstream checkout; don't edit it.
-- The project folder is its own git repo for `CLAUDE.md`, `draft_plan.md` and other plan files (it ignores `MITgcm/`). Commit plan changes there and push to `origin main` (github.com/ifenty/MITgcm_new_runoff).
-- The work will go upstream eventually, so follow MITgcm's contribution rules from the start. `draft_plan.md` section 7 has a summary.
+- **Design and scope:** [esx/project_profile.md](esx/project_profile.md) holds decisions, conventions, contribution rules and operations. [docs/model_contract.md](docs/model_contract.md) is the NetCDF and model design contract. [docs/verification_matrix.md](docs/verification_matrix.md) lists the oracles and test cases. Open design questions and next tasks are the `RUNOFF-*` entries in [open_issues.md](open_issues.md).
+- **Code:** `MITgcm/` is a clone of the user's fork `ifenty/MITgcm` (branch `new_runoff`); all code changes go there.
+  - Commit to `new_runoff` often and push it to `origin` (the fork).
+  - Never commit or push to MITgcm/MITgcm (`upstream`), or to the fork's `master`.
+  - `../MITgcm` is an unrelated upstream checkout; don't edit it.
+- **Project repo:** this folder is its own git repo (it ignores `MITgcm/`). Commit project and ESX records here and push to `origin main` (github.com/ifenty/MITgcm_new_runoff).
+- **Tests:** `tests/mitgcm_oracle.sh <experiment> <input_dir> [-mpi N]` compiles, runs and compares a verification experiment in Docker. Run ESX tools with `/home/ifenty/miniforge3/envs/ecco/bin/python`.
 
 <!-- ESX-TEAM -->
 Read [ESX project instructions](esx/project_instructions.md) for the team workflow and project configuration.

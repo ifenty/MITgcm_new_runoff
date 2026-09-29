@@ -1,14 +1,39 @@
 {
   "version": 1,
-  "project_id": "",
-  "project_name": "",
-  "mission": "",
-  "source_paths": [],
-  "test_paths": [],
-  "configuration_paths": [],
+  "project_id": "MITGCM-NEW-RUNOFF",
+  "project_name": "MITgcm new runoff: sparse source-based runoff forcing in pkg/exf",
+  "mission": "Add a sparse, source-based NetCDF runoff input (volume flux in m3/s, optional temperature, salinity and passive tracers, split among ocean cells by fractions) to MITgcm pkg/exf, working on all grids with per-tile storage, reproducing dense-runoffFile results, for an eventual upstream PR.",
+  "source_paths": [
+    "MITgcm/pkg/exf"
+  ],
+  "test_paths": [
+    "tests"
+  ],
+  "configuration_paths": [
+    "MITgcm/verification/global_ocean.cs32x15/code",
+    "MITgcm/verification/global_ocean.cs32x15/input.icedyn",
+    "MITgcm/verification/global_ocean.cs32x15/input.seaice",
+    "MITgcm/verification/lab_sea/code",
+    "MITgcm/verification/lab_sea/input"
+  ],
   "output_paths": [
-    "results",
-    "figures"
+    "MITgcm/verification/1D_ocean_ice_column/build_esx",
+    "MITgcm/verification/1D_ocean_ice_column/output_esx_input",
+    "MITgcm/verification/global_ocean.cs32x15/build_esx",
+    "MITgcm/verification/global_ocean.cs32x15/build_esx_mpi4",
+    "MITgcm/verification/global_ocean.cs32x15/output_esx_input.icedyn",
+    "MITgcm/verification/global_ocean.cs32x15/output_esx_input.seaice",
+    "MITgcm/verification/global_ocean.cs32x15/output_esx_input.seaice_mpi4",
+    "MITgcm/verification/lab_sea/build_esx",
+    "MITgcm/verification/lab_sea/build_esx_mpi2",
+    "MITgcm/verification/lab_sea/output_esx_input",
+    "MITgcm/verification/lab_sea/output_esx_input_mpi2",
+    "MITgcm/verification/offline_exf_seaice/build_esx",
+    "MITgcm/verification/offline_exf_seaice/output_esx_input",
+    "MITgcm/verification/seaice_itd/build_esx",
+    "MITgcm/verification/seaice_itd/output_esx_input",
+    "MITgcm/verification/seaice_obcs/build_esx",
+    "MITgcm/verification/seaice_obcs/output_esx_input"
   ],
   "external_inputs": [],
   "mirrored_paths": [],
@@ -25,6 +50,27 @@
     [
       "{python}",
       "--version"
+    ],
+    [
+      "{python}",
+      "-c",
+      "import numpy,netCDF4,xarray; print(numpy.__version__, netCDF4.__version__, xarray.__version__)"
+    ],
+    [
+      "docker",
+      "image",
+      "inspect",
+      "--format",
+      "{{.Id}} {{.Created}}",
+      "mitgcm:latest"
+    ],
+    [
+      "docker",
+      "run",
+      "--rm",
+      "mitgcm:latest",
+      "gfortran",
+      "--version"
     ]
   ],
   "command_timeout_seconds": 3600,
@@ -35,17 +81,78 @@
         "tools/esx/audit.py"
       ]
     ],
-    "focused": [],
-    "scientific": []
+    "focused": [
+      [
+        "tests/mitgcm_oracle.sh",
+        "lab_sea",
+        "input"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "global_ocean.cs32x15",
+        "input.seaice"
+      ]
+    ],
+    "scientific": [
+      [
+        "tests/mitgcm_oracle.sh",
+        "global_ocean.cs32x15",
+        "input.icedyn"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "global_ocean.cs32x15",
+        "input.seaice"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "global_ocean.cs32x15",
+        "input.seaice",
+        "-mpi",
+        "4"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "lab_sea",
+        "input"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "lab_sea",
+        "input",
+        "-mpi",
+        "2"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "1D_ocean_ice_column",
+        "input"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "seaice_obcs",
+        "input"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "offline_exf_seaice",
+        "input"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "seaice_itd",
+        "input"
+      ]
+    ]
   },
   "communication": {
-    "provider": "disabled",
-    "channel": "",
-    "message_prefix": "",
-    "authorization_reference": ""
+    "provider": "slack",
+    "channel": "C0C5GTG31MX",
+    "message_prefix": "[new-runoff]",
+    "authorization_reference": "esx/project_profile.md#runtime-and-operations (communication)"
   },
   "commit_policy": {
     "mode": "owner_authorization",
-    "authorization_reference": ""
+    "authorization_reference": "esx/project_profile.md#runtime-and-operations (commit cadence)"
   }
 }
