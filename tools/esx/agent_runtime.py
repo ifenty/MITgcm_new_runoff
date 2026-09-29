@@ -360,7 +360,8 @@ def _read_tool_events(path, offset, remainder, open_tools):
             continue
         if not isinstance(event, dict):
             continue
-        content = event.get("message", {}).get("content", [])
+        message = event.get("message")
+        content = message.get("content", []) if isinstance(message, dict) else []
         if event.get("type") == "assistant":
             for item in content if isinstance(content, list) else []:
                 if isinstance(item, dict) and item.get("type") == "tool_use" and item.get("id"):

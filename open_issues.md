@@ -26,6 +26,85 @@ A closed dependency prompts reconsideration; it does not automatically unblock w
 <Hypothesis, bounded change/inquiry, independent oracle, tolerances and completion criteria>
 ```
 
+## UNRESOLVED: ESX runtime hook makes every retained-agent Bash call require approval
+
+**Date Identified**: 2026-09-29T22:20:00Z
+**Status**: Unresolved
+**UUID**: ESX-002
+**Anchors**: tools/esx/runtime_tool_hook.py::handle; tools/esx/agent_runtime.py::<module>
+
+### Issue or research question
+`runtime_tool_hook.handle` returns `updatedInput` that rewrites every Bash command to
+`/usr/bin/python3 tools/esx/bounded_command.py --timeout … -- /bin/bash -c '<cmd>'`.
+Its docstring says "normal tool permission checks still run". But Claude Code checks
+permissions on the *rewritten* command, so no project allow rule (`Bash(python3 *)`,
+`Bash(pwd)`, …) can match. Every Bash call from a retained role session (Bob, Richard,
+Scout, …) in the default permission mode is denied with "This command requires approval".
+Roles can still Read, Edit and Write, but can't run tests, builds or verification.
+Richard's independently executed check, which acceptance requires, is impossible.
+
+A second defect hides this: `agent_runtime.py probe` runs tools-disabled turns and passes,
+and nothing in the kit validates role tool permissions live (the probe output says
+"role tool permissions need separate live validation").
+
+### Evidence
+- RUNOFF-001 Bob session `a7e61b17-6617-47f7-b90c-b7a2124c40c7`, turn
+  `3cc0d65cc31349ecad3b173640b664ac`: `pwd`,
+  `/home/ifenty/miniforge3/envs/ecco/bin/python --version`, `python3 tools/esx/doc_contract.py …`
+  and `ls -la …` were all denied (`permission_denied`, `decision_reason_type: other`),
+  although `Bash(python3 *)` and `Bash(ls *)` are allowlisted and `pwd`/`--version` were added.
+- Control: the same CLI binary (2.1.285) with the same project settings but without the
+  `--settings` PreToolUse hook ran `ls -la`, `python3 --version` and `wc -l` successfully
+  (`devel-loop/loop_state/permprobe.jsonl`, 2026-09-29).
+
+### Scientific or engineering impact
+Blocks every scientific_change workflow: implementation can't run its tests, and the
+independent review's executed check can't run. Local workaround (2026-09-29): an allow rule
+for the wrapper prefix in `.claude/settings.local.json`,
+`Bash(/usr/bin/python3 /home/ifenty/Projects/MITgcm_new_runoff/tools/esx/bounded_command.py *)`.
+That rule allows any command inside the wrapper, so role sessions effectively bypass the allowlist.
+
+### Proposed action and acceptance
+Fix in ESX-Team upstream (github.com/ifenty/ESX-Team):
+- evaluate the original command against the project allow/deny rules inside the hook,
+  and return `permissionDecision` explicitly;
+- add a live tool-permission witness to `agent_runtime.py probe`: one allowed Bash
+  command must run and one disallowed command must be denied.
+
+Acceptance: with the wrapper rule removed, a role session runs an allowlisted command,
+is denied a non-allowlisted one, and the probe fails on the current hook.
+
+## UNRESOLVED: ESX dispatch adapter crashes on Claude Code permission_denied events
+
+**Date Identified**: 2026-09-29T22:05:00Z
+**Status**: Unresolved
+**UUID**: ESX-001
+**Anchors**: tools/esx/agent_runtime.py::_read_tool_events
+
+### Issue or research question
+`_read_tool_events` did `event.get("message", {}).get("content", [])`. Claude Code stream-json
+`{"type":"system","subtype":"permission_denied",…}` events carry `message` as a string, so
+the watchdog raised `AttributeError: 'str' object has no attribute 'get'`. The dispatcher
+exited mid-turn and the child session was left without a supervisor. That turn's evidence
+was saved only as a failure.
+
+### Evidence
+RUNOFF-001 Bob start, event `8154aebc7c6b4c0fbf05966e863adc0c` (2026-09-29): traceback in the
+dispatch output, and the offending event at line 8 of that turn's `stdout.jsonl`. Local fix:
+guard on `isinstance(message, dict)`. Replaying the same `stdout.jsonl` through the patched
+function parses cleanly (`devel-loop/loop_state/compatibility-RUNOFF-001.log`,
+sha256 77edaf31…1714).
+
+### Scientific or engineering impact
+Any denied tool call (a common event, see ESX-002) kills the dispatch and forces a
+runtime-transition assessment to resume.
+
+### Proposed action and acceptance
+Upstream the guard to ESX-Team, with a unit test that feeds a `permission_denied` event
+(string `message`) and a normal assistant event through `_read_tool_events`.
+Audit other `event.get(...).get(...)` chains in the adapter for the same assumption.
+Acceptance: the test passes upstream, and the local copy matches upstream after the next kit update.
+
 ## UNRESOLVED: Define the sparse-runoff NetCDF schema and its integrity checker
 
 **Date Identified**: 2026-09-29T21:30:00Z
