@@ -1,0 +1,17 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project goal
+
+Add a new, sparse way to specify runoff forcing in MITgcm, built by extending `pkg/exf`. Runoff is a volumetric water flux, optionally with temperature, salinity (default 0) and any number of passive tracers.
+
+The input is a NetCDF file organized by source: an alphanumeric id, the ocean cells the source feeds, the fraction going into each cell (summing to 1.0), and time series on one shared time axis. This replaces dense per-grid-cell `runoffFile` binaries, which are wasteful at high resolution.
+
+It must work on every MITgcm grid type, and each tile keeps only its own target cells. Phase 1 is 2D surface runoff; 3D runoff via `addMass` comes later.
+
+## Where things are
+
+- `draft_plan.md` holds the design decisions, open questions, the NetCDF spec, relevant MITgcm code, build and test commands, and the verification oracles. Read it before starting work, and update it when decisions change.
+- `MITgcm/` is a clone of the user's fork `ifenty/MITgcm` (branch `new_runoff`); all code changes go there. Commit to `new_runoff` as work progresses. Never commit or push to MITgcm/MITgcm (`upstream`), or to the fork's `master`. `../MITgcm` is an unrelated upstream checkout; don't edit it.
+- The work will go upstream eventually, so follow MITgcm's contribution rules from the start. `draft_plan.md` section 7 has a summary.
