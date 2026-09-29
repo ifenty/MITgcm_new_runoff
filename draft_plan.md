@@ -192,12 +192,33 @@ Other cs32 variants have no runoff: `input`, `input.thsice` (uses `pkg/bulk_forc
 
 **Gap:** no verification experiment has exf runoff on a lat-lon, Cartesian or LLC grid. There are also no LLC experiments in `verification/` at all.
 
-**New lat-lon oracle from `lab_sea`** (planned; `lab_sea/input/data.exf` currently has `runoffFile = ' '`):
+**New lat-lon oracle from `lab_sea`** (planned; `lab_sea/input/data.exf` currently has `runoffFile = ' '`)
 
-1. Read `lab_sea/input/bathy.labsea1979` and pick a reasonable set of coastal ocean cells as river and glacier sources. Include at least one source that spreads over several cells, ideally across a tile boundary.
-2. Write a dense monthly `runoffFile` (and optionally `runoftempFile`) with the current method.
-3. Run for 1 month through the existing dense path, and save `output.txt` as the reference in `results/output.<X>.txt`, for a new `input.<X>`.
-4. Convert the dense file with the Python tool, rerun through the sparse path, and match the reference to round-off.
-5. Also test the yearly-file (`_YYYY`) and hold-exact variants here.
+`lab_sea` setup:
+
+- Spherical-polar grid, 20×16 cells at 2°, starting at 280°E, 46°N, with 23 levels.
+- `code/SIZE.h`: 4 tiles of 10×8 on 1 process.
+- `code/SIZE.h_mpi`: 2 processes × 2 tiles.
+- `dt` = 1 h, and the standard run is 9 steps. Gregorian calendar from `startDate_1 = 19790101`.
+- The forward build has no `code/EXF_OPTIONS.h`, so it uses the `pkg/exf` default: `ALLOW_RUNOFF` on, `ALLOW_RUNOFTEMP` off. Testing runoff temperature needs a `-mods` code directory that turns on `ALLOW_RUNOFTEMP`.
+- `input/data.exf_YearlyFields` and `input/data_YearlyFields` already show a `useExfYearlyFields` setup to copy from.
+
+Steps:
+
+1. Read `lab_sea/input/bathy.labsea1979` and pick a reasonable set of coastal ocean cells as river and glacier sources. Include at least one source that spreads over several cells **across a tile boundary**, and across the process boundary in the MPI layout.
+2. For each case below, write the dense `runoffFile` (and optionally `runoftempFile`) with the current method.
+3. Run each case through the existing dense path, about 1 month or longer where the case needs it. Save `output.txt` as the reference `results/output.<X>.txt` for a new `input.<X>`.
+4. Convert each dense file with the Python tool and rerun through the sparse path. Match the reference to round-off, for both the single-process and the MPI (`-mpi`, 2 processes) builds.
+
+Test matrix (one `input.<X>` each, or combined where it's cheap):
+
+| Case | Record spacing | What it checks |
+| --- | --- | --- |
+| constant | one record | time-invariant runoff |
+| daily | 1 day, non-repeating | reading and interpolating many records |
+| monthly | calendar months (`period = -12`), non-repeating | calendar-month timing |
+| monthly-repeating | 12 records, climatology (`RepCycle` = 1 year) | wrapping from the last record back to the first |
+| yearly files | daily or monthly, split into `_YYYY` files | switching files at the year boundary. The run must cross 31 Dec → 1 Jan, so it needs a later start date or a run longer than one year. |
+| hold-exact | any of the above, with hold-exact set in `data.exf` | step-wise values with no interpolation. There's no dense-path oracle for this; check it directly against the input values, e.g. with diagnostics of `runoff`. |
 
 Keep the scripts that generate these inputs (e.g. `gendata.py`) in the experiment's input directory, as other experiments do.
