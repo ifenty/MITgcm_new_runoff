@@ -34,7 +34,7 @@ A closed dependency prompts reconsideration; it does not automatically unblock w
 **Anchors**: docs/model_contract.md#input-one-netcdf-file-per-run-phase-1; tests/mitgcm_oracle.sh::<module>
 
 ### Issue or research question
-The file layout isn't defined. Needed: dimension and variable names, the id string type, the (source, cell) pair layout, CF time attributes, the attribute names for timing settings that `data.exf` can override, and a grid-identity record so the model refuses a mismatched file. Also confirm two proposed rules: a fill value in the flux is an error, and one-record chunking. (Decided 2026-09-29: several sources in one cell add volumes, and T, S and tracers are flux-weighted.)
+The file layout isn't defined. Needed: dimension and variable names, the id string type, the (source, cell) pair layout, CF time attributes, the attribute names for timing settings that `data.exf` can override, and a grid-identity record so the model refuses a mismatched file. (Decided 2026-09-29: several sources in one cell add volumes, and T, S and tracers are flux-weighted; a missing flux value stops the run; chunking is whatever is most efficient for per-record reads, chosen by measurement.)
 
 ### Evidence
 Design decisions from the project owner, recorded in `esx/project_profile.md` and `docs/model_contract.md` (2026-09-29). No code exists yet.

@@ -79,8 +79,9 @@ This is the scientific contract agents read. Executable paths and commands are i
     or hold-exact.
   - **Missing temperature:** runoff enters at the surface water temperature, as
     exf does now.
-  - **Missing values (proposed; confirm with the owner in RUNOFF-001):** not
-    allowed in the flux. A fill value in the flux is a fatal error.
+  - **Missing values** (owner decision, 2026-09-29): not allowed in the flux. A
+    missing or fill value in the flux stops the run with an error naming the
+    source and time.
 - Conserved quantities, positivity, symmetry, monotonicity or other invariants:
   - Each source's fractions sum to 1 across the whole domain, within 1e-6. This is
     checked with `GLOBAL_SUM` over all tiles and processes, which also catches
