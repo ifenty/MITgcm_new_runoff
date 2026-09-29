@@ -44,6 +44,8 @@ This is the scientific contract agents read. Executable paths and commands are i
   - `flux_s(t)` is in m³/s, and `rA` is the cell area.
   - Only the flux is split by fraction. A source's T, S and tracer concentrations
     apply unchanged to every cell it feeds.
+  - Where several sources feed one cell, volumes add, and T, S and all tracers
+    are flux-weighted means. This conserves heat, salt and tracer content.
   - The downstream exf/model physics (`pkg/exf/exf_mapfields.F`) is unchanged.
 - Inputs/outputs, dimensions, units and coordinate/reference conventions: one
   NetCDF file with:
@@ -84,6 +86,7 @@ This is the scientific contract agents read. Executable paths and commands are i
     checked with `GLOBAL_SUM` over all tiles and processes, which also catches
     cells on land, on blank tiles or off the grid.
   - Total applied volume flux, `Σ runoff·rA`, equals `Σ_s flux_s(t)`.
+  - Heat, salt and tracer input (`Σ F_c·X_c`) equals `Σ_s flux_s·X_s`.
   - Fractions are ≥ 0.
   - With the feature compiled in but not used, results are bit-for-bit unchanged.
 - Parameters, control variables, objectives and statistical estimands: new

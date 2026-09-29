@@ -34,7 +34,7 @@ A closed dependency prompts reconsideration; it does not automatically unblock w
 **Anchors**: docs/model_contract.md#input-one-netcdf-file-per-run-phase-1; tests/mitgcm_oracle.sh::<module>
 
 ### Issue or research question
-The file layout isn't defined. Needed: dimension and variable names, the id string type, the (source, cell) pair layout, CF time attributes, the attribute names for timing settings that `data.exf` can override, and a grid-identity record so the model refuses a mismatched file. Also confirm three proposed rules: a fill value in the flux is an error, several sources in one cell combine temperature flux-weighted, and one-record chunking.
+The file layout isn't defined. Needed: dimension and variable names, the id string type, the (source, cell) pair layout, CF time attributes, the attribute names for timing settings that `data.exf` can override, and a grid-identity record so the model refuses a mismatched file. Also confirm two proposed rules: a fill value in the flux is an error, and one-record chunking. (Decided 2026-09-29: several sources in one cell add volumes, and T, S and tracers are flux-weighted.)
 
 ### Evidence
 Design decisions from the project owner, recorded in `esx/project_profile.md` and `docs/model_contract.md` (2026-09-29). No code exists yet.
@@ -182,4 +182,4 @@ Design decisions from the project owner, recorded in `esx/project_profile.md` an
 Required for glacier or brackish sources and for tracer studies. Wrong plumbing breaks salt and tracer budgets.
 
 ### Proposed action and acceptance
-Proposal: fill new 2D exf fields (runoff salinity, runoff tracers) as flux-weighted means per cell, and add their contribution where exf and ptracers apply freshwater. Owner to confirm the approach. Acceptance: a budget check (Σ S·flux) and no-change runs unchanged.
+Proposal: fill new 2D exf fields (runoff salinity, runoff tracers) with per-cell flux-weighted means (the combination rule was decided 2026-09-29), and add their contribution where exf and ptracers apply freshwater. Owner to confirm where these hook into the salt and ptracers forcing. Acceptance: a budget check (Σ S·flux) and no-change runs unchanged.

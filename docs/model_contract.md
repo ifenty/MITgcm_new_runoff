@@ -89,9 +89,17 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
 - `runoff(i,j,bi,bj) = Σ_s flux_s(t) · frac_{s,c} / rA(i,j,bi,bj)`, in m/s. This
   fills the existing exf `runoff` field, so `exf_mapfields.F` and everything
   downstream are unchanged.
-- If temperature is present, `runoftemp` is filled with the source temperature,
-  which is not split. Where several sources feed one cell, the temperature
-  combination is flux-weighted (proposed; confirm in RUNOFF-001).
+- **Several sources feeding one cell** (owner decision, 2026-09-29): combine
+  them in a physically consistent way.
+  - Volume fluxes add: `F_c = Σ_s flux_s·frac_{s,c}`.
+  - Temperature, salinity and every tracer are **flux-weighted means**:
+    `X_c = Σ_s flux_s·frac_{s,c}·X_s / F_c`. This conserves heat content, salt
+    and tracer mass.
+  - A source without a temperature contributes at the surface water temperature.
+  - A source without a salinity contributes S = 0.
+  - Where `F_c = 0`, `X_c` is unused.
+- If temperature is present, `runoftemp` is filled with the cell's flux-weighted
+  temperature.
 - Salinity and tracers have no existing exf runoff field. Their plumbing is open
   (RUNOFF-008).
 
