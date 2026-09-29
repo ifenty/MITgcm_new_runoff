@@ -62,9 +62,6 @@ def config(root, ready=True):
         for argv in commands:
             require(isinstance(argv, list) and argv and all(isinstance(s, str) and s for s in argv), f'{suite}: invalid command')
     require(isinstance(cfg.get('toolchain_commands'), list), 'toolchain_commands must be argv arrays')
-    if 'python' in cfg:
-        require(isinstance(cfg['python'], str) and Path(cfg['python']).is_absolute() and Path(cfg['python']).is_file(),
-                'python must be the absolute path of an existing interpreter')
     for argv in cfg['toolchain_commands']:
         require(isinstance(argv, list) and argv and all(isinstance(s, str) and s for s in argv), 'invalid toolchain command')
     require(type(cfg.get('command_timeout_seconds')) in (int, float) and math.isfinite(cfg['command_timeout_seconds']) and cfg['command_timeout_seconds'] > 0,
@@ -197,17 +194,8 @@ def source_signature(root, scientific=False):
                    for p in inventory_paths(root, cfg, scientific)})
 
 
-def interpreter(cfg=None):
-    """The project's configured Python (`python` in project.json), else the caller's.
-
-    Without the key, `{python}` means whichever interpreter runs the ESX tool, so
-    running a tool with a system python3 silently probes the wrong environment.
-    """
-    return (cfg or {}).get('python') or sys.executable
-
-
-def command(argv, cfg=None):
-    return [interpreter(cfg) if s == '{python}' else s for s in argv]
+def command(argv):
+    return [sys.executable if s == '{python}' else s for s in argv]
 
 
 def missing_inputs(root, cfg):
@@ -224,14 +212,9 @@ def environment(root, cfg):
     """
     probes = []
     for argv in cfg['toolchain_commands']:
-        run = subprocess.run(command(argv, cfg), cwd=root, capture_output=True, text=True, timeout=30)
-        if run.returncode != 0:
-            hint = ('' if cfg.get('python') else
-                    ' `{python}` resolved to the interpreter running this tool; run ESX tools with the project '
-                    'environment (see esx/project_profile.md) or set "python" in esx/project.json.')
-            raise ValueError(f'toolchain probe failed: {argv} using {interpreter(cfg)} (exit {run.returncode}): '
-                             + (run.stderr.strip().splitlines() or [''])[-1][:300] + hint)
-        probes.append({'argv': command(argv, cfg), 'stdout': run.stdout, 'stderr': run.stderr})
+        run = subprocess.run(command(argv), cwd=root, capture_output=True, text=True, timeout=30)
+        require(run.returncode == 0, f'toolchain probe failed: {argv}')
+        probes.append({'argv': command(argv), 'stdout': run.stdout, 'stderr': run.stderr})
     missing = missing_inputs(root, cfg)
     if missing:
         raise ValueError(f'{len(missing)} of {len(cfg["external_inputs"])} configured external_inputs are '
@@ -242,7 +225,7 @@ def environment(root, cfg):
         path = Path(name) if Path(name).is_absolute() else root / name
         inputs[str(path.resolve())] = file_hash(path)
     return {'python': sys.version, 'python_optimization': sys.flags.optimize,
-            'executable': interpreter(cfg), 'platform': platform.platform(),
+            'executable': sys.executable, 'platform': platform.platform(),
             'variables': {k: os.environ.get(k) for k in cfg['environment_variables']},
             'tools': probes, 'inputs': inputs}
 

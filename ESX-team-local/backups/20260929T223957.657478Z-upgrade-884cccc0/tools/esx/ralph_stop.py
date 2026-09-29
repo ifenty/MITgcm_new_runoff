@@ -156,35 +156,14 @@ def loop_lock(root):
 
 
 MAX_DISPATCH_WAITS = 3
-NATIVE_STALE_SECONDS = 6 * 3600
 
 
-def native_in_flight(root, session_id):
-    """True when this session launched an Agent-tool subagent that has not stopped.
+def dispatch_in_flight(root):
+    """True when a retained CLI turn for the active issue holds its turn lock.
 
-    Markers come from the SubagentStart hook and are removed by SubagentStop. A
-    marker older than NATIVE_STALE_SECONDS (a lost stop event) is ignored.
+    Native Agent-tool subagents are invisible here (the kit observes only their
+    stop), so they still consume an iteration if Arch ends a turn to wait.
     """
-    folder = Path(root) / 'devel-loop/loop_state/native_inflight'
-    if not session_id or not folder.is_dir():
-        return False
-    import time as _time
-    for marker in folder.glob('*.json'):
-        try:
-            value = json.loads(marker.read_text())
-            fresh = _time.time() - marker.stat().st_mtime < NATIVE_STALE_SECONDS
-        except (OSError, ValueError):
-            continue
-        if fresh and isinstance(value, dict) and value.get('session_id') == session_id:
-            return True
-    return False
-
-
-def dispatch_in_flight(root, session_id=None):
-    """True when a retained CLI turn for the active issue holds its turn lock,
-    or this session has a native Agent-tool subagent running (SubagentStart)."""
-    if native_in_flight(root, session_id):
-        return True
     import fcntl as _fcntl
     start = Path(root) / 'devel-loop/loop_state/issue-start.json'
     sessions = Path(root) / 'devel-loop/loop_state/agent_runtime/sessions'
@@ -284,7 +263,7 @@ def _step_locked(root, hook_input):
             log(root, 'DEGRADED', n, f'promise check unavailable; continuing within saved budget: {exc}')
     raw_waits = parsed['header_fields'].get('dispatch_waits', '0')
     waits = int(raw_waits) if raw_waits.isdigit() else MAX_DISPATCH_WAITS
-    if waits < MAX_DISPATCH_WAITS and dispatch_in_flight(root, hook_input.get('session_id')):
+    if waits < MAX_DISPATCH_WAITS and dispatch_in_flight(root):
         # Waiting on a live retained dispatch is not an iteration of work
         # (TEAM-LOOP-WAIT-BURNS-ITERATION-001); a small cap keeps the loop finite.
         header = parsed['header']
@@ -295,7 +274,7 @@ def _step_locked(root, hook_input):
         from project import atomic_bytes
         atomic_bytes(state, ('---\n' + header + '\n---\n' + parsed['prompt']).encode())
         log(root, 'WAIT', n, f'retained dispatch in flight; iteration not advanced ({waits + 1}/{MAX_DISPATCH_WAITS})')
-        return {'decision': 'block', 'reason': 'An ESX dispatch (retained session or Agent-tool subagent) is still running. '
+        return {'decision': 'block', 'reason': 'A retained ESX dispatch for the active issue is still running. '
                 'Wait in-turn for its completion record (do not end the turn to wait), then continue with '
                 'tools/esx/loop_gate.py --next.',
                 'systemMessage': f'ESX iteration {n} held: dispatch in flight ({waits + 1}/{MAX_DISPATCH_WAITS}).'}

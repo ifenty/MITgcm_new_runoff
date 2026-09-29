@@ -723,22 +723,8 @@ def check_done(root, start, done, records, candidate_signature):
 
 
 def parse_ref(value):
-    """Accept the JSON reference printed by an evidence-producing command, inline or
-    as the path of a file holding it (relative paths resolve from the current directory)."""
-    text = value.strip()
-    if not text.startswith('{'):
-        path = Path(text)
-        if not path.is_file():
-            raise argparse.ArgumentTypeError('expected an inline {"path","sha256"} JSON reference '
-                                             'or the path of a file containing one: ' + text)
-        text = path.read_text()
-    try:
-        ref = json.loads(text)
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError('reference is not valid JSON: ' + str(exc)) from exc
-    if not (isinstance(ref, dict) and isinstance(ref.get('path'), str) and isinstance(ref.get('sha256'), str)):
-        raise argparse.ArgumentTypeError('reference must be a JSON object with "path" and "sha256"')
-    return ref
+    """Accept the JSON reference printed by an evidence-producing command."""
+    return json.loads(value)
 
 
 def parse_receipt(value):

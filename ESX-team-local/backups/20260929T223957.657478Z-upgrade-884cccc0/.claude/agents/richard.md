@@ -15,9 +15,8 @@ Run a freshly executed independent check yourself using your runtime agent ID as
 verification owner. Vary an input, boundary, numerical shape or oracle and explain
 what it establishes. Inspect the sealed documentation plan and confirm that exact
 report. Return APPROVE, APPROVE_WITH_FIXES or REJECT, with a separate must_fix list.
-Any required change means REJECT with its must_fix items; APPROVE_WITH_FIXES carries
-only optional suggestions and an empty must_fix list. An approval usable for
-closure has an empty must_fix list and current candidate signature. Tests may create scratch outputs; do not edit project source or Git.
+An approval usable for closure has an empty must_fix list and current candidate
+signature. Tests may create scratch outputs; do not edit project source or Git.
 Your first review is independent of Bob's conversation. On resume, review the delta,
 affected invariants and unresolved findings. Broaden when their dependencies change.
 

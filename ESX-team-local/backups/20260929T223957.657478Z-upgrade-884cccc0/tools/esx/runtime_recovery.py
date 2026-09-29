@@ -17,37 +17,6 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
-def permission_rules(settings):
-    """Per-rule digests (never values) so allow-list additions are recognizable."""
-    permissions = settings.get('permissions')
-    permissions = permissions if isinstance(permissions, dict) else {}
-    rules = {kind: sorted({digest(r) for r in permissions.get(kind) or [] if isinstance(r, str)})
-             for kind in ('allow', 'ask', 'deny')}
-    rules['rest'] = digest({k: v for k, v in permissions.items() if k not in ('allow', 'ask', 'deny')})
-    return rules
-
-
-EMPTY_RULES = permission_rules({})
-
-
-def allow_additions_only(before, after, delta):
-    """True when every change only adds allow rules; removals, ask/deny, modes and hooks do not qualify."""
-    if not delta:
-        return False
-    left, right = before.get('effective_manifest') or {}, after.get('effective_manifest') or {}
-    for change in delta:
-        if change.get('settings_fields') != ['permissions']:
-            return False
-        a, b = left.get(change['field'], {}), right.get(change['field'], {})
-        old = a.get('permission_rules') or (EMPTY_RULES if 'permissions' not in a.get('fields', {}) else None)
-        new = b.get('permission_rules')
-        if old is None or new is None:
-            return False  # a pre-1.5.3 manifest cannot show what changed
-        if any(old[k] != new[k] for k in ('ask', 'deny', 'rest')) or not set(old['allow']) <= set(new['allow']):
-            return False
-    return True
-
-
 def manifest(paths):
     """Measure per-file canonical configuration and hashed top-level settings."""
     result = {}
@@ -58,8 +27,7 @@ def manifest(paths):
             if not isinstance(value, dict):
                 raise ValueError('settings must contain a JSON object: ' + str(path))
             result[str(path)] = {'kind': 'settings', 'canonical': digest(value),
-                                 'fields': {key: digest(v) for key, v in value.items()},
-                                 'permission_rules': permission_rules(value)}
+                                 'fields': {key: digest(v) for key, v in value.items()}}
         else:
             result[str(path)] = {'kind': 'instruction', 'canonical':
                 hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None}
@@ -94,9 +62,6 @@ def compatibility(root, state, contract, assessment=None):
         return {'classification': 'unchanged', 'changes': []}
     if before and before.get('effective_manifest') and not delta:
         return {'classification': 'formatting_only', 'changes': []}
-    if before and allow_additions_only(before, contract, delta):
-        # The owner widened the allow list; nothing an existing turn relied on changed.
-        return {'classification': 'permission_additions', 'changes': delta}
     expected = dict(session_id=state['session_id'], issue_id=state['issue_id'],
                     before=state['runtime_fingerprint'], after=contract['sha256'], changes=delta)
     if assessment is None:

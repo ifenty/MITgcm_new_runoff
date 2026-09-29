@@ -22,10 +22,3 @@ Report a concise outcome, decisive evidence, files changed, remaining findings,
 and the structured footer. Do not reconstruct a previous agent's conversation
 when the runtime can resume the assigned instance. Read devel-loop/execution.md
 for retained sessions, issue-scoped peer messages and exact completion imports.
-
-Headless roles have no one to approve a prompt, so a Bash call the project's allow
-list does not cover is denied. Keep each command to allow-listed programs joined by
-`;`, `&&`, `||` or `|`. Create scripts and data files with Write and run them as
-`python3 path/to/script.py`; write outputs from the program, not with `> file`,
-`>> file` or heredocs (`cat > f <<EOF`), and avoid `$(...)`, backticks and `&`.
-Discarding output (`2>&1`, `>/dev/null`) is fine. Report any denial you hit.

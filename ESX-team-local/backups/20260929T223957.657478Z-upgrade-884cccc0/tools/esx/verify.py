@@ -143,10 +143,10 @@ def _run(root, suite, owner, fresh, override):
     interrupted = timed_out = None
     with path.open('w') as stream:
         for argv in commands:
-            stream.write('COMMAND ' + json.dumps(command(argv, cfg)) + '\n')
+            stream.write('COMMAND ' + json.dumps(command(argv)) + '\n')
             stream.flush()
             try:
-                rc = execute(command(argv, cfg), root, stream, cfg.get('command_timeout_seconds', 3600))
+                rc = execute(command(argv), root, stream, cfg.get('command_timeout_seconds', 3600))
             except (OSError, subprocess.TimeoutExpired) as exc:
                 stream.write(str(exc) + '\n')
                 rc, timed_out = 124, True

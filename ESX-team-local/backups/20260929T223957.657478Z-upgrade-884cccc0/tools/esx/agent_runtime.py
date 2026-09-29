@@ -296,18 +296,6 @@ def permission_denials(path):
             if e.get("type") == "system" and e.get("subtype") == "permission_denied"]
 
 
-APPROVAL_ERROR = 'approval needs a successful executed check and no must_fix findings'
-
-
-def changes_requested(role, footer, errors):
-    """A well-formed Richard review whose only defect is approving with must_fix items."""
-    if role != 'richard' or not isinstance(footer, dict) or not footer.get('must_fix'):
-        return None
-    if footer.get('verdict') not in ('APPROVE', 'APPROVE_WITH_FIXES'):
-        return None
-    return 'changes_requested' if errors and all(APPROVAL_ERROR in e for e in errors) else None
-
-
 def recover_orphans(root, session, reason):
     """Close turns that never wrote record.json (a crashed dispatcher), anywhere in history.
 
@@ -725,7 +713,6 @@ def _run_turn(root, *, role=None, issue=None, prompt, session=None, correction_r
         if settlement.get('provider_overshoot'):
             error = 'provider exceeded reservation; further launches are blocked'
         footer = footer_from(message)
-        review_outcome = None
         status = "completed"
         if error or code != 0 or not result or result.get("is_error"):
             status = "failed"
@@ -743,12 +730,6 @@ def _run_turn(root, *, role=None, issue=None, prompt, session=None, correction_r
                                              ((review or {}).get('maintenance') or {}).get('documentation'))
             if errors:
                 status, error = 'incomplete', '; '.join(errors)
-                review_outcome = changes_requested(role, footer, errors)
-                if review_outcome:
-                    error = ('review requested changes: verdict ' + str(footer.get('verdict')) + ' with '
-                             + str(len(footer['must_fix'])) + ' must_fix item(s) is recorded as a non-approving '
-                             'review, not a dispatch failure; relay must_fix to Bob. (Contract: required changes '
-                             'use REJECT with must_fix; APPROVE_WITH_FIXES needs an empty must_fix.)')
         (turn / "report.md").write_text(message)
         turn_source_signature = None
         if source_signature is not None:
@@ -764,7 +745,6 @@ def _run_turn(root, *, role=None, issue=None, prompt, session=None, correction_r
                   "issue_id": issue, "correction_round": correction_round,
                   "iteration_timestamp": iteration_timestamp,
                   "status": status, "error": error, "footer": footer,
-                  "review_outcome": review_outcome,
                   "execution_phase": ("launch_failed" if code is None else
                       "approved" if status == "completed" and (footer or {}).get("verdict") in ("APPROVE", "APPROVE_WITH_FIXES")
                       else "completed" if status == "completed" else "executed_" + status),
@@ -1042,8 +1022,6 @@ def main(argv=None):
                     kwargs["transition"] = json.loads(input_file(root, args.transition).read_text())
             value = run_turn(root, **kwargs)
         print(json.dumps(value, indent=2))
-        if value.get("review_outcome") == "changes_requested":
-            return 0  # a review that asks for changes is a successful dispatch
         return 0 if value.get("status") not in ("failed", "incomplete", "missing") else 1
     except (ValueError, OSError, subprocess.SubprocessError) as exc:
         print(json.dumps({"status": "failed", "error": str(exc)}), file=sys.stderr)

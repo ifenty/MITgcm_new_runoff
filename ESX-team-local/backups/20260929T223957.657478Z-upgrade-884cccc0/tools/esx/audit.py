@@ -118,10 +118,6 @@ def check(root, overrides=None):
         matches = [hook for entry in entries for hook in entry.get('hooks', [])
                    if 'tools/esx/hooks.py' in hook.get('command', '') and marker in hook.get('command', '')]
         require(len(matches) == 1, f'{event}: install exactly one ESX {marker} hook')
-    # Optional since 1.5.3 (upgrades preserve settings.json): at most one, if present.
-    starts = [hook for entry in settings.get('hooks', {}).get('SubagentStart', []) for hook in entry.get('hooks', [])
-              if 'tools/esx/hooks.py' in hook.get('command', '') and 'subagent-start' in hook.get('command', '')]
-    require(len(starts) <= 1, 'SubagentStart: install at most one ESX subagent-start hook')
     from check_ralph_hook import check as check_stop
     check_stop(root)
     findings = audit_code_map(root)['findings'] + audit_instructions(root, cfg=cfg)['findings'] + audit_mirrors(root, cfg)['findings']
