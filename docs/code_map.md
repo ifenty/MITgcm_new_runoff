@@ -27,6 +27,7 @@ from live source.
 | Template: sparse NetCDF read and point-to-tile | `MITgcm/pkg/profiles/profiles_init_fixed.F::<module>` (`PROFILES_INIT_FIXED`), `MITgcm/pkg/obsfit/obsfit_init_fixed.F::<module>` (`OBSFIT_INIT_FIXED`), `MITgcm/pkg/obsfit/obsfit_read_obs.F::<module>` (`OBSFIT_READ_OBS`) | NetCDF points → per-tile lists | reference only |
 | **Planned:** sparse file init | new exf routine(s) (RUNOFF-004) | NetCDF static arrays → per-tile `(i,j,k,bi,bj)`, fractions, global fraction check | lab_sea / cs32 sparse cases |
 | **Planned:** sparse record read and apply | new exf routine(s) (RUNOFF-004, RUNOFF-005) | `flux(time,source)` records → `runoff` (m/s) = Σ flux·frac/rA | dense-vs-sparse oracles |
+| Runoff file schema and integrity checker | `MITgcm/utils/python/MITgcmutils/MITgcmutils/runoff/__init__.py::<module>` (package `MITgcmutils.runoff`; planned modules `schema`, `check` (CLI), `example`, RUNOFF-001) | sparse runoff NetCDF → rule findings (E/W/I), exit code | [runoff schema](runoff_schema.md) §9; planned `tests/runoff/` |
 | **Planned:** converter | `tools/runoff/` (RUNOFF-002) | dense MITgcm binary + grid → sparse NetCDF | pytest round-trip (planned) |
 | 3D (later) | `MITgcm/model/src/apply_forcing.F::<module>` (`APPLY_FORCING_T`), `MITgcm/model/src/integr_continuity.F::<module>` (`INTEGR_CONTINUITY`) | `addMass`, `temp_addMass`, `salt_addMass` | out of phase 1 scope |
 

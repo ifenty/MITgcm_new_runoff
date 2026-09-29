@@ -36,6 +36,9 @@ For each source:
     **by name**; an unmatched name is a fatal error
 - **Precision:** data may be stored as `float32`.
 
+The exact layout (names, types, units, metadata and integrity rules) is
+[the runoff schema](runoff_schema.md).
+
 The file is built offline for one specific grid and its coastline. Moving runoff
 onto ocean cells is done offline. The Python converter
 (dense MITgcm binary → NetCDF) produces files for the oracle tests.

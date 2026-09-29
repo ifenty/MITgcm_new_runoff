@@ -4,7 +4,8 @@
   "project_name": "MITgcm new runoff: sparse source-based runoff forcing in pkg/exf",
   "mission": "Add a sparse, source-based NetCDF runoff input (volume flux in m3/s, optional temperature, salinity and passive tracers, split among ocean cells by fractions) to MITgcm pkg/exf, working on all grids with per-tile storage, reproducing dense-runoffFile results, for an eventual upstream PR.",
   "source_paths": [
-    "MITgcm/pkg/exf"
+    "MITgcm/pkg/exf",
+    "MITgcm/utils/python/MITgcmutils/MITgcmutils/runoff"
   ],
   "test_paths": [
     "tests"
@@ -83,6 +84,13 @@
     ],
     "focused": [
       [
+        "{python}",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/runoff"
+      ],
+      [
         "tests/mitgcm_oracle.sh",
         "lab_sea",
         "input"
@@ -94,6 +102,13 @@
       ]
     ],
     "scientific": [
+      [
+        "{python}",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/runoff"
+      ],
       [
         "tests/mitgcm_oracle.sh",
         "global_ocean.cs32x15",

@@ -26,24 +26,40 @@ A closed dependency prompts reconsideration; it does not automatically unblock w
 <Hypothesis, bounded change/inquiry, independent oracle, tolerances and completion criteria>
 ```
 
-## UNRESOLVED: Define the sparse-runoff NetCDF schema
+## UNRESOLVED: Define the sparse-runoff NetCDF schema and its integrity checker
 
 **Date Identified**: 2026-09-29T21:30:00Z
 **Status**: Unresolved
 **UUID**: RUNOFF-001
-**Anchors**: docs/model_contract.md#input-one-netcdf-file-per-run-phase-1; tests/mitgcm_oracle.sh::<module>
+**Anchors**: docs/runoff_schema.md::<module>; MITgcm/utils/python/MITgcmutils/MITgcmutils/runoff/__init__.py::<module>
 
 ### Issue or research question
-The file layout isn't defined. Needed: dimension and variable names, the id string type, the (source, cell) pair layout, CF time attributes, the attribute names for timing settings that `data.exf` can override, and a grid-identity record so the model refuses a mismatched file. (Decided 2026-09-29: several sources in one cell add volumes, and T, S and tracers are flux-weighted; a missing flux value stops the run; chunking is whatever is most efficient for per-record reads, chosen by measurement.)
+The file layout isn't defined. Needed:
+- dimension and variable names, the id string type and the (source, cell) pair layout
+- CF time attributes and the timing attributes that `data.exf` can override
+- a grid-identity record, so the model refuses a file built for another grid
+- (owner, 2026-09-29) room for scientists' metadata the model ignores: several
+  names per source (aliases), per-source notes, provenance
+- (owner) a defined list of allowed units for each variable
+- (owner) a Python integrity checker that validates a runoff file
+
+Decided 2026-09-29: several sources in one cell add volumes, and T, S and tracers are flux-weighted; a missing flux value stops the run; chunking is whatever is most efficient for per-record reads, chosen by measurement.
 
 ### Evidence
-Design decisions from the project owner, recorded in `esx/project_profile.md` and `docs/model_contract.md` (2026-09-29). No code exists yet.
+Design decisions from the project owner, recorded in `esx/project_profile.md` and `docs/model_contract.md` (2026-09-29). Proposed schema 1.0 drafted in `docs/runoff_schema.md` (2026-09-29): an indexed-ragged target table, an alias table, a char-array `source_id` readable by Fortran-77 NetCDF, CF/ACDD metadata, allowed units and calendars, and checker rules S/G/I/A/T/M/D/U/P/X/R. No code exists yet.
 
 ### Scientific or engineering impact
-Every later issue (converter, reader, timing) depends on this layout. It also sets I/O cost at the 2 km scale.
+Every later issue (converter, reader, timing) depends on this layout. It also sets I/O cost at the 2 km scale. The checker is the first line of defense against silently dropped fractions and mismatched grids.
 
 ### Proposed action and acceptance
-Write the schema into `docs/model_contract.md`, with an example `ncdump -h` and one tiny example file. Acceptance: the owner approves the schema. It must support per-record contiguous reads (`time` slowest) and yearly `_YYYY` files.
+- Implement `MITgcmutils.runoff` in the fork: schema constants, `check` (library and CLI) and `example.write_example()`.
+- Add pytest tests in `tests/runoff/`: the tiny example passes, and each error rule fires on a targeted corruption.
+- Insert the example `ncdump -h` into the schema doc, and link the schema from `docs/model_contract.md`.
+
+Acceptance:
+- tests pass
+- independent review of schema and checker (correctness and MITgcm fit)
+- the owner approves schema 1.0
 
 ## BLOCKED: Python dense-to-sparse runoff converter
 
