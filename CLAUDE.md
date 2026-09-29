@@ -14,5 +14,5 @@ It must work on every MITgcm grid type, and each tile keeps only its own target 
 
 - `draft_plan.md` holds the design decisions, open questions, the NetCDF spec, relevant MITgcm code, build and test commands, and the verification oracles. Read it before starting work, and update it when decisions change.
 - `MITgcm/` is a clone of the user's fork `ifenty/MITgcm` (branch `new_runoff`); all code changes go there. Commit to `new_runoff` often and push it to `origin` (the fork). Never commit or push to MITgcm/MITgcm (`upstream`), or to the fork's `master`. `../MITgcm` is an unrelated upstream checkout; don't edit it.
-- The project folder is its own git repo for `CLAUDE.md`, `draft_plan.md` and other plan files (it ignores `MITgcm/`). Commit plan changes there.
+- The project folder is its own git repo for `CLAUDE.md`, `draft_plan.md` and other plan files (it ignores `MITgcm/`). Commit plan changes there and push to `origin main` (github.com/ifenty/MITgcm_new_runoff).
 - The work will go upstream eventually, so follow MITgcm's contribution rules from the start. `draft_plan.md` section 7 has a summary.

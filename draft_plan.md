@@ -37,7 +37,7 @@ Early design stage. The goal and requirements below come from the project owner.
 
 - `MITgcm/` is a clone of the user's fork `ifenty/MITgcm`, made with `gh repo clone`, on the branch `new_runoff`. `origin` is the fork; `upstream` is MITgcm/MITgcm, with its push URL set to `no_push`. At clone time, fork `master` was even with upstream plus 3 docs-only commits (`doc/outp_pkgs/outp_pkgs.rst`).
 - **Commit to `new_runoff` often, and push to `origin new_runoff` (the fork) after each commit.** Never commit or push to MITgcm/MITgcm. Don't commit to the fork's `master` either; it should stay a copy of upstream.
-- The project folder (`MITgcm_new_runoff/`) is its own local git repo holding `CLAUDE.md`, `draft_plan.md` and other plan files. It ignores `MITgcm/`, which is a separate repo. Commit plan changes there too.
+- The project folder (`MITgcm_new_runoff/`) is its own local git repo holding `CLAUDE.md`, `draft_plan.md` and other plan files. It ignores `MITgcm/`, which is a separate repo. Commit plan changes there too, and push to `origin main` (github.com/ifenty/MITgcm_new_runoff).
 - `../MITgcm` (sibling of this project) is an unrelated upstream checkout; don't edit it.
 - `MITgcm/verification/{docker_build,experiment_compile,experiment_run_no_compile,compare_results,docker_run_interactive}.sh` are symlinks into `../MITgcm_verification_docker`. They, and the `build_docker*/` and `output_docker*/` directories, are listed in `.git/info/exclude`, so they never show up in commits.
 
