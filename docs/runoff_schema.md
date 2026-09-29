@@ -76,14 +76,15 @@ marks what MITgcm reads.
 - `time` values are finite, strictly increasing and have no fill values.
 - Bounds satisfy `start ≤ time ≤ end` and `start < end`. They are contiguous:
   each record's end equals the next record's start.
-- `calendar` is one of the [allowed calendars](#63-calendars), and it must match
+- `calendar` is one of the [allowed calendars](#63-calendars), matched ignoring
+  letter case as in CF, and it must match
   the MITgcm `cal` package setting (checked by the model at init).
 
 ### 3.2 Source table (dimension `source`)
 
 | Variable | Dims | Type | Req. | Model | Meaning |
 |---|---|---|---|---|---|
-| `source_id` | `(source, id_strlen)` | char | R | yes | Unique, stable identifier used in model error messages. ASCII letters, digits, `_`, `-` and `.`; starts with a letter or digit; no spaces; at most 64 characters. Ids must be unique, and unique ignoring case. |
+| `source_id` | `(source, id_strlen)` | char | R | yes | Unique, stable identifier used in model error messages. ASCII letters, digits, `_`, `-` and `.`; starts with a letter or digit; no spaces; at most 64 characters. Trailing NUL or blank padding in the char array is not part of the id. Ids must be unique, and unique ignoring case. |
 | `source_name` | `(source)` | string | O | no | Primary human-readable name, e.g. `"Jakobshavn Isbræ"`. UTF-8. |
 | `source_type` | `(source)` | string | O | no | Kind of source. Recommended values: `river`, `glacier`, `ice_sheet_basin`, `iceberg_melt`, `groundwater`, `other`. Other values give a warning, not an error. |
 | `source_lon` | `(source)` | float/double | O | no | Longitude of the mouth or terminus, `units = "degrees_east"`. |
@@ -213,8 +214,8 @@ case-sensitive except `celsius` / `Celsius`.
 | `time`, `time_bnds` | `<days\|hours\|minutes\|seconds> since <YYYY-MM-DD>[ hh:mm[:ss]][Z]`; `T` as the date/time separator is also accepted |
 | `target_fraction` | `1` |
 | `target_cell_area` | `m2`, `m^2` |
-| `*_lon` | `degrees_east`, `degree_east`, `degree_E`, `degrees_E` |
-| `*_lat` | `degrees_north`, `degree_north`, `degree_N`, `degrees_N` |
+| `source_lon`, `target_lon` | `degrees_east`, `degree_east`, `degree_E`, `degrees_E` |
+| `source_lat`, `target_lat` | `degrees_north`, `degree_north`, `degree_N`, `degrees_N` |
 | `target_source`, `target_cell`, `target_level`, `alias_source` | no `units` attribute (they are indices) |
 
 ### 6.3 Calendars
@@ -237,9 +238,17 @@ that the calendar is written explicitly.
 | `monthly` | any | consecutive calendar months, each record's bounds are exactly its month |
 | `yearly` | any | consecutive calendar years, bounds are exactly the year |
 
-- **Climatology** (`mitgcm_time_repeat = "annual"`): the records cover exactly
+- **Time tolerance:** "equal" for times in this section and in §3.1 (contiguous
+  bounds, fixed spacing, month and year edges, yearly-file limits) means within
+  1e-3 s.
+- **Climatology** (`mitgcm_time_repeat = "annual"`): `time_bnds` is required, even
+  for a single record, and the records cover exactly
   one year (e.g. 12 monthly or 365 daily records). The year number in `time` is
   nominal.
+- **Checking several files (`X01`):** files are compared in the order given, so
+  pass them in time order. Their calendars must map to the same MITgcm calendar
+  (§6.3). "Identical tables" means every variable without a `time` dimension,
+  including ones you added.
 - **Yearly files:** a name ending `_YYYY.nc` holds the records of model year
   `YYYY`, following exf `useExfYearlyFields`. Every record's bounds lie within
   that year. All yearly files of one data set have identical source, alias and
@@ -265,7 +274,7 @@ time series per update, so:
 
 ## 9. Integrity rules and the checker
 
-`check_runoff_file` (package `MITgcmutils.runoff`, see RUNOFF-001) validates one
+`check_files` (module `MITgcmutils.runoff.check`, also a command-line tool) validates one
 file, or a set of yearly files together:
 
 ```sh
@@ -286,8 +295,8 @@ misbehave), **W** a warning (suspicious but usable), **I** information.
 |---|---|---|
 | `S01` | E | File is NetCDF-4 (`NETCDF4` or `NETCDF4_CLASSIC`). |
 | `S02` | E | `mitgcm_runoff_schema_version` is present and supported. |
-| `S03` | E | Required dimensions exist; `nv` is 2; the id string dimension is ≤ 64. |
-| `S04` | E | Required variables exist with the documented dimensions and type class. |
+| `S03` | E | Required dimensions exist; `time`, `source` and `target` are non-empty; `nv` is 2; the id string dimension is ≤ 64. |
+| `S04` | E | Required variables exist, and every schema variable present has its documented dimensions and type class. `time` and `time_bnds` must be double. |
 | `S05` | E | No undefined `runoff_*` variable, and no undefined `mitgcm_*` global attribute. |
 | `S06` | I | Recommended ACDD / CF global attributes are missing. |
 | `G01` | E | `mitgcm_grid_nx` and `mitgcm_grid_ny` are positive integers. |
@@ -314,12 +323,13 @@ misbehave), **W** a warning (suspicious but usable), **I** information.
 | `D01` | E | Each time series has dims `(time, source)`, a float type and allowed `units`. |
 | `D02` | E | `runoff_flux` has no fill, NaN or Inf values. |
 | `D03` | W | `runoff_flux` is negative somewhere. |
-| `D04` | W | `runoff_temperature` is outside `[-2.5, 40]` °C. |
+| `D04` | W | `runoff_temperature` is outside `[-2.5, 40]` °C (fill and NaN values excluded). |
 | `D05` | E | `runoff_salinity` has missing or negative values. |
 | `D06` | W | `runoff_salinity` is above 45. |
 | `D07` | E | A `runoff_ptracer_<NAME>` has an invalid name, empty `units`, or missing values. |
 | `D08` | W | A ptracer concentration is negative. |
-| `U01` | E | A `units` attribute is not in the allowed list (§6). |
+| `D09` | E | `runoff_temperature` contains ±Inf. Inf is never a missing-value marker. |
+| `U01` | E | A schema variable listed in §6 has a missing or disallowed `units` attribute. Index variables must not have one. |
 | `P01` | W | A time-series chunk spans more than one record along `time`. |
 | `X01` | E | Across several files: identical source, alias and target tables, grid attributes and variable set; records in time order with no overlap. |
 | `R01` | E | (`--grid-dir`) A target cell is on land (`hFacC` = 0 at level 1). |
@@ -331,7 +341,126 @@ misbehave), **W** a warning (suspicious but usable), **I** information.
 A tiny example with 3 sources, 5 targets, 2 aliases and 4 daily records is
 generated by `MITgcmutils.runoff.example.write_example()`.
 
-<!-- ncdump -h of the generated example is inserted here when the checker lands. -->
+```text
+netcdf runoff_example {
+dimensions:
+	time = UNLIMITED ; // (4 currently)
+	source = 3 ;
+	target = 5 ;
+	alias = 2 ;
+	nv = 2 ;
+	id_strlen = 18 ;
+variables:
+	double time(time) ;
+		time:long_name = "time" ;
+		time:standard_name = "time" ;
+		time:axis = "T" ;
+		time:units = "days since 2000-01-01 00:00:00" ;
+		time:calendar = "standard" ;
+		time:bounds = "time_bnds" ;
+	double time_bnds(time, nv) ;
+		time_bnds:long_name = "start and end of the interval each record covers" ;
+	char source_id(source, id_strlen) ;
+		source_id:long_name = "source identifier" ;
+		source_id:cf_role = "timeseries_id" ;
+	string source_name(source) ;
+		source_name:long_name = "primary name of the source" ;
+	string source_type(source) ;
+		source_type:long_name = "kind of source" ;
+		source_type:comment = "river, glacier, ice_sheet_basin, iceberg_melt, groundwater or other" ;
+	double source_lon(source) ;
+		source_lon:long_name = "longitude of the mouth or terminus" ;
+		source_lon:standard_name = "longitude" ;
+		source_lon:units = "degrees_east" ;
+	double source_lat(source) ;
+		source_lat:long_name = "latitude of the mouth or terminus" ;
+		source_lat:standard_name = "latitude" ;
+		source_lat:units = "degrees_north" ;
+	string source_notes(source) ;
+		source_notes:long_name = "notes on provenance and processing" ;
+	string source_reference(source) ;
+		source_reference:long_name = "citation, DOI or URL of the source data" ;
+	int alias_source(alias) ;
+		alias_source:long_name = "index of the source this alias names" ;
+		alias_source:instance_dimension = "source" ;
+	string alias_name(alias) ;
+		alias_name:long_name = "alternative name or catalogue id" ;
+	string alias_scheme(alias) ;
+		alias_scheme:long_name = "naming system or authority of the alias" ;
+	int target_source(target) ;
+		target_source:long_name = "index of the source feeding this target" ;
+		target_source:instance_dimension = "source" ;
+	int target_cell(target) ;
+		target_cell:long_name = "0-based global cell index" ;
+		target_cell:comment = "cell = i + mitgcm_grid_nx * j, 0-based (i, j) in the global 2D layout of a dense runoffFile" ;
+	double target_fraction(target) ;
+		target_fraction:long_name = "share of the source flux sent to this cell" ;
+		target_fraction:units = "1" ;
+	int target_level(target) ;
+		target_level:long_name = "1-based model level k (schema 1.0: always 1)" ;
+	double target_cell_area(target) ;
+		target_cell_area:long_name = "horizontal cell area rA" ;
+		target_cell_area:units = "m2" ;
+	double target_lon(target) ;
+		target_lon:long_name = "cell-center longitude" ;
+		target_lon:standard_name = "longitude" ;
+		target_lon:units = "degrees_east" ;
+	double target_lat(target) ;
+		target_lat:long_name = "cell-center latitude" ;
+		target_lat:standard_name = "latitude" ;
+		target_lat:units = "degrees_north" ;
+	float runoff_flux(time, source) ;
+		runoff_flux:long_name = "runoff volume flux of the source" ;
+		runoff_flux:units = "m3 s-1" ;
+		runoff_flux:comment = "split among targets by target_fraction" ;
+	float runoff_temperature(time, source) ;
+		runoff_temperature:_FillValue = 9.96921e+36f ;
+		runoff_temperature:long_name = "runoff temperature" ;
+		runoff_temperature:units = "degC" ;
+		runoff_temperature:comment = "fill value: enters at the surface water temperature" ;
+	float runoff_salinity(time, source) ;
+		runoff_salinity:long_name = "runoff salinity" ;
+		runoff_salinity:units = "g kg-1" ;
+	float runoff_ptracer_dye(time, source) ;
+		runoff_ptracer_dye:long_name = "concentration of ptracer dye in runoff" ;
+		runoff_ptracer_dye:units = "mol m-3" ;
+
+// global attributes:
+		:Conventions = "CF-1.11, ACDD-1.3" ;
+		:mitgcm_runoff_schema_version = "1.0" ;
+		:mitgcm_grid_nx = 20 ;
+		:mitgcm_grid_ny = 16 ;
+		:mitgcm_grid_name = "lab_sea" ;
+		:mitgcm_grid_description = "lat-lon 2-degree grid, 20 x 16 cells from 280E, 46N; cell = i + 20*j (0-based)" ;
+		:mitgcm_time_sampling = "fixed" ;
+		:mitgcm_time_period = 86400. ;
+		:mitgcm_time_repeat = "none" ;
+		:title = "Example sparse runoff file for the lab_sea layout" ;
+		:summary = "Three synthetic sources (two rivers, one glacier) feeding five ocean cells, four daily records." ;
+		:institution = "MITgcm" ;
+		:source = "MITgcmutils.runoff.example.write_example" ;
+		:history = "created by MITgcmutils.runoff.example.write_example" ;
+		:references = "docs/runoff_schema.md (sparse runoff schema 1.0)" ;
+		:comment = "Synthetic values for testing and documentation only." ;
+		:creator_name = "MITgcm developers" ;
+		:creator_email = "mitgcm-support@mitgcm.org" ;
+		:creator_url = "https://mitgcm.org" ;
+		:contributor_name = "MITgcm developers" ;
+		:contributor_role = "author" ;
+		:project = "MITgcm sparse runoff" ;
+		:license = "MIT" ;
+		:date_created = "2026-09-29T00:00:00Z" ;
+		:date_modified = "2026-09-29T00:00:00Z" ;
+		:product_version = "1.0" ;
+		:keywords = "runoff, river discharge, glacier discharge, MITgcm" ;
+		:time_coverage_start = "2000-01-01T00:00:00Z" ;
+		:time_coverage_end = "2000-01-05T00:00:00Z" ;
+		:geospatial_lat_min = 53. ;
+		:geospatial_lat_max = 69. ;
+		:geospatial_lon_min = 291. ;
+		:geospatial_lon_max = 309. ;
+}
+```
 
 ## 11. Writing a file with xarray
 
