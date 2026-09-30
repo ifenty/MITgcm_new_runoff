@@ -55,8 +55,8 @@
       "ownership": "framework"
     },
     ".claude/settings.json": {
-      "baseline_sha256": "1928391f9bfccf3af72eb05f37b901cb8b9955512e3e5022197939f1f60129ba",
-      "installed_sha256": "1928391f9bfccf3af72eb05f37b901cb8b9955512e3e5022197939f1f60129ba",
+      "baseline_sha256": "bd66805efe2441b79c303ac4e2941e0a2fc8e1d5dde082d66ec3b87c1953f2ba",
+      "installed_sha256": "bd66805efe2441b79c303ac4e2941e0a2fc8e1d5dde082d66ec3b87c1953f2ba",
       "master_sha256": "cc3d5654f5bfd8d92417fbb874c9c07e437e8d1a340c251a39d04ceabfcd836a",
       "ownership": "project"
     },
@@ -241,8 +241,8 @@
       "ownership": "project"
     },
     "esx/project.json": {
-      "baseline_sha256": "8a58a65f832e47f3783f969f769ff2f0fb74e67c0ebcb0918bb1b6b034cbe826",
-      "installed_sha256": "8a58a65f832e47f3783f969f769ff2f0fb74e67c0ebcb0918bb1b6b034cbe826",
+      "baseline_sha256": "57b6732b247bd31bdb847064cb6d74cf4976e322d37d916de3a236f477081a0b",
+      "installed_sha256": "57b6732b247bd31bdb847064cb6d74cf4976e322d37d916de3a236f477081a0b",
       "master_sha256": "3648f4e8a8f3c98855795c8bd50b05ca41eb51ee971339b708df47a7abed3489",
       "ownership": "project"
     },
@@ -562,6 +562,6 @@
   "master_fingerprint": "95bf28bfdc180ae5ddd8accbcb5b637156b94034b52a952779a7c01d9d11e5c1",
   "master_repository": "external-master",
   "schema_version": 1,
-  "updated_at": "2026-09-29T22:39:57.734035+00:00",
-  "version": "1.5.3"
+  "updated_at": "2026-09-30T04:20:40.542493+00:00",
+  "version": "1.5.4"
 }
