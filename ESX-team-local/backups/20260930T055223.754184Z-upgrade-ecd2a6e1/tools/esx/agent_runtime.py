@@ -682,16 +682,13 @@ def _run_turn(root, *, role=None, issue=None, prompt, session=None, correction_r
             if review is not None:
                 assignment["review"] = review
                 state["review_packet"] = review
-            # A file, not an argv string: Linux caps one argument at 131,072 bytes
-            # (MAX_ARG_STRLEN) and the review context grows with each round.
-            (turn / "assignment.txt").write_text(
-                "ESX dispatcher assignment: " + json.dumps(assignment)
-                + "\nUse agent_id as your verification owner and peer sender identity. "
-                "Use the supplied issue, iteration and correction round in your footer. "
-                "The baseline identifies issue maintenance evidence. Follow the bounded brief, "
-                "record your own orientation and preserve project permissions. "
-                "Read supplied review references and confirm the exact sealed documentation in your footer.")
-            command += ["--append-system-prompt-file", str(turn / "assignment.txt")]
+            command += ["--append-system-prompt",
+                        "ESX dispatcher assignment: " + json.dumps(assignment)
+                        + "\nUse agent_id as your verification owner and peer sender identity. "
+                        "Use the supplied issue, iteration and correction round in your footer. "
+                        "The baseline identifies issue maintenance evidence. Follow the bounded brief, "
+                        "record your own orientation and preserve project permissions. "
+                        "Read supplied review references and confirm the exact sealed documentation in your footer."]
         if transition_result and transition_result["classification"] == "assessed":
             prompt = "Assessed runtime transition for this retained session. Read changed instruction files before acting: " + json.dumps(transition_result) + "\n" + prompt
         (turn / "prompt.txt").write_text(prompt)

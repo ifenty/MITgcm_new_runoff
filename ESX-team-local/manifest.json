@@ -73,9 +73,9 @@
       "ownership": "framework"
     },
     ".claude/skills/esx-common/SKILL.md": {
-      "baseline_sha256": "0e442f22fa7c5857e71c5d81bd8e53a2aeb4de0aaf6a6ead1afd9ec5332bdfa8",
-      "installed_sha256": "0e442f22fa7c5857e71c5d81bd8e53a2aeb4de0aaf6a6ead1afd9ec5332bdfa8",
-      "master_sha256": "0e442f22fa7c5857e71c5d81bd8e53a2aeb4de0aaf6a6ead1afd9ec5332bdfa8",
+      "baseline_sha256": "4e52d84664737dad1d5cc93ceef19d8c5dd75d1876e3c00e5e3e3fd261f677cf",
+      "installed_sha256": "4e52d84664737dad1d5cc93ceef19d8c5dd75d1876e3c00e5e3e3fd261f677cf",
+      "master_sha256": "4e52d84664737dad1d5cc93ceef19d8c5dd75d1876e3c00e5e3e3fd261f677cf",
       "ownership": "framework"
     },
     ".claude/skills/esx-instruction-audit/SKILL.md": {
@@ -217,8 +217,8 @@
       "ownership": "framework"
     },
     "docs/code_map.md": {
-      "baseline_sha256": "9a45afff6536e7d131246286d2485c776549ac6aff2e84f30f52bb5336115862",
-      "installed_sha256": "9a45afff6536e7d131246286d2485c776549ac6aff2e84f30f52bb5336115862",
+      "baseline_sha256": "1588143f17c12c559d98a8910ea08a7068f07fd1a9c12be2df9acaa437c7e610",
+      "installed_sha256": "1588143f17c12c559d98a8910ea08a7068f07fd1a9c12be2df9acaa437c7e610",
       "master_sha256": "e8c17e527b26c6761e11689c9c006cd55f9d6228af924e00a7f36088c6bd4a95",
       "ownership": "project"
     },
@@ -235,14 +235,14 @@
       "ownership": "framework"
     },
     "docs/model_contract.md": {
-      "baseline_sha256": "22d939c795eab3eedf63258aeb1e71ca0e97dedd2c38c0b4281d62ae8020b489",
-      "installed_sha256": "22d939c795eab3eedf63258aeb1e71ca0e97dedd2c38c0b4281d62ae8020b489",
+      "baseline_sha256": "b432a73ec16a49dc9f2583d0db5bc6fc11d94a0e4e8018f6a3d1598185f58c9d",
+      "installed_sha256": "b432a73ec16a49dc9f2583d0db5bc6fc11d94a0e4e8018f6a3d1598185f58c9d",
       "master_sha256": "fc16bd9971a00938ef5e63224c599da29d6a28f446eae36cf86b4ebabfe10933",
       "ownership": "project"
     },
     "esx/project.json": {
-      "baseline_sha256": "57b6732b247bd31bdb847064cb6d74cf4976e322d37d916de3a236f477081a0b",
-      "installed_sha256": "57b6732b247bd31bdb847064cb6d74cf4976e322d37d916de3a236f477081a0b",
+      "baseline_sha256": "950392834f9773e4643c4469bdb45e1f6533df18de52c70378305ab59fcc665c",
+      "installed_sha256": "950392834f9773e4643c4469bdb45e1f6533df18de52c70378305ab59fcc665c",
       "master_sha256": "3648f4e8a8f3c98855795c8bd50b05ca41eb51ee971339b708df47a7abed3489",
       "ownership": "project"
     },
@@ -343,15 +343,15 @@
       "ownership": "project"
     },
     "open_issues.md": {
-      "baseline_sha256": "3dd196d0755504e1d749152a1aa28abe2e4751c5f467c98ba935a470ff7aeeff",
-      "installed_sha256": "3dd196d0755504e1d749152a1aa28abe2e4751c5f467c98ba935a470ff7aeeff",
+      "baseline_sha256": "be64bcc39c1fb8cb5abaea5f6c1dda8063335caad7bd4f0700fc6e07a006c4a0",
+      "installed_sha256": "be64bcc39c1fb8cb5abaea5f6c1dda8063335caad7bd4f0700fc6e07a006c4a0",
       "master_sha256": "6faa9cc0821ef684c47301a55053d37d72cf4115b51e50c208da30a2d3a83a7c",
       "ownership": "project"
     },
     "tools/esx/agent_runtime.py": {
-      "baseline_sha256": "5f534ae00cf67c7bd198c0ddc596ef4561d0f058c19c00805c32bd550991fb78",
-      "installed_sha256": "5f534ae00cf67c7bd198c0ddc596ef4561d0f058c19c00805c32bd550991fb78",
-      "master_sha256": "5f534ae00cf67c7bd198c0ddc596ef4561d0f058c19c00805c32bd550991fb78",
+      "baseline_sha256": "73f11651c7e2d2f59d044857cac972ceadbcfb85be072966c13a53086fc42ccf",
+      "installed_sha256": "73f11651c7e2d2f59d044857cac972ceadbcfb85be072966c13a53086fc42ccf",
+      "master_sha256": "73f11651c7e2d2f59d044857cac972ceadbcfb85be072966c13a53086fc42ccf",
       "ownership": "framework"
     },
     "tools/esx/audit.py": {
@@ -559,9 +559,9 @@
       "ownership": "framework"
     }
   },
-  "master_fingerprint": "e5d75f5d5754a4ec9334fbe683245bb36ca6eba33cb69ab26c5db7fb58eae04c",
+  "master_fingerprint": "7dd7e47687ab1fe8f82ff2ef16ddd4e81dc306b57b66448f3a63d0f312f1913b",
   "master_repository": "external-master",
   "schema_version": 1,
-  "updated_at": "2026-09-30T04:52:34.958302+00:00",
-  "version": "1.5.5"
+  "updated_at": "2026-09-30T05:52:23.796679+00:00",
+  "version": "1.5.6"
 }

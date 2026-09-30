@@ -25,12 +25,7 @@ for retained sessions, issue-scoped peer messages and exact completion imports.
 
 Headless roles have no one to approve a prompt, so a Bash call the project's allow
 list does not cover is denied. Keep each command to allow-listed programs joined by
-`;`, `&&`, `||` or `|`. Write outputs from the program, not with `> file`, `>> file`
-or heredocs (`cat > f <<EOF`), and avoid `$(...)`, backticks, `&`, shell variables
-and leading `NAME=value` assignments. Discarding output (`2>&1`, `>/dev/null`) is
-fine. Roles with Write (Bob, Prober) create scripts and data with Write and run
-`python3 path/to/script.py`. Read-only roles (Richard, Scout, Auditor, Bisector)
-have no Write by design: run witness code inline as `python3 -c "..."` (multi-line
-is fine; quoted `<`, `>` and `&` are data), and have that program write any scratch
-artifact under `devel-loop/loop_state/scratch/<your agent id>/`, never into project
-source. Report any denial you hit.
+`;`, `&&`, `||` or `|`. Create scripts and data files with Write and run them as
+`python3 path/to/script.py`; write outputs from the program, not with `> file`,
+`>> file` or heredocs (`cat > f <<EOF`), and avoid `$(...)`, backticks and `&`.
+Discarding output (`2>&1`, `>/dev/null`) is fine. Report any denial you hit.
