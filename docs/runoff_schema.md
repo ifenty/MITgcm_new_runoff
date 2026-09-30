@@ -44,6 +44,14 @@ MITgcm reads only a small, fixed set of variables and attributes, marked
   or `alias_`, or are `time` / `time_bnds`. Model-control global attributes start
   with `mitgcm_`. A variable named `runoff_*` that the schema doesn't define is an
   error, because it is almost always a typo, like `runoff_temprature`.
+- **No packing.** Variables the model reads (`time`, `time_bnds`, `source_id`,
+  `target_*` and `runoff_*`) must not carry `scale_factor` or `add_offset`. The
+  Fortran reader reads stored values directly and does not unpack them.
+- **Text attributes the model reads** are `char` (NC_CHAR) attributes, not
+  `string` (NC_STRING) ones, because `NF_GET_ATT_TEXT` can't read NC_STRING. They
+  are the `mitgcm_*` text attributes, `time:units`, `time:calendar`, and the
+  `units` of every `runoff_*` variable. netCDF4-python and xarray write Python
+  `str` attributes as `char` by default.
 - **Strings the model reads** (`source_id` only) are fixed-length `char` arrays,
   because the Fortran-77 NetCDF interface can't read variable-length strings. All
   other string variables may be either `char` arrays or variable-length `string`.
@@ -68,7 +76,7 @@ marks what MITgcm reads.
 
 | Variable | Dims | Type | Req. | Model | Meaning |
 |---|---|---|---|---|---|
-| `time` | `(time)` | double | R | yes | The time each record represents, in CF form: `units = "<unit> since <date>"`, `calendar = "…"`, `axis = "T"`, `standard_name = "time"`, `bounds = "time_bnds"`. For averaged data this is normally the **midpoint** of the averaging interval, as in exf dense forcing. Linear interpolation runs between these times. |
+| `time` | `(time)` | double | R | yes | The time each record represents, in CF form: `units = "<unit> since <date>"`, `calendar = "…"`, `axis = "T"`, `standard_name = "time"`, `bounds = "time_bnds"`. For averaged data this is normally the **midpoint** of the averaging interval, as in exf dense forcing. Linear interpolation runs between these times. For `monthly` and `yearly` sampling, `time` must be the midpoint of its bounds, because exf interpolates between calendar-month (or year) midpoints and ignores the file's times (§7). |
 | `time_bnds` | `(time, nv)` | double | R if more than one record | yes (hold-exact) | Start and end of the interval each record covers. Hold-exact mode applies each record over `[start, end)`. Same units and calendar as `time`. |
 
 **Time rules:**
@@ -235,8 +243,8 @@ that the calendar is written explicitly.
 |---|---|---|
 | `constant` | 1 | exactly one record |
 | `fixed` | any | spacing of `time` equals `mitgcm_time_period` everywhere |
-| `monthly` | any | consecutive calendar months, each record's bounds are exactly its month |
-| `yearly` | any | consecutive calendar years, bounds are exactly the year |
+| `monthly` | any | consecutive calendar months, each record's bounds are exactly its month, and `time` is the midpoint of its bounds |
+| `yearly` | any | consecutive calendar years, bounds are exactly the year, and `time` is the midpoint of its bounds |
 
 - **Time tolerance:** "equal" for times in this section and in §3.1 (contiguous
   bounds, fixed spacing, month and year edges, yearly-file limits) means within
@@ -253,6 +261,11 @@ that the calendar is written explicitly.
   `YYYY`, following exf `useExfYearlyFields`. Every record's bounds lie within
   that year. All yearly files of one data set have identical source, alias and
   target tables and the same variables. Only the records differ.
+- **Yearly files form one continuous series.** exf uses a single start offset
+  for every year, so each file's first record must start at the same offset
+  from 1 January of its year, and each file's first bound must equal the
+  previous file's last bound. A gap or a shifted file would silently shift
+  every record.
 
 ## 8. Storage, chunking and compression
 
@@ -299,6 +312,8 @@ misbehave), **W** a warning (suspicious but usable), **I** information.
 | `S04` | E | Required variables exist, and every schema variable present has its documented dimensions and type class. `time` and `time_bnds` must be double. |
 | `S05` | E | No undefined `runoff_*` variable, and no undefined `mitgcm_*` global attribute. |
 | `S06` | I | Recommended ACDD / CF global attributes are missing. |
+| `S07` | E | A model-read variable carries `scale_factor` or `add_offset`. |
+| `S08` | E | A model-read text attribute (§1) is NC_STRING instead of `char`. |
 | `G01` | E | `mitgcm_grid_nx` and `mitgcm_grid_ny` are positive integers. |
 | `I01` | E | `source_id` values are non-empty, allowed characters, ≤ 64 characters. |
 | `I02` | E | `source_id` values are unique. |
@@ -328,10 +343,10 @@ misbehave), **W** a warning (suspicious but usable), **I** information.
 | `D06` | W | `runoff_salinity` is above 45. |
 | `D07` | E | A `runoff_ptracer_<NAME>` has an invalid name, empty `units`, or missing values. |
 | `D08` | W | A ptracer concentration is negative. |
-| `D09` | E | `runoff_temperature` contains ±Inf. Inf is never a missing-value marker. |
+| `D09` | E | `runoff_temperature` contains ±Inf, or its `_FillValue` or `missing_value` is ±Inf. Inf is never a missing-value marker. |
 | `U01` | E | A schema variable listed in §6 has a missing or disallowed `units` attribute. Index variables must not have one. |
 | `P01` | W | A time-series chunk spans more than one record along `time`. |
-| `X01` | E | Across several files: identical source, alias and target tables, grid attributes and variable set; records in time order with no overlap. |
+| `X01` | E | Across several files: identical source, alias and target tables, grid attributes and variable set; records in time order, with each file's first bound equal to the previous file's last bound; yearly files share one within-year start offset. |
 | `R01` | E | (`--grid-dir`) A target cell is on land (`hFacC` = 0 at level 1). |
 | `R02` | E | (`--grid-dir`) `target_cell_area` differs from `RAC` by more than 1e-4 relative. |
 | `R03` | W | (`--grid-dir`) `target_lon` / `target_lat` differ from `XC` / `YC` by more than 1e-3 degrees. |
@@ -464,25 +479,52 @@ variables:
 
 ## 11. Writing a file with xarray
 
+This complete recipe writes a minimal valid file; the test suite runs this
+exact code block and checks its output. Add the optional variables and
+attributes you need.
+
 ```python
-import numpy as np, xarray as xr
+import numpy as np
+import xarray as xr
+
+# Four daily records for two sources on the cs32 layout (192 x 32).
+nt = 4
+start = np.datetime64("2000-01-01")
+t0 = start + np.arange(nt) * np.timedelta64(1, "D")           # interval starts
+bnds = np.stack([t0, t0 + np.timedelta64(1, "D")], axis=1)     # [start, end)
+time = t0 + np.timedelta64(12, "h")                            # midpoints
+flux = np.array([[1200.0, 35.0]] * nt, dtype="f4")             # m3 s-1
 
 ds = xr.Dataset(
     {
+        "time_bnds": (("time", "nv"), bnds),
         "source_id": ("source", np.array(["amazon", "jakobshavn"])),
         "source_name": ("source", np.array(["Amazon", "Jakobshavn Isbræ"], dtype=object)),
         "target_source": ("target", np.array([0, 0, 1], dtype="i4")),
         "target_cell": ("target", np.array([1203, 1204, 5711], dtype="i4")),
-        "target_fraction": ("target", np.array([0.6, 0.4, 1.0])),
-        "runoff_flux": (("time", "source"), flux.astype("f4")),  # m3 s-1
-        # time and time_bnds as datetime64: xarray writes CF units/calendar
+        "target_fraction": ("target", np.array([0.6, 0.4, 1.0]), {"units": "1"}),
+        "runoff_flux": (("time", "source"), flux, {"units": "m3 s-1"}),
     },
-    attrs={"mitgcm_runoff_schema_version": "1.0", "mitgcm_grid_nx": 192,
-           "mitgcm_grid_ny": 32, "mitgcm_time_sampling": "fixed",
-           "mitgcm_time_period": 86400.0},
+    coords={"time": ("time", time, {"bounds": "time_bnds", "axis": "T",
+                                    "standard_name": "time"})},
+    attrs={"Conventions": "CF-1.11, ACDD-1.3",
+           "mitgcm_runoff_schema_version": "1.0",
+           "mitgcm_grid_nx": np.int32(192), "mitgcm_grid_ny": np.int32(32),
+           "mitgcm_time_sampling": "fixed", "mitgcm_time_period": 86400.0},
 )
-ds["source_id"].encoding.update(dtype="S1", char_dim_name="id_strlen")  # char array for Fortran
-ds["runoff_flux"].encoding.update(chunksizes=(1, ds.sizes["source"]), zlib=True, complevel=2)
+
+# time and time_bnds: double, with the same units and calendar
+cf_time = {"units": "days since 2000-01-01 00:00:00", "calendar": "standard",
+           "dtype": "float64"}
+ds["time"].encoding.update(cf_time)
+ds["time_bnds"].encoding.update(cf_time)
+# source_id as a char array, which the Fortran-77 NetCDF API can read
+ds["source_id"].encoding.update(dtype="S1", char_dim_name="id_strlen")
+# one record per chunk; no fill value on the flux (missing flux is an error)
+ds["runoff_flux"].encoding.update(chunksizes=(1, ds.sizes["source"]),
+                                  zlib=True, complevel=2, _FillValue=None)
+for name in ("target_fraction", "time", "time_bnds"):
+    ds[name].encoding["_FillValue"] = None
 ds.to_netcdf("runoff.nc", format="NETCDF4", unlimited_dims=["time"])
 ```
 
