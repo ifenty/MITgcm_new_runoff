@@ -111,11 +111,10 @@ Acceptance: the test passes upstream, and the local copy matches upstream after 
 ### Resolution evidence (2026-09-29)
 Fixed upstream in ESX-Team 1.5.1 (tolerant stream parser, recorded failed turn on dispatcher error, `permission_denials` in turn records). The local guard was reverted to 1.5.0 bytes before the upgrade. `agent_runtime.py recover` closed orphaned turn 8154aebc in Bob session a7e61b17. Awaiting formal closeout.
 
-## BLOCKED: Python dense-to-sparse runoff converter
+## UNRESOLVED: Python dense-to-sparse runoff converter
 
 **Date Identified**: 2026-09-29T21:30:00Z
-**Status**: Blocked
-**Blocked-By**: RUNOFF-001 — the converter must write the approved schema
+**Status**: Unresolved
 **UUID**: RUNOFF-002
 **Anchors**: docs/model_contract.md#input-one-netcdf-file-per-run-phase-1; docs/verification_matrix.md#scientific-qualification-matrix
 
@@ -130,6 +129,8 @@ This produces the oracle inputs for every sparse-vs-dense test.
 
 ### Proposed action and acceptance
 Put the tool under `tools/runoff/`, with pytest tests under `tests/`. Acceptance: the dense→sparse→dense round-trip reproduces cs32 `core_rnof_1_cs32.bin` and the lab_sea dense files exactly (`float32`), fractions sum to 1 within 1e-6, and no source targets a land cell.
+
+Unblocked 2026-09-30: RUNOFF-001 closed; schema 1.0 is approved (docs/runoff_schema.md), and MITgcmutils.runoff.check validates files against it.
 
 ## UNRESOLVED: lab_sea dense-path runoff reference runs
 
@@ -150,11 +151,10 @@ These are the lat-lon oracles for sparse = dense on all timing modes. Without th
 ### Proposed action and acceptance
 Keep a generator script (`gendata.py`) in each input directory. Runs span ≥ 1 month, and cross Dec → Jan where needed. Save `results/output.<X>.txt`. Acceptance: each case runs to `Execution ended Normally` single-process and with `-mpi 2`, and the MPI output matches the single-process output to the digit threshold. Commit to the fork `new_runoff`.
 
-## BLOCKED: exf sparse runoff reader, per-tile lists and global fraction check
+## UNRESOLVED: exf sparse runoff reader, per-tile lists and global fraction check
 
 **Date Identified**: 2026-09-29T21:30:00Z
-**Status**: Blocked
-**Blocked-By**: RUNOFF-001 — the reader must implement the approved schema
+**Status**: Unresolved
 **UUID**: RUNOFF-004
 **Anchors**: MITgcm/pkg/exf/exf_readparms.F::<module>; MITgcm/pkg/profiles/profiles_init_fixed.F::<module>
 
@@ -169,6 +169,8 @@ This is the core feature. Mapping errors silently lose mass.
 
 ### Proposed action and acceptance
 Acceptance: the lab_sea constant case, sparse = dense, single-process and MPI; the negative tests stop with the expected messages; all no-change experiments pass.
+
+Unblocked 2026-09-30: RUNOFF-001 closed; schema 1.0 is approved (docs/runoff_schema.md), and MITgcmutils.runoff.check validates files against it.
 
 ## BLOCKED: Sparse runoff time handling: interpolation, hold-exact, repeat cycles, yearly files
 
