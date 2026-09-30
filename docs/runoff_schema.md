@@ -130,7 +130,7 @@ Rows may appear in any order. Sorting by source and then cell is recommended.
 | Variable | Dims | Type | Req. | Model | Meaning |
 |---|---|---|---|---|---|
 | `target_source` | `(target)` | int | R | yes | 0-based index into `source`. Attribute `instance_dimension = "source"`. |
-| `target_cell` | `(target)` | int (int32 recommended; int64 allowed) | R | yes | 0-based global cell index, `cell = i + mitgcm_grid_nx · j`. `(i, j)` are the 0-based positions in the global 2D array that MITgcm reads from a dense `runoffFile` on this grid, with `i` varying fastest (Fortran order). For exch2 cubed-sphere and LLC grids this is the exch2 global I/O map (`exch2_global_Nx` × `exch2_global_Ny`, the `Global Map (IO)` line in STDOUT), not the `SIZE.h` Nx × Ny, and it depends on `W2_mapIO`: e.g. 192 × 32 for cs32 with `W2_mapIO = -1` and 90 × 1170 for LLC90 with `W2_mapIO = 1`. The index does not depend on the tile size or MPI layout. |
+| `target_cell` | `(target)` | int (int32 recommended; int64 allowed) | R | yes | 0-based global cell index, `cell = i + mitgcm_grid_nx · j`. `(i, j)` are the 0-based positions in the global 2D array that MITgcm reads from a dense `runoffFile` on this grid, with `i` varying fastest (Fortran order). For exch2 cubed-sphere and LLC grids this is the exch2 global I/O map (`exch2_global_Nx` × `exch2_global_Ny`, the `Global Map (IO)` line that exch2 writes to `w2_tile_topology.NNNN.log`, or to STDOUT when `W2_printMsg = 0`), not the `SIZE.h` Nx × Ny, and it depends on `W2_mapIO`: e.g. 192 × 32 for cs32 with `W2_mapIO = -1` and 90 × 1170 for LLC90 with `W2_mapIO = 1`. The index does not depend on the tile size or MPI layout. |
 | `target_fraction` | `(target)` | double (float allowed) | R | yes | Share of the source's flux sent to this cell, `units = "1"`. Each value is in `[0, 1]`. Each source's fractions sum to 1 within 1e-6. |
 | `target_level` | `(target)` | int | O | yes | Reserved for 3D runoff: the 1-based model level `k`. Schema 1.0 allows only 1. If absent, every target is level 1. |
 | `target_cell_area` | `(target)` | double (float allowed) | O | yes | Horizontal area `rA` of the cell on the grid the file was built for, in m². If present, the model compares it with its own `rA` (relative tolerance 1e-4) to catch a file built for a different grid. |
@@ -151,7 +151,7 @@ record is one contiguous hyperslab. Stored as float (32-bit) or double.
 | `runoff_flux` | R | yes | volume flux, [m³ s⁻¹](#61-physical-variables) | **Not allowed.** Any fill value, NaN or Inf is an error, and the model stops. |
 | `runoff_temperature` | O | yes | [°C](#61-physical-variables) | Allowed: the source enters at the surface water temperature, the same as when the variable is absent. |
 | `runoff_salinity` | O | yes | [model salinity units](#61-physical-variables) | Not allowed. If the variable is absent, salinity is 0. |
-| `runoff_ptracer_<NAME>` | O | yes | any non-empty string, which must equal the ptracer's own concentration units | Not allowed. |
+| `runoff_ptracer_<NAME>` | O | yes | any non-empty ASCII string, which must equal the ptracer's own concentration units | Not allowed. |
 
 - **Passive tracers:** `<NAME>` must equal a `PTRACERS_names` entry in
   `data.ptracers` (letters, digits and `_`). Any number is allowed. A tracer with
@@ -223,7 +223,7 @@ case-sensitive except `celsius` / `Celsius`.
 | `runoff_flux` | `m3 s-1` | `m3/s`, `m^3/s`, `m3.s-1`, `m^3 s^-1`, `m3 s^-1` | Volume flux only. Mass fluxes (`kg s-1`, `Gt yr-1`) and `Sv` or `km3 yr-1` are rejected. Convert them first. |
 | `runoff_temperature` | `degC` | `degree_Celsius`, `degrees_Celsius`, `degree_C`, `degrees_C`, `celsius`, `Celsius` | Kelvin is rejected. |
 | `runoff_salinity` | `g kg-1` | `g/kg`, `1e-3`, `0.001`, `psu`, `PSU`, `PSS-78`, `1` | The value is used as-is in the model's salinity units (practical or absolute, depending on the equation of state). The unit records which one. |
-| `runoff_ptracer_<NAME>` | — | any non-empty string | Must match the ptracer's own units. Not checked. |
+| `runoff_ptracer_<NAME>` | — | any non-empty ASCII string (`S08`) | Must match the ptracer's own units; the match itself is not checked. |
 
 ### 6.2 Coordinates and table variables
 
