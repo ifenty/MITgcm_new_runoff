@@ -5,7 +5,8 @@
   "mission": "Add a sparse, source-based NetCDF runoff input (volume flux in m3/s, optional temperature, salinity and passive tracers, split among ocean cells by fractions) to MITgcm pkg/exf, working on all grids with per-tile storage, reproducing dense-runoffFile results, for an eventual upstream PR.",
   "source_paths": [
     "MITgcm/pkg/exf",
-    "MITgcm/utils/python/MITgcmutils/MITgcmutils/runoff"
+    "MITgcm/utils/python/MITgcmutils/MITgcmutils/runoff",
+    "MITgcm/utils/python/MITgcmutils/setup.py"
   ],
   "test_paths": [
     "tests"

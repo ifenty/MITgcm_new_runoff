@@ -219,6 +219,8 @@ Read only the bracketing records each step, applying CF time with `data.exf` ove
 ### Evidence
 Design decisions from the project owner, recorded in `esx/project_profile.md` and `docs/model_contract.md` (2026-09-29). No code exists yet.
 
+From RUNOFF-001 review round 1 (Richard B, 2026-09-30): schema 1.0 puts yearly-sampled `time` at the bound midpoint. exf has no yearly-midpoint mode (exf_set_fld.F branches only on fldPeriod -12, -1 or > 0), and Gregorian year midpoints are 365.5/365.5/365 days apart, so the reader must map yearly records itself. A fixed fldPeriod works only on noleap and 360_day calendars.
+
 ### Scientific or engineering impact
 Time off-by-one errors at month or year boundaries are a main scientific risk.
 

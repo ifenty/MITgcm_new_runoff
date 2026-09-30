@@ -8,15 +8,20 @@ representative input classes: constant, monthly (leap February), 360_day
 annual climatology, float32 fractions, the fraction-sum tolerance edge,
 int64 cells, yearly file pairs, NETCDF3, JSON output, grid checks from
 MITgcm-style grid files (tiled and global), and the streamed large case.
+The ``python -m MITgcmutils.runoff.check`` entry point and the package's lazy
+exports are exercised in subprocesses, with RuntimeWarning as an error.
 """
 
 import json
+import os
+import subprocess
+import sys
 
 import netCDF4
 import numpy as np
 import pytest
 
-from conftest import LAND_CELL, NX, modify, write_mds
+from conftest import LAND_CELL, NX, ROOT, modify, write_mds
 from MITgcmutils.runoff import check_files, schema, write_example
 from MITgcmutils.runoff.check import MAX_DETAILS, main
 from MITgcmutils.runoff.example import lab_sea_grid
@@ -41,6 +46,33 @@ def unwritten_record(ds):
     """Append record 4 to time and time_bnds only; the series stay unwritten."""
     ds.variables["time"][4] = 4.5
     ds.variables["time_bnds"][4, :] = [4.0, 5.0]
+
+
+def packed(var, raw, **attrs):
+    """Store ``raw`` values in ``var`` as-is, then add packing attributes."""
+    def fn(ds):
+        v = ds.variables[var]
+        v.set_auto_maskandscale(False)
+        if raw is not None:
+            v[:] = raw
+        for k, a in attrs.items():
+            v.setncattr(k, a)
+    return fn
+
+
+def _clim_360(start_month=1):
+    """A 12-month annual climatology on the 360_day calendar from ``start_month``."""
+    e = (np.arange(13) + start_month - 1) * 30.0
+    return dict(time=0.5 * (e[:-1] + e[1:]), time_bnds=np.stack([e[:-1], e[1:]], 1),
+                time_sampling="monthly", time_period=None, calendar="360_day",
+                time_repeat="annual")
+
+
+def ncstring(var, att, value):
+    """Rewrite one attribute as NC_STRING (``var=None``: global)."""
+    def fn(ds):
+        (ds if var is None else ds.variables[var]).setncattr_string(att, value)
+    return fn
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +145,20 @@ E_CASES = [
         id="S05-var"),
     pytest.param("S05", dict(global_attrs={"mitgcm_grid_nz": 15}), None, "runoff.nc",
                  id="S05-attr"),
+    pytest.param("S07", None, packed("runoff_flux", None, scale_factor=np.float32(0.001)),
+                 "runoff.nc", id="S07-flux-scale_factor"),
+    pytest.param("S07", None, packed("target_fraction", None, add_offset=0.0),
+                 "runoff.nc", id="S07-fraction-add_offset"),
+    pytest.param("S07", None, packed("time", None, scale_factor=1.0), "runoff.nc",
+                 id="S07-time-scale_factor"),
+    pytest.param("S08", None, ncstring(None, "mitgcm_time_sampling", "fixed"),
+                 "runoff.nc", id="S08-global-mitgcm"),
+    pytest.param("S08", None, ncstring("time", "units", "days since 2000-01-01 00:00:00"),
+                 "runoff.nc", id="S08-time-units"),
+    pytest.param("S08", None, ncstring("time", "calendar", "standard"), "runoff.nc",
+                 id="S08-time-calendar"),
+    pytest.param("S08", None, ncstring("runoff_flux", "units", "m3 s-1"), "runoff.nc",
+                 id="S08-runoff-units"),
     pytest.param("G01", dict(global_attrs={"mitgcm_grid_nx": 0}), None, "runoff.nc",
                  id="G01-zero"),
     pytest.param("G01", dict(global_attrs={"mitgcm_grid_ny": 16.0}), None, "runoff.nc",
@@ -224,6 +270,24 @@ E_CASES = [
                  "runoff.nc", id="U01-units-on-alias-index"),
     pytest.param("D09", None, setv("runoff_temperature", (2, 0), -np.inf), "runoff.nc",
                  id="D09-inf-temperature"),
+    pytest.param("D09", dict(fill_values={"runoff_temperature": np.inf}), None,
+                 "runoff.nc", id="D09-inf-fillvalue"),
+    pytest.param("D09", dict(var_attrs={"runoff_temperature": {
+        "missing_value": np.float32(-np.inf)}}), None, "runoff.nc",
+        id="D09-inf-missing_value"),
+    pytest.param("M05", dict(time=[0.0, 31.0, 60.0, 91.0],
+                             time_bnds=[[0, 31], [31, 60], [60, 91], [91, 121]],
+                             time_sampling="monthly", time_period=None), None,
+                 "runoff.nc", id="M05-monthly-time-at-month-start"),
+    # Correction round 2
+    pytest.param("S08", None, lambda ds: ds.variables["runoff_ptracer_dye"].setncattr(
+        "units", b"\xc2\xb5mol kg-1"), "runoff.nc", id="S08-non-ascii-units"),
+    pytest.param("S09", None, lambda ds: ds.variables["runoff_flux"].setncattr(
+        "missing_value", "-999"), "runoff.nc", id="S09-text-missing_value"),
+    pytest.param("S09", None, lambda ds: ds.variables["runoff_flux"].setncattr(
+        "missing_value", np.float64(-999.0)), "runoff.nc", id="S09-double-on-float"),
+    pytest.param("M05", dict(_clim_360(start_month=7)), None, "runoff.nc",
+                 id="M05-monthly-climatology-from-july"),
 ]
 
 
@@ -417,14 +481,180 @@ def test_user_lon_lat_variables_are_not_unit_checked(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Correction round 1: packing (S07), Inf fill (D09), NC_STRING (S08), midpoints
+
+
+def test_packed_flux_fill_is_found_as_stored(tmp_path):
+    """Richard A witness a4: a packed flux hid its _FillValue (-1e30 * 0.001)."""
+    def fn(ds):
+        v = ds.variables["runoff_flux"]
+        v.set_auto_maskandscale(False)               # store the fill value as-is
+        v[1, 1] = np.float32(-1e30)
+        v.setncattr("scale_factor", np.float32(0.001))
+    p = build(tmp_path, dict(fill_values={"runoff_flux": np.float32(-1e30)}), fn)
+    r = check_files(p)
+    assert {"S07", "D02"} <= r.rules("E"), r.format_text()
+    f, = [x for x in r.errors if x.rule == "D02"]
+    assert (f.source_id, f.record) == ("koksoak", 1)
+    assert "fill/missing value -1.00000002e+30" in f.message   # float32(-1e30)
+    assert main([p]) == 1
+
+
+def test_packed_fraction_is_checked_as_stored(tmp_path):
+    """Richard A witness a5: stored fractions sum to 2, unpacked (x 0.5) to 1."""
+    raw = 2.0 * np.array([0.7, 0.3, 1.0, 0.5, 0.5])
+    p = build(tmp_path, modifier=packed("target_fraction", raw, scale_factor=0.5))
+    r = check_files(p)
+    assert {"S07", "T05"} <= r.rules("E"), r.format_text()
+    assert main([p]) == 1
+
+
+def test_packed_target_lon_is_not_s07(tmp_path):
+    """target_lon is not model-read (schema section 1), so packing it is allowed."""
+    p = build(tmp_path, modifier=packed("target_lon", None, scale_factor=1.0))
+    with netCDF4.Dataset(p) as ds:
+        assert "scale_factor" in ds.variables["target_lon"].ncattrs()
+    r = check_files(p)
+    assert r.findings == [], r.format_text()
+
+
+def test_s08_is_a_warning_when_libnetcdf_cannot_be_loaded(tmp_path, monkeypatch):
+    from MITgcmutils.runoff import check as C
+
+    def broken_loader():
+        raise OSError("libnetcdf not found (test)")
+    monkeypatch.setattr(C, "_libnetcdf", broken_loader)
+    # The NC_STRING attribute would be E S08; unchecked, it is only W S08.
+    p = build(tmp_path, modifier=ncstring(None, "mitgcm_time_sampling", "fixed"))
+    r = check_files(p)
+    assert r.rules("E") == set() and r.rules("W") == {"S08"}, r.format_text()
+    f, = r.warnings
+    assert f.level == "W" and "attribute types not checked" in f.message
+    assert main([p]) == 0
+    assert main([p, "--strict"]) == 1
+
+
+def test_unpacked_user_variable_is_not_s07(tmp_path):
+    p = build(tmp_path, dict(extra_vars={"source_drainage_area": (
+        ("source",), np.array([1.0, 2.0, 3.0]), {"units": "m2", "scale_factor": 1e6})}))
+    assert "S07" not in check_files(p).rules()
+
+
+def test_inf_fillvalue_temperature_is_d09(tmp_path):
+    """Richard A witness d4: _FillValue = +Inf on the temperature, used in the data."""
+    p = build(tmp_path, dict(fill_values={"runoff_temperature": np.inf}))
+    r = check_files(p)
+    assert r.rules("E") == {"D09"}, r.format_text()
+    assert any("_FillValue = [inf] is infinite" in f.message for f in r.errors)
+    assert any(f.source_id == "jakobshavn" and "+Inf" in f.message for f in r.errors)
+    assert main([p]) == 1 and main([p, "--strict"]) == 1
+
+
+@pytest.mark.parametrize("sign", [1, -1], ids=["+inf", "-inf"])
+def test_inf_missing_value_temperature_is_d09(tmp_path, sign):
+    """missing_value = +/-Inf on the temperature is D09 even with no Inf in the data."""
+    def fn(ds):
+        v = ds.variables["runoff_temperature"]
+        v.setncattr("missing_value", v.dtype.type(sign * np.inf))
+    p = build(tmp_path, modifier=fn)
+    r = check_files(p)
+    assert r.rules("E") == {"D09"} and r.warnings == [], r.format_text()
+    f, = r.errors
+    assert f.variable == "runoff_temperature"
+    assert "missing_value = [{0}inf] is infinite".format("-" if sign < 0 else "") in f.message
+    assert main([p]) == 1
+
+
+def test_ncstring_model_attributes_are_s08(tmp_path):
+    """Richard B witness example_ncstring_attrs: NC_STRING time/mitgcm attributes."""
+    def fn(ds):
+        ds.setncattr_string("mitgcm_runoff_schema_version", "1.0")
+        ds.variables["time"].setncattr_string("units", "days since 2000-01-01 00:00:00")
+    p = build(tmp_path, modifier=fn)
+    r = check_files(p)
+    assert r.rules("W") == set(), r.format_text()      # types were checked
+    assert r.rules("E") == {"S08"}, r.format_text()
+    assert {f.variable for f in r.errors} == {None, "time"}
+    assert main([p]) == 1
+
+
+def test_ncstring_on_attributes_the_model_does_not_read_is_fine(tmp_path):
+    def fn(ds):
+        ds.setncattr_string("title", "Example")
+        ds.variables["target_lon"].setncattr_string("long_name", "cell-center longitude")
+    p = build(tmp_path, modifier=fn)
+    r = check_files(p)
+    assert r.findings == [], r.format_text()
+
+
+def test_example_writes_char_attributes(example):
+    from MITgcmutils.runoff.check import _attr_types
+    queries = [(None, a) for a in ("mitgcm_runoff_schema_version", "mitgcm_time_sampling",
+                                   "mitgcm_time_repeat", "mitgcm_grid_name")]
+    queries += [("time", "units"), ("time", "calendar")]
+    queries += [(v, "units") for v in ("runoff_flux", "runoff_temperature",
+                                       "runoff_salinity", "runoff_ptracer_dye")]
+    types = _attr_types(example, queries)
+    assert types is not None and set(types) == set(queries)
+    assert set(types.values()) == {schema.NC_CHAR}
+
+
+def test_monthly_time_must_be_the_midpoint(tmp_path):
+    """Richard B witness monthly_start_of_month: time at the start of each month."""
+    e = np.asarray(MONTH_EDGES_2000, dtype=float)
+    p = build(tmp_path, dict(_monthly(MONTH_EDGES_2000), time=e[:-1] + 0.0))
+    r = check_files(p)
+    assert r.rules("E") == {"M05"}, r.format_text()
+    assert len(r.errors) == 4 and all("midpoint" in f.message for f in r.errors)
+    assert main([p]) == 1
+
+
+def test_yearly_sampling_time_must_be_the_midpoint(tmp_path):
+    edges = [0.0, 366.0, 731.0]                    # 2000 and 2001
+    good = dict(time=[183.0, 548.5], time_bnds=[[0, 366], [366, 731]],
+                time_sampling="yearly", time_period=None)
+    assert check_files(build(tmp_path, good)).findings == []
+    bad = dict(good, time=edges[:-1])
+    r = check_files(build(tmp_path, bad, name="bad.nc"))
+    assert r.rules("E") == {"M05"}, r.format_text()
+
+
+def test_schema_doc_xarray_recipe_writes_a_valid_file(tmp_path, monkeypatch):
+    """The ```python block of schema section 11 runs and passes the checker."""
+    import re
+    pytest.importorskip("xarray")
+    doc = (ROOT / "docs" / "runoff_schema.md").read_text(encoding="utf-8")
+    section = doc.split("## 11. Writing a file with xarray", 1)[1]
+    code = re.search(r"```python\n(.*?)```", section, re.S).group(1)
+    monkeypatch.chdir(tmp_path)
+    exec(compile(code, "docs/runoff_schema.md#11", "exec"), {"__name__": "__recipe__"})
+    r = check_files(str(tmp_path / "runoff.nc"))
+    assert r.errors == [] and r.warnings == [], r.format_text()
+    assert r.rules() <= {"S06"}
+
+
+# ---------------------------------------------------------------------------
 # Several files (X01) and yearly file names (M06)
 
 
+DAYS_IN_YEAR = {2000: 366, 2001: 365, 2002: 365}
+
+
+def _year_file(tmp_path, year, first_day=0, ndays=None, name=None, **kw):
+    """Daily file ``runoff_<year>.nc`` from day ``first_day`` for ``ndays`` days.
+
+    The default covers the whole year, so consecutive years are continuous.
+    """
+    if ndays is None:
+        ndays = DAYS_IN_YEAR[year] - first_day
+    return build(tmp_path, dict(dict(time_units="days since {0}-01-01".format(year),
+                                     time=first_day + np.arange(ndays) + 0.5), **kw),
+                 name=name or "runoff_{0}.nc".format(year))
+
+
 def _year_pair(tmp_path, **second):
-    a = build(tmp_path, name="runoff_2000.nc")
-    b = build(tmp_path, dict(time_units="days since 2001-01-01", **second),
-              name="runoff_2001.nc")
-    return a, b
+    """Continuous full-year daily files for 2000 and 2001 (``second`` edits 2001)."""
+    return _year_file(tmp_path, 2000), _year_file(tmp_path, 2001, **second)
 
 
 def test_yearly_pair_passes(tmp_path):
@@ -432,6 +662,47 @@ def test_yearly_pair_passes(tmp_path):
     r = check_files([a, b])
     assert r.findings == [], r.format_text()
     assert main([a, b]) == 0
+
+
+def test_x01_yearly_file_starting_a_day_late(tmp_path):
+    """Richard B witness yr_runoff_2001/2002: 2002 starts on 2 January."""
+    a = _year_file(tmp_path, 2001)
+    b = _year_file(tmp_path, 2002, first_day=1)
+    r = check_files([a, b])
+    assert r.rules("E") == {"X01"}, r.format_text()
+    msgs = " ".join(f.message for f in r.errors)
+    assert "a gap of 86400 s" in msgs and "share one start offset" in msgs
+    assert main([a, b]) == 1
+
+
+def test_x01_gap_between_yearly_files(tmp_path):
+    """Richard B witness gap_runoff_2003/2004: a gap, with equal start offsets."""
+    a = _year_file(tmp_path, 2000, ndays=301)       # ends 2000-10-28
+    b = _year_file(tmp_path, 2001)
+    r = check_files([a, b])
+    assert r.rules("E") == {"X01"}, r.format_text()
+    f, = r.errors
+    assert "a gap of" in f.message and "(65 days)" in f.message
+    assert main([a, b]) == 1
+
+
+def test_x01_continuous_but_shifted_start_offset(tmp_path):
+    """Continuous at the file boundary, but 2000 starts on 2 January."""
+    a = _year_file(tmp_path, 2000, first_day=1)     # 2000-01-02 .. 2001-01-01
+    b = _year_file(tmp_path, 2001)
+    r = check_files([a, b])
+    assert r.rules("E") == {"X01"}, r.format_text()
+    f, = r.errors
+    assert "share one start offset" in f.message and "gap" not in f.message
+
+
+def test_x01_multi_file_set_needs_time_bnds(tmp_path):
+    one = dict(time=[0.5], time_bnds=None, time_sampling="constant", time_period=None)
+    a = build(tmp_path, dict(one), name="a.nc")
+    b = build(tmp_path, dict(one, time_units="days since 2000-01-02"), name="b.nc")
+    r = check_files([a, b])
+    assert r.rules("E") == {"X01"}, r.format_text()
+    assert any("needs time_bnds" in f.message for f in r.errors)
 
 
 def test_yearly_pair_with_different_targets_fails_x01(tmp_path):
@@ -458,13 +729,11 @@ def test_x01_variable_set_grid_and_order(tmp_path):
 
 
 def test_x01_calendars_compare_by_mitgcm_mapping(tmp_path):
-    a = build(tmp_path, dict(calendar="standard"), name="runoff_2000.nc")
-    b = build(tmp_path, dict(calendar="gregorian", time_units="days since 2001-01-01"),
-              name="runoff_2001.nc")
+    a = _year_file(tmp_path, 2000, calendar="standard")
+    b = _year_file(tmp_path, 2001, calendar="gregorian")
     r = check_files([a, b])
     assert r.findings == [], r.format_text()
-    b = build(tmp_path, dict(calendar="noleap", time_units="days since 2001-01-01"),
-              name="runoff_2001.nc")
+    b = _year_file(tmp_path, 2001, calendar="noleap")
     r = check_files([a, b])
     assert r.rules("E") == {"X01"}
     assert any("noLeapYear" in f.message for f in r.errors)
@@ -475,6 +744,170 @@ def test_m06_file_named_2001_with_2000_records(tmp_path):
     r = check_files(p)
     assert r.rules("E") == {"M06"}
     assert all("year 2001" in f.message for f in r.errors)
+
+
+# ---------------------------------------------------------------------------
+# Correction round 2: X01 time offsets and fixed spacing, S08 scope and ASCII,
+# S09, P02, R03 on packed lon/lat, month edges within tolerance, January start
+
+
+def _daily_year(tmp_path, year, frac, name=None):
+    """Daily ``runoff_<year>.nc`` with bounds [d, d+1) and time d + frac."""
+    d = np.arange(DAYS_IN_YEAR[year], dtype=float)
+    return build(tmp_path, dict(time_units="days since {0}-01-01".format(year),
+                                time=d + frac, time_bnds=np.stack([d, d + 1], 1)),
+                 name=name or "runoff_{0}.nc".format(year))
+
+
+def test_x01_yearly_offset_uses_first_time_value(tmp_path):
+    """MF1: contiguous bounds, but 2001 puts time at the start of each day."""
+    files = [_daily_year(tmp_path, y, f) for y, f in ((2000, 0.5), (2001, 0.0), (2002, 0.5))]
+    r = check_files(files)
+    assert r.rules("E") == {"X01"}, r.format_text()
+    msgs = [f.message for f in r.errors]
+    assert any("runoff_2001.nc: first time is 0 s" in m and "share one start offset" in m
+               for m in msgs), msgs
+    assert not any("gap" in m or "overlap" in m for m in msgs)     # bounds are contiguous
+    assert main(files) == 1
+
+
+def test_x01_all_files_with_time_at_start_pass(tmp_path):
+    """MF1: one common offset (time at the start of each day) is consistent."""
+    files = [_daily_year(tmp_path, y, 0.0) for y in (2000, 2001, 2002)]
+    r = check_files(files)
+    assert r.findings == [], r.format_text()
+
+
+def test_x01_fixed_spacing_across_files(tmp_path):
+    """MF1: fixed sampling, contiguous bounds, spacing across the boundary 0.5 day."""
+    d = np.arange(4, dtype=float)
+    a = build(tmp_path, dict(time=d + 0.5, time_bnds=np.stack([d, d + 1], 1)), name="a.nc")
+    b = build(tmp_path, dict(time_units="days since 2000-01-05", time=d + 0.0,
+                             time_bnds=np.stack([d, d + 1], 1)), name="b.nc")
+    r = check_files([a, b])
+    assert r.rules("E") == {"X01"}, r.format_text()
+    f, = r.errors
+    assert "43200 s after the last time" in f.message and "mitgcm_time_period" in f.message
+    good = build(tmp_path, dict(time_units="days since 2000-01-05", time=d + 0.5,
+                                time_bnds=np.stack([d, d + 1], 1)), name="c.nc")
+    assert check_files([a, good]).findings == []
+
+
+@pytest.mark.parametrize("value", ["µmol kg-1", b"\xc2\xb5mol kg-1"], ids=["str", "bytes"])
+def test_s08_non_ascii_model_read_attribute(tmp_path, value):
+    """MF3: a model-read text attribute must be ASCII, whatever its stored type."""
+    p = build(tmp_path, modifier=lambda ds: ds.variables["runoff_ptracer_dye"].setncattr(
+        "units", value))
+    r = check_files(p)
+    assert r.rules() == {"S08"}, r.format_text()
+    assert any("is not ASCII" in f.message and f.variable == "runoff_ptracer_dye"
+               for f in r.errors)
+
+
+def test_s08_ascii_is_checked_without_libnetcdf(tmp_path, monkeypatch):
+    from MITgcmutils.runoff import check as C
+    monkeypatch.setattr(C, "_libnetcdf", lambda: None)
+    p = build(tmp_path, modifier=lambda ds: ds.variables["runoff_ptracer_dye"].setncattr(
+        "units", b"\xc2\xb5mol kg-1"))
+    r = check_files(p)
+    assert r.rules("E") == {"S08"} and r.rules("W") == {"S08"}, r.format_text()
+
+
+def test_s08_descriptive_mitgcm_attributes_may_be_utf8_ncstring(tmp_path):
+    """MF3: mitgcm_grid_name/description are not model-read (schema 4.2)."""
+    def fn(ds):
+        ds.setncattr_string("mitgcm_grid_name", "lab_sea")
+        ds.setncattr_string("mitgcm_grid_description", "cs32 cubed sphere, 2.8° cells")
+    p = build(tmp_path, modifier=fn)
+    r = check_files(p)
+    assert r.findings == [], r.format_text()
+
+
+@pytest.mark.parametrize("var, value, fires", [
+    ("runoff_flux", "-999", True),
+    ("runoff_flux", np.float64(-999.0), True),
+    ("runoff_flux", np.float32(-999.0), False),
+    ("target_fraction", "none", True),
+    ("target_lon", "none", False),              # not model-read
+])
+def test_s09_missing_value_type(tmp_path, var, value, fires):
+    """MF4: missing_value on a model-read variable is a number of its own type."""
+    p = build(tmp_path, modifier=lambda ds: ds.variables[var].setncattr("missing_value", value))
+    r = check_files(p)
+    assert ("S09" in r.rules("E")) == fires, r.format_text()
+    assert r.rules() <= {"S09"}, r.format_text()    # text is never used as a fill value
+    if fires:
+        assert r.errors[0].variable == var and main([p]) == 1
+
+
+def _build_filtered(tmp_path, var, create, name):
+    try:
+        return build(tmp_path, dict(var_create={var: create}), name=name)
+    except (ValueError, RuntimeError, TypeError) as e:   # plugin not in this netCDF
+        pytest.skip("netCDF4 can't write {0}: {1}".format(create, e))
+
+
+@pytest.mark.parametrize("var, create, fires", [
+    ("runoff_flux", {"compression": "zstd", "complevel": 4}, True),
+    ("runoff_flux", {"compression": "bzip2", "complevel": 4}, True),
+    ("target_fraction", {"compression": "zstd"}, True),
+    ("runoff_flux", {"compression": "zlib", "complevel": 4, "shuffle": True,
+                     "fletcher32": True}, False),
+    ("target_lon", {"compression": "zstd"}, False),   # not model-read
+], ids=["flux-zstd", "flux-bzip2", "fraction-zstd", "flux-zlib-shuffle-fletcher32",
+        "lon-zstd"])
+def test_p02_filters(tmp_path, var, create, fires):
+    p = _build_filtered(tmp_path, var, create, "runoff.nc")
+    with netCDF4.Dataset(p) as ds:
+        assert ds.variables[var].filters()[create["compression"]]
+    r = check_files(p)
+    assert r.rules() == ({"P02"} if fires else set()), r.format_text()
+    if fires:
+        f, = r.errors
+        assert f.variable == var and create["compression"] in f.message
+        assert main([p]) == 1
+
+
+def test_p02_unreadable_series_is_reported_not_raised(tmp_path, monkeypatch):
+    from MITgcmutils.runoff import check as C
+    p = _build_filtered(tmp_path, "runoff_flux", {"compression": "zstd"}, "runoff.nc")
+
+    real = C._stream_values
+
+    def no_plugin(ctx, name, var, max_block_bytes):   # only the zstd variable fails
+        if name == "runoff_flux":
+            raise RuntimeError("NetCDF: Filter error: undefined filter encountered")
+        return real(ctx, name, var, max_block_bytes)
+    monkeypatch.setattr(C, "_stream_values", no_plugin)
+    r = check_files(p)
+    assert r.rules() == {"P02"}, r.format_text()
+    assert any("could not be read" in f.message for f in r.errors)
+
+
+@pytest.mark.parametrize("sampling", ["monthly", "yearly"])
+@pytest.mark.parametrize("shift_days, ok", [(-1e-9, True), (1e-9, True), (-2e-8, False)])
+def test_m05_period_edges_within_tolerance(tmp_path, sampling, shift_days, ok):
+    """Richard A c4: edges 86.4 us early are the edges; 1.7 ms early is not."""
+    if sampling == "monthly":
+        spec = _monthly(MONTH_EDGES_2000)
+    else:
+        spec = dict(time=[183.0, 548.5], time_bnds=[[0, 366], [366, 731]],
+                    time_sampling="yearly", time_period=None)
+    spec = dict(spec, time=np.asarray(spec["time"]) + shift_days,
+                time_bnds=np.asarray(spec["time_bnds"], dtype=float) + shift_days)
+    r = check_files(build(tmp_path, spec))
+    if ok:
+        assert r.findings == [], r.format_text()
+    else:
+        assert r.rules("E") == {"M05"}, r.format_text()
+
+
+def test_m05_monthly_climatology_must_start_in_january(tmp_path):
+    assert check_files(build(tmp_path, _clim_360(1))).findings == []
+    r = check_files(build(tmp_path, _clim_360(7), name="july.nc"))
+    assert r.rules("E") == {"M05"}, r.format_text()
+    f, = r.errors
+    assert "must start in January" in f.message
 
 
 # ---------------------------------------------------------------------------
@@ -497,6 +930,33 @@ def test_r01_land_cell(tmp_path, grid_dir):
     assert r.errors[0].source_id == "jakobshavn"
     assert "i={0}, j={1}".format(LAND_CELL % NX, LAND_CELL // NX) in r.errors[0].message
     assert main([p, "--grid-dir", grid_dir]) == 1
+
+
+@pytest.mark.parametrize("stored_packed, fires", [(True, False), (False, True)],
+                         ids=["packed-correct", "packed-attrs-on-unpacked-values"])
+def test_r03_compares_unpacked_lon_lat(tmp_path, grid_dir, stored_packed, fires):
+    """Richard A p05: target_lon/lat are not model-read and may be packed."""
+    def fn(ds):
+        for name in ("target_lon", "target_lat"):
+            v = ds.variables[name]
+            v.set_auto_maskandscale(False)
+            true = np.asarray(v[:], dtype=np.float64)
+            v.setncattr("scale_factor", np.float32(0.5))
+            v.setncattr("add_offset", np.float32(10.0))
+            if stored_packed:
+                v[:] = ((true - 10.0) / 0.5).astype(v.dtype)
+    p = build(tmp_path, modifier=fn)
+    r = check_files(p, grid_dir=grid_dir)
+    assert ("R03" in r.rules("W")) == fires, r.format_text()
+    assert r.rules() <= {"R03"}, r.format_text()   # packing them is not S07
+
+
+def test_float32_target_cell_area(tmp_path, grid_dir):
+    """Schema 3.4: target_cell_area is double, float allowed."""
+    p = build(tmp_path, dict(dtypes={"target_cell_area": "f4"}))
+    with netCDF4.Dataset(p) as ds:
+        assert ds.variables["target_cell_area"].dtype == np.float32
+    assert check_files(p, grid_dir=grid_dir).findings == []
 
 
 @pytest.mark.parametrize("rel, fires", [(2e-4, True), (5e-5, False)])
@@ -581,10 +1041,56 @@ def test_usage_and_io_errors_exit_2(tmp_path):
     assert main([str(junk)]) == 2
 
 
+def _package_env():
+    """Environment whose PYTHONPATH finds the in-repo MITgcmutils."""
+    return dict(os.environ, PYTHONPATH=str(ROOT / "MITgcm" / "utils" / "python" / "MITgcmutils"))
+
+
+def test_cli_module_runs_without_runtime_warning(example):
+    """``python -m MITgcmutils.runoff.check`` must not trigger runpy's warning.
+
+    If the package ``__init__`` imported ``check`` eagerly, runpy would find
+    ``MITgcmutils.runoff.check`` in ``sys.modules`` before running it as
+    ``__main__`` and emit a RuntimeWarning; ``-W error::RuntimeWarning`` turns
+    that into a failure.
+    """
+    r = subprocess.run([sys.executable, "-W", "error::RuntimeWarning", "-m",
+                        "MITgcmutils.runoff.check", example],
+                       env=_package_env(), capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "RuntimeWarning" not in r.stderr, r.stderr
+    assert "0 error(s), 0 warning(s)" in r.stdout, r.stdout
+
+
+def test_package_exports_are_lazy():
+    """Importing the package loads only ``schema``; the exports load on first use."""
+    code = "\n".join([
+        "import sys",
+        "import MITgcmutils.runoff as R",
+        "assert 'MITgcmutils.runoff.check' not in sys.modules",
+        "assert 'MITgcmutils.runoff.example' not in sys.modules",
+        "from MITgcmutils.runoff import check_files, write_example, Finding, Report, schema",
+        "from MITgcmutils.runoff.check import check_files as cf",
+        "assert check_files is cf and R.Report.__module__ == 'MITgcmutils.runoff.check'",
+        "ns = {}",
+        "exec('from MITgcmutils.runoff import *', ns)",
+        "assert set(R.__all__) <= set(ns) and set(R.__all__) <= set(dir(R))",
+        "try:",
+        "    R.no_such_name",
+        "except AttributeError:",
+        "    pass",
+        "else:",
+        "    raise SystemExit('no AttributeError')",
+    ])
+    r = subprocess.run([sys.executable, "-W", "error::RuntimeWarning", "-c", code],
+                       env=_package_env(), capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
 # ---------------------------------------------------------------------------
 # Every rule of schema section 9 is demonstrated above
 
-DEMONSTRATED_ELSEWHERE = {"X01", "R01", "R02", "R03"}
+DEMONSTRATED_ELSEWHERE = {"X01", "R01", "R02", "R03", "P02"}
 
 
 def test_every_rule_has_a_demonstration():

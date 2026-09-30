@@ -113,7 +113,9 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
 
 ### Invariants
 
-- Total applied volume flux, `Σ runoff·rA`, equals `Σ_s flux_s(t)`.
+- Total applied volume flux, `Σ runoff·rA`, equals `Σ_s flux_s(t)` to the fraction
+  tolerance (1e-6 relative). The reader does not renormalize fractions; the file's
+  fractions are used as stored, and the checker and the init check bound the error.
 - Results are independent of the tile/process layout to the oracle threshold.
 - With the feature compiled in but unused, results are bit-for-bit unchanged.
 

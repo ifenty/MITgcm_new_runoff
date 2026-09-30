@@ -45,13 +45,23 @@ MITgcm reads only a small, fixed set of variables and attributes, marked
   with `mitgcm_`. A variable named `runoff_*` that the schema doesn't define is an
   error, because it is almost always a typo, like `runoff_temprature`.
 - **No packing.** Variables the model reads (`time`, `time_bnds`, `source_id`,
-  `target_*` and `runoff_*`) must not carry `scale_factor` or `add_offset`. The
+  `target_source`, `target_cell`, `target_fraction`, `target_level`,
+  `target_cell_area` and every `runoff_*` variable) must not carry `scale_factor` or `add_offset`. The
   Fortran reader reads stored values directly and does not unpack them.
-- **Text attributes the model reads** are `char` (NC_CHAR) attributes, not
+- **Text attributes the model reads** are ASCII `char` (NC_CHAR) attributes, not
   `string` (NC_STRING) ones, because `NF_GET_ATT_TEXT` can't read NC_STRING. They
-  are the `mitgcm_*` text attributes, `time:units`, `time:calendar`, and the
-  `units` of every `runoff_*` variable. netCDF4-python and xarray write Python
-  `str` attributes as `char` by default.
+  are `mitgcm_runoff_schema_version`, `mitgcm_time_sampling`,
+  `mitgcm_time_repeat`, `time:units`, `time:calendar` (and `time_bnds:units` /
+  `time_bnds:calendar` when present, since hold-exact reads the bounds), and the
+  `units` of every `runoff_*` variable. netCDF4-python and xarray write an ASCII
+  Python `str` attribute as `char`, but a non-ASCII one as NC_STRING, so keep
+  these values ASCII. Descriptive attributes the model doesn't read, such as
+  `mitgcm_grid_name` and `mitgcm_grid_description` (§4.2), may be any type and
+  any UTF-8 text.
+- **Missing-value attributes the model reads.** `_FillValue` and `missing_value`
+  on a model-read variable are numeric, of the variable's own type, as CF
+  requires. The Fortran reader reads them with `NF_GET_ATT_DOUBLE`, which fails on
+  text.
 - **Strings the model reads** (`source_id` only) are fixed-length `char` arrays,
   because the Fortran-77 NetCDF interface can't read variable-length strings. All
   other string variables may be either `char` arrays or variable-length `string`.
@@ -76,7 +86,7 @@ marks what MITgcm reads.
 
 | Variable | Dims | Type | Req. | Model | Meaning |
 |---|---|---|---|---|---|
-| `time` | `(time)` | double | R | yes | The time each record represents, in CF form: `units = "<unit> since <date>"`, `calendar = "…"`, `axis = "T"`, `standard_name = "time"`, `bounds = "time_bnds"`. For averaged data this is normally the **midpoint** of the averaging interval, as in exf dense forcing. Linear interpolation runs between these times. For `monthly` and `yearly` sampling, `time` must be the midpoint of its bounds, because exf interpolates between calendar-month (or year) midpoints and ignores the file's times (§7). |
+| `time` | `(time)` | double | R | yes | The time each record represents, in CF form: `units = "<unit> since <date>"`, `calendar = "…"`, `axis = "T"`, `standard_name = "time"`, `bounds = "time_bnds"`. For averaged data this is normally the **midpoint** of the averaging interval, as in exf dense forcing. Linear interpolation runs between these times. For `monthly` and `yearly` sampling, `time` must be the midpoint of its bounds. For monthly records this matches exf, which (period `-12`) interpolates between calendar-month midpoints and ignores the file's times. For yearly records it is a schema convention: exf has no yearly-midpoint mode, and Gregorian years differ in length, so the reader (RUNOFF-005) maps it itself (a fixed period works only on `noleap` and `360_day` calendars). |
 | `time_bnds` | `(time, nv)` | double | R if more than one record | yes (hold-exact) | Start and end of the interval each record covers. Hold-exact mode applies each record over `[start, end)`. Same units and calendar as `time`. |
 
 **Time rules:**
@@ -92,7 +102,7 @@ marks what MITgcm reads.
 
 | Variable | Dims | Type | Req. | Model | Meaning |
 |---|---|---|---|---|---|
-| `source_id` | `(source, id_strlen)` | char | R | yes | Unique, stable identifier used in model error messages. ASCII letters, digits, `_`, `-` and `.`; starts with a letter or digit; no spaces; at most 64 characters. Trailing NUL or blank padding in the char array is not part of the id. Ids must be unique, and unique ignoring case. |
+| `source_id` | `(source, id_strlen)` | char | R | yes | Unique, stable identifier used in model error messages. ASCII letters, digits, `_`, `-` and `.`; starts with a letter or digit; no spaces; at most 64 characters. Trailing NUL or blank padding in the char array is not part of the id. Ids must be unique. Ids that differ only in letter case are allowed but discouraged (warning `I03`). |
 | `source_name` | `(source)` | string | O | no | Primary human-readable name, e.g. `"Jakobshavn Isbræ"`. UTF-8. |
 | `source_type` | `(source)` | string | O | no | Kind of source. Recommended values: `river`, `glacier`, `ice_sheet_basin`, `iceberg_melt`, `groundwater`, `other`. Other values give a warning, not an error. |
 | `source_lon` | `(source)` | float/double | O | no | Longitude of the mouth or terminus, `units = "degrees_east"`. |
@@ -120,10 +130,10 @@ Rows may appear in any order. Sorting by source and then cell is recommended.
 | Variable | Dims | Type | Req. | Model | Meaning |
 |---|---|---|---|---|---|
 | `target_source` | `(target)` | int | R | yes | 0-based index into `source`. Attribute `instance_dimension = "source"`. |
-| `target_cell` | `(target)` | int (int32 recommended; int64 allowed) | R | yes | 0-based global cell index, `cell = i + mitgcm_grid_nx · j`. `(i, j)` are the 0-based positions in the global 2D array that MITgcm reads from a dense `runoffFile` on this grid, with `i` varying fastest (Fortran order). For exch2 cubed-sphere and LLC grids this is the global I/O layout, e.g. 192 × 32 for cs32 and 90 × 1170 for LLC90. |
+| `target_cell` | `(target)` | int (int32 recommended; int64 allowed) | R | yes | 0-based global cell index, `cell = i + mitgcm_grid_nx · j`. `(i, j)` are the 0-based positions in the global 2D array that MITgcm reads from a dense `runoffFile` on this grid, with `i` varying fastest (Fortran order). For exch2 cubed-sphere and LLC grids this is the exch2 global I/O map (`exch2_global_Nx` × `exch2_global_Ny`, the `Global Map (IO)` line in STDOUT), not the `SIZE.h` Nx × Ny, and it depends on `W2_mapIO`: e.g. 192 × 32 for cs32 with `W2_mapIO = -1` and 90 × 1170 for LLC90 with `W2_mapIO = 1`. The index does not depend on the tile size or MPI layout. |
 | `target_fraction` | `(target)` | double (float allowed) | R | yes | Share of the source's flux sent to this cell, `units = "1"`. Each value is in `[0, 1]`. Each source's fractions sum to 1 within 1e-6. |
 | `target_level` | `(target)` | int | O | yes | Reserved for 3D runoff: the 1-based model level `k`. Schema 1.0 allows only 1. If absent, every target is level 1. |
-| `target_cell_area` | `(target)` | double | O | yes | Horizontal area `rA` of the cell on the grid the file was built for, in m². If present, the model compares it with its own `rA` (relative tolerance 1e-4) to catch a file built for a different grid. |
+| `target_cell_area` | `(target)` | double (float allowed) | O | yes | Horizontal area `rA` of the cell on the grid the file was built for, in m². If present, the model compares it with its own `rA` (relative tolerance 1e-4) to catch a file built for a different grid. |
 | `target_lon` | `(target)` | float/double | O | no | Cell-center longitude, `degrees_east`. For people and plots. |
 | `target_lat` | `(target)` | float/double | O | no | Cell-center latitude, `degrees_north`. |
 
@@ -160,7 +170,7 @@ record is one contiguous hyperslab. Stored as float (32-bit) or double.
 | Attribute | Type | Req. | Meaning |
 |---|---|---|---|
 | `mitgcm_runoff_schema_version` | string | R | `"1.0"`. The model refuses a major version it doesn't know. |
-| `mitgcm_grid_nx` | int | R | Width of the global 2D layout used by `target_cell`. |
+| `mitgcm_grid_nx` | int | R | Width of the global 2D layout used by `target_cell` (for exch2 grids, `exch2_global_Nx` for the run's `W2_mapIO`). |
 | `mitgcm_grid_ny` | int | R | Height of that layout. The model stops if `(nx, ny)` differs from its own global layout. |
 | `mitgcm_time_sampling` | string | R | `constant` (one record), `fixed` (a constant period, e.g. hourly or daily), `monthly` (calendar months) or `yearly` (calendar years). |
 | `mitgcm_time_period` | double | R if `fixed` | Record spacing in seconds, e.g. 3600 or 86400. |
@@ -252,7 +262,13 @@ that the calendar is written explicitly.
 - **Climatology** (`mitgcm_time_repeat = "annual"`): `time_bnds` is required, even
   for a single record, and the records cover exactly
   one year (e.g. 12 monthly or 365 daily records). The year number in `time` is
-  nominal.
+  nominal. A monthly climatology starts in January, because exf monthly records
+  (period `-12`) are January to December. The repeat cycle is the span of the
+  bounds (first start to last end), so a daily climatology built on a leap
+  nominal year repeats every 366 days. On a Gregorian model calendar a fixed
+  cycle drifts against calendar years; the reader (RUNOFF-005) documents this.
+  How `time` maps to model time when `pkg/cal` is not compiled is decided in
+  RUNOFF-005.
 - **Checking several files (`X01`):** files are compared in the order given, so
   pass them in time order. Their calendars must map to the same MITgcm calendar
   (§6.3). "Identical tables" means every variable without a `time` dimension,
@@ -261,11 +277,15 @@ that the calendar is written explicitly.
   `YYYY`, following exf `useExfYearlyFields`. Every record's bounds lie within
   that year. All yearly files of one data set have identical source, alias and
   target tables and the same variables. Only the records differ.
-- **Yearly files form one continuous series.** exf uses a single start offset
-  for every year, so each file's first record must start at the same offset
-  from 1 January of its year, and each file's first bound must equal the
-  previous file's last bound. A gap or a shifted file would silently shift
-  every record.
+- **Yearly files form one continuous series.** exf (`useExfYearlyFields`) uses a
+  single `fldStartTime` for every year: the offset of the first record's *time*
+  from 1 January. So each file's first `time` value must have the same offset
+  from 1 January of the year `YYYY` in its name, and each file's first bound
+  must equal the previous file's last bound. For `fixed` sampling, the spacing
+  across a file boundary (first `time` of a file minus last `time` of the
+  previous one) must also equal `mitgcm_time_period`. Every file of a multi-file set needs
+  `time_bnds`, even a single-record file. A gap or a shifted file would
+  silently shift every record.
 
 ## 8. Storage, chunking and compression
 
@@ -280,8 +300,11 @@ time series per update, so:
   RUNOFF-002 settles the final recommendation by a measured read benchmark. The
   checker warns when a chunk covers more than one record, because then reading
   one record decompresses several.
-- Compression (`zlib`, level 1–4, with `shuffle`) is allowed and recommended for
-  large files.
+- Compression (`zlib`/deflate, level 1–4, with `shuffle`) is allowed and
+  recommended for large files. `fletcher32` checksums are also allowed. Other
+  HDF5 filters (zstd, bzip2, szip, blosc and others) are not allowed on
+  model-read variables, because the model's netCDF build may lack their
+  plugins (rule `P02`).
 - The static tables (`source`, `target`, `alias`) are small (about 16 MB at 10⁶
   targets) and are read once at init.
 
@@ -313,7 +336,8 @@ misbehave), **W** a warning (suspicious but usable), **I** information.
 | `S05` | E | No undefined `runoff_*` variable, and no undefined `mitgcm_*` global attribute. |
 | `S06` | I | Recommended ACDD / CF global attributes are missing. |
 | `S07` | E | A model-read variable carries `scale_factor` or `add_offset`. |
-| `S08` | E | A model-read text attribute (§1) is NC_STRING instead of `char`. |
+| `S08` | E | A model-read text attribute (§1) is NC_STRING instead of `char`, or is not ASCII. If the checker can't load libnetcdf to read attribute types, it reports `S08` as a W finding (not checked) instead. |
+| `S09` | E | `_FillValue` or `missing_value` on a model-read variable is not numeric of the variable's type. |
 | `G01` | E | `mitgcm_grid_nx` and `mitgcm_grid_ny` are positive integers. |
 | `I01` | E | `source_id` values are non-empty, allowed characters, ≤ 64 characters. |
 | `I02` | E | `source_id` values are unique. |
@@ -346,6 +370,7 @@ misbehave), **W** a warning (suspicious but usable), **I** information.
 | `D09` | E | `runoff_temperature` contains ±Inf, or its `_FillValue` or `missing_value` is ±Inf. Inf is never a missing-value marker. |
 | `U01` | E | A schema variable listed in §6 has a missing or disallowed `units` attribute. Index variables must not have one. |
 | `P01` | W | A time-series chunk spans more than one record along `time`. |
+| `P02` | E | A model-read variable uses an HDF5 filter other than deflate, shuffle or fletcher32. |
 | `X01` | E | Across several files: identical source, alias and target tables, grid attributes and variable set; records in time order, with each file's first bound equal to the previous file's last bound; yearly files share one within-year start offset. |
 | `R01` | E | (`--grid-dir`) A target cell is on land (`hFacC` = 0 at level 1). |
 | `R02` | E | (`--grid-dir`) `target_cell_area` differs from `RAC` by more than 1e-4 relative. |
