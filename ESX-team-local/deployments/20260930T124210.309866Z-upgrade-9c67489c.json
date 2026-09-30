@@ -1,0 +1,764 @@
+{
+  "action": "upgrade",
+  "applied_at": "2026-09-30T12:42:10.371435+00:00",
+  "backup_directory": "ESX-team-local/backups/20260930T124210.309866Z-upgrade-9c67489c",
+  "conflicts": [],
+  "deployment_id": "20260930T124210.309866Z-upgrade-9c67489c",
+  "files": [
+    {
+      "action": "unchanged",
+      "before_sha256": "9e3bedecf90e7e603ec50ba0ae6a1fef1ace2edd95dc564efe3929d561a15292",
+      "master_sha256": "9e3bedecf90e7e603ec50ba0ae6a1fef1ace2edd95dc564efe3929d561a15292",
+      "ownership": "framework",
+      "path": ".claude/ESX-team/ARCHITECT.md",
+      "result_sha256": "9e3bedecf90e7e603ec50ba0ae6a1fef1ace2edd95dc564efe3929d561a15292"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "4c55a5b2b052404a26372c64e43af5893a1d5a733eef8728f17604ab64ebe3c8",
+      "master_sha256": "4c55a5b2b052404a26372c64e43af5893a1d5a733eef8728f17604ab64ebe3c8",
+      "ownership": "framework",
+      "path": ".claude/ESX-team/manifest.md",
+      "result_sha256": "4c55a5b2b052404a26372c64e43af5893a1d5a733eef8728f17604ab64ebe3c8"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "e52da0ac3aa78f8225f21976c15ec03cba0e70825e72c913ec1ff2f53947da36",
+      "master_sha256": "e52da0ac3aa78f8225f21976c15ec03cba0e70825e72c913ec1ff2f53947da36",
+      "ownership": "framework",
+      "path": ".claude/agents/auditor.md",
+      "result_sha256": "e52da0ac3aa78f8225f21976c15ec03cba0e70825e72c913ec1ff2f53947da36"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "c813b91a0144938cf06afcc42b57d2b24339979a9b2db88a761130f20b2df5f2",
+      "master_sha256": "c813b91a0144938cf06afcc42b57d2b24339979a9b2db88a761130f20b2df5f2",
+      "ownership": "framework",
+      "path": ".claude/agents/bisector.md",
+      "result_sha256": "c813b91a0144938cf06afcc42b57d2b24339979a9b2db88a761130f20b2df5f2"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "063ae621deaddc2bd03f4d25b26da2867731707ab78a2b925d18cbe591230401",
+      "master_sha256": "063ae621deaddc2bd03f4d25b26da2867731707ab78a2b925d18cbe591230401",
+      "ownership": "framework",
+      "path": ".claude/agents/bob.md",
+      "result_sha256": "063ae621deaddc2bd03f4d25b26da2867731707ab78a2b925d18cbe591230401"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "820b5978bd0a2365f97608d7616427609f797d0a828f2f250cbdf8ec3ce2f006",
+      "master_sha256": "820b5978bd0a2365f97608d7616427609f797d0a828f2f250cbdf8ec3ce2f006",
+      "ownership": "framework",
+      "path": ".claude/agents/prober.md",
+      "result_sha256": "820b5978bd0a2365f97608d7616427609f797d0a828f2f250cbdf8ec3ce2f006"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "f1e1894a528711d4b5e0b68509253a6bc9e616d5428e57b0a11ab0e0cf9ad9fb",
+      "master_sha256": "f1e1894a528711d4b5e0b68509253a6bc9e616d5428e57b0a11ab0e0cf9ad9fb",
+      "ownership": "framework",
+      "path": ".claude/agents/richard.md",
+      "result_sha256": "f1e1894a528711d4b5e0b68509253a6bc9e616d5428e57b0a11ab0e0cf9ad9fb"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "268b85b33fd16dfc01a87bbd6d3fdff96eed4d588b1ef0210bd57228fbaa7e2e",
+      "master_sha256": "268b85b33fd16dfc01a87bbd6d3fdff96eed4d588b1ef0210bd57228fbaa7e2e",
+      "ownership": "framework",
+      "path": ".claude/agents/scout.md",
+      "result_sha256": "268b85b33fd16dfc01a87bbd6d3fdff96eed4d588b1ef0210bd57228fbaa7e2e"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "64f3b4edace1923ec4f09ab7ddf2e42d3a28380bbf645ec58594fe2bf42391a2",
+      "master_sha256": "64f3b4edace1923ec4f09ab7ddf2e42d3a28380bbf645ec58594fe2bf42391a2",
+      "ownership": "framework",
+      "path": ".claude/commands/esx-loop.md",
+      "result_sha256": "64f3b4edace1923ec4f09ab7ddf2e42d3a28380bbf645ec58594fe2bf42391a2"
+    },
+    {
+      "action": "preserve",
+      "before_sha256": "bd66805efe2441b79c303ac4e2941e0a2fc8e1d5dde082d66ec3b87c1953f2ba",
+      "master_sha256": "cc3d5654f5bfd8d92417fbb874c9c07e437e8d1a340c251a39d04ceabfcd836a",
+      "ownership": "project",
+      "path": ".claude/settings.json",
+      "result_sha256": "bd66805efe2441b79c303ac4e2941e0a2fc8e1d5dde082d66ec3b87c1953f2ba"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "9299df0f318d9831a4eb2853c4c2246c73169ee962f0804f66228b1f201c405d",
+      "master_sha256": "9299df0f318d9831a4eb2853c4c2246c73169ee962f0804f66228b1f201c405d",
+      "ownership": "framework",
+      "path": ".claude/skills/esx-announce/SKILL.md",
+      "result_sha256": "9299df0f318d9831a4eb2853c4c2246c73169ee962f0804f66228b1f201c405d"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "fb66157f6d2cdf684b491230532a6dc0799d3914ee7ea8e8e3c705c983c12fcb",
+      "master_sha256": "fb66157f6d2cdf684b491230532a6dc0799d3914ee7ea8e8e3c705c983c12fcb",
+      "ownership": "framework",
+      "path": ".claude/skills/esx-code-map/SKILL.md",
+      "result_sha256": "fb66157f6d2cdf684b491230532a6dc0799d3914ee7ea8e8e3c705c983c12fcb"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "4e52d84664737dad1d5cc93ceef19d8c5dd75d1876e3c00e5e3e3fd261f677cf",
+      "master_sha256": "4e52d84664737dad1d5cc93ceef19d8c5dd75d1876e3c00e5e3e3fd261f677cf",
+      "ownership": "framework",
+      "path": ".claude/skills/esx-common/SKILL.md",
+      "result_sha256": "4e52d84664737dad1d5cc93ceef19d8c5dd75d1876e3c00e5e3e3fd261f677cf"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "91b070613f3e3a3a2577217903686a81ccf991e5b84d8cd89d48eeae6e1b3ada",
+      "master_sha256": "91b070613f3e3a3a2577217903686a81ccf991e5b84d8cd89d48eeae6e1b3ada",
+      "ownership": "framework",
+      "path": ".claude/skills/esx-instruction-audit/SKILL.md",
+      "result_sha256": "91b070613f3e3a3a2577217903686a81ccf991e5b84d8cd89d48eeae6e1b3ada"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "992314492025d4bae9c670df80e265a5a511c2523c63a2e8acfc1660c9da1bf4",
+      "master_sha256": "992314492025d4bae9c670df80e265a5a511c2523c63a2e8acfc1660c9da1bf4",
+      "ownership": "framework",
+      "path": ".claude/skills/esx-investigate/SKILL.md",
+      "result_sha256": "992314492025d4bae9c670df80e265a5a511c2523c63a2e8acfc1660c9da1bf4"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "690690c518bc68a7729d9d666f9dafc37244a83ae8d8fd51729a9ca645522884",
+      "master_sha256": "690690c518bc68a7729d9d666f9dafc37244a83ae8d8fd51729a9ca645522884",
+      "ownership": "framework",
+      "path": ".claude/skills/esx-verify/SKILL.md",
+      "result_sha256": "690690c518bc68a7729d9d666f9dafc37244a83ae8d8fd51729a9ca645522884"
+    },
+    {
+      "action": "preserve",
+      "before_sha256": "4c69d61a5551fb119234fd95657bcb4935973457fb4f30608886d9a719b04454",
+      "master_sha256": "dcfaad31d91ba7df27fc4a04a1363e317e4e0d22e0c19f29fe20c462885a4997",
+      "ownership": "project",
+      "path": ".gitignore",
+      "result_sha256": "4c69d61a5551fb119234fd95657bcb4935973457fb4f30608886d9a719b04454"
+    },
+    {
+      "action": "preserve",
+      "before_sha256": "229043310da9ec78a4ca78906ab2065e11de742bb1ec746f2e759cf106fc3a9e",
+      "master_sha256": "723522fbc8f31be85edaed21218b3549689cec96c58f7a610f057b952ade0a94",
+      "ownership": "project",
+      "path": "CLAUDE.md",
+      "result_sha256": "229043310da9ec78a4ca78906ab2065e11de742bb1ec746f2e759cf106fc3a9e"
+    },
+    {
+      "action": "preserve",
+      "before_sha256": "11386fb9635404026b246701c982d59e26ae8db6557af6c1553cb595bb59e76c",
+      "master_sha256": "d2af86b91de5a03d50fb6b4197f2f98f86e7ae654ee0317d949b2c5605a171b5",
+      "ownership": "project",
+      "path": "closed_issues.md",
+      "result_sha256": "11386fb9635404026b246701c982d59e26ae8db6557af6c1553cb595bb59e76c"
+    },
+    {
+      "action": "preserve",
+      "before_sha256": "d6a0cb2125b88d4e8bcbff3af68ee40edd9edaaf684ab838c4cefdc68786be60",
+      "master_sha256": "d6a0cb2125b88d4e8bcbff3af68ee40edd9edaaf684ab838c4cefdc68786be60",
+      "ownership": "project",
+      "path": "current_status.md",
+      "result_sha256": "d6a0cb2125b88d4e8bcbff3af68ee40edd9edaaf684ab838c4cefdc68786be60"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "29254806bfffde429e4cb38254b32640602e51f1e503e2d8c11d443e1a33a379",
+      "master_sha256": "29254806bfffde429e4cb38254b32640602e51f1e503e2d8c11d443e1a33a379",
+      "ownership": "framework",
+      "path": "devel-loop/autonomous_prompt.md",
+      "result_sha256": "29254806bfffde429e4cb38254b32640602e51f1e503e2d8c11d443e1a33a379"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "8d3af67e175fb16d5bb5dc624aa090ffe66b5d5a417538c85d71a2a0952ca8a4",
+      "master_sha256": "8d3af67e175fb16d5bb5dc624aa090ffe66b5d5a417538c85d71a2a0952ca8a4",
+      "ownership": "framework",
+      "path": "devel-loop/communication.md",
+      "result_sha256": "8d3af67e175fb16d5bb5dc624aa090ffe66b5d5a417538c85d71a2a0952ca8a4"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "0b32e64e54da6e9316b57092779f2102738bc13b0c6ed13756a41ec7ca815f7c",
+      "master_sha256": "0b32e64e54da6e9316b57092779f2102738bc13b0c6ed13756a41ec7ca815f7c",
+      "ownership": "framework",
+      "path": "devel-loop/documentation_contract.md",
+      "result_sha256": "0b32e64e54da6e9316b57092779f2102738bc13b0c6ed13756a41ec7ca815f7c"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "4c305e4304cb6862aa68791d01a150a7028dcaf1cf972703a65150fc4a6e7129",
+      "master_sha256": "4c305e4304cb6862aa68791d01a150a7028dcaf1cf972703a65150fc4a6e7129",
+      "ownership": "framework",
+      "path": "devel-loop/execution.md",
+      "result_sha256": "4c305e4304cb6862aa68791d01a150a7028dcaf1cf972703a65150fc4a6e7129"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "f68bfcec5a67837699d801134bbda7162517dd48a2df42053b68acbcc3d01400",
+      "master_sha256": "f68bfcec5a67837699d801134bbda7162517dd48a2df42053b68acbcc3d01400",
+      "ownership": "framework",
+      "path": "devel-loop/issue_json_schema.md",
+      "result_sha256": "f68bfcec5a67837699d801134bbda7162517dd48a2df42053b68acbcc3d01400"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "4309ef87b98e064e6a14cddda3cd9b3160ea3bda51cef3cfcb54df475c274b0d",
+      "master_sha256": "4309ef87b98e064e6a14cddda3cd9b3160ea3bda51cef3cfcb54df475c274b0d",
+      "ownership": "framework",
+      "path": "devel-loop/issue_priority.md",
+      "result_sha256": "4309ef87b98e064e6a14cddda3cd9b3160ea3bda51cef3cfcb54df475c274b0d"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "e7ff85cdc85c964b91d68d9653c7b08f5867ac5ca3f5c005cb45c67cba38a305",
+      "master_sha256": "e7ff85cdc85c964b91d68d9653c7b08f5867ac5ca3f5c005cb45c67cba38a305",
+      "ownership": "framework",
+      "path": "devel-loop/loop_contract.md",
+      "result_sha256": "e7ff85cdc85c964b91d68d9653c7b08f5867ac5ca3f5c005cb45c67cba38a305"
+    },
+    {
+      "action": "preserve",
+      "before_sha256": "317adf1ea02bb50896e9462fac22ab3364dc1e586e57748ede967919b9945fec",
+      "master_sha256": "317adf1ea02bb50896e9462fac22ab3364dc1e586e57748ede967919b9945fec",
+      "ownership": "project",
+      "path": "devel-loop/loop_rules.md",
+      "result_sha256": "317adf1ea02bb50896e9462fac22ab3364dc1e586e57748ede967919b9945fec"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "a3d8e4dece16be926b98a63e669cd4c43ba7ea35d3d7d6ff27a9a11a89dbe83b",
+      "master_sha256": "a3d8e4dece16be926b98a63e669cd4c43ba7ea35d3d7d6ff27a9a11a89dbe83b",
+      "ownership": "framework",
+      "path": "devel-loop/recovery.md",
+      "result_sha256": "a3d8e4dece16be926b98a63e669cd4c43ba7ea35d3d7d6ff27a9a11a89dbe83b"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "20406e09f932629bf53f49a14168a5541d8422b935e3276123c8166eed706ddc",
+      "master_sha256": "20406e09f932629bf53f49a14168a5541d8422b935e3276123c8166eed706ddc",
+      "ownership": "framework",
+      "path": "devel-loop/self-improvement/README.md",
+      "result_sha256": "20406e09f932629bf53f49a14168a5541d8422b935e3276123c8166eed706ddc"
+    },
+    {
+      "action": "preserve",
+      "before_sha256": "467101b7101802879c542f7bc1c2540445ba8dc7b7d169e14e7007917560bc6c",
+      "master_sha256": "467101b7101802879c542f7bc1c2540445ba8dc7b7d169e14e7007917560bc6c",
+      "ownership": "project",
+      "path": "devel-loop/self-improvement/closed-ESX-team-issues.md",
+      "result_sha256": "467101b7101802879c542f7bc1c2540445ba8dc7b7d169e14e7007917560bc6c"
+    },
+    {
+      "action": "preserve",
+      "before_sha256": "056be40d1fd6bfb5514af4017111120272dfeb3a21eb5364d5e919e9abdbca33",
+      "master_sha256": "056be40d1fd6bfb5514af4017111120272dfeb3a21eb5364d5e919e9abdbca33",
+      "ownership": "project",
+      "path": "devel-loop/self-improvement/migration_manifest.json",
+      "result_sha256": "056be40d1fd6bfb5514af4017111120272dfeb3a21eb5364d5e919e9abdbca33"
+    },
+    {
+      "action": "preserve",
+      "before_sha256": "189753b2e66fb5613e5abed2a9fb64af93f8edb9067d4ad9cb7d4814a2c070a0",
+      "master_sha256": "d8e59c101eabdf729c3d08dcf6be255c0ef0666355bb7b2cf4d3137958ece2ee",
+      "ownership": "project",
+      "path": "devel-loop/self-improvement/open-ESX-team-issues.md",
+      "result_sha256": "189753b2e66fb5613e5abed2a9fb64af93f8edb9067d4ad9cb7d4814a2c070a0"
+    },
+    {
+      "action": "preserve",
+      "before_sha256": "d4359c03cbb0b993a7c1f85321edadf042529afde76bcd39a89d786a016ab56a",
+      "master_sha256": "d4359c03cbb0b993a7c1f85321edadf042529afde76bcd39a89d786a016ab56a",
+      "ownership": "project",
+      "path": "devel-loop/self-improvement/process_changelog.md",
+      "result_sha256": "d4359c03cbb0b993a7c1f85321edadf042529afde76bcd39a89d786a016ab56a"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "5843bbc2c3c999ba409625d4fbc7dd26a2533aa93fa50fc19713c9f84377aba4",
+      "master_sha256": "5843bbc2c3c999ba409625d4fbc7dd26a2533aa93fa50fc19713c9f84377aba4",
+      "ownership": "framework",
+      "path": "devel-loop/team_operations.md",
+      "result_sha256": "5843bbc2c3c999ba409625d4fbc7dd26a2533aa93fa50fc19713c9f84377aba4"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "d2bd24319c7dff597c3fcaf3a6fc2f1cf60b0251c7a06065e358c36c268be43a",
+      "master_sha256": "d2bd24319c7dff597c3fcaf3a6fc2f1cf60b0251c7a06065e358c36c268be43a",
+      "ownership": "framework",
+      "path": "devel-loop/verification.md",
+      "result_sha256": "d2bd24319c7dff597c3fcaf3a6fc2f1cf60b0251c7a06065e358c36c268be43a"
+    },
+    {
+      "action": "preserve",
+      "before_sha256": "1588143f17c12c559d98a8910ea08a7068f07fd1a9c12be2df9acaa437c7e610",
+      "master_sha256": "e8c17e527b26c6761e11689c9c006cd55f9d6228af924e00a7f36088c6bd4a95",
+      "ownership": "project",
+      "path": "docs/code_map.md",
+      "result_sha256": "1588143f17c12c559d98a8910ea08a7068f07fd1a9c12be2df9acaa437c7e610"
+    },
+    {
+      "action": "preserve",
+      "before_sha256": "21fe5c1aae7823aa609b2e009d3c1a378b4accb570052c0cda4e45e2814040f3",
+      "master_sha256": "21fe5c1aae7823aa609b2e009d3c1a378b4accb570052c0cda4e45e2814040f3",
+      "ownership": "project",
+      "path": "docs/doc_format_guide.md",
+      "result_sha256": "21fe5c1aae7823aa609b2e009d3c1a378b4accb570052c0cda4e45e2814040f3"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "7d5bf0faab5d9300b0e3dc8bc0b03ee1e5f5e8191f195576de3763e7721f607c",
+      "master_sha256": "7d5bf0faab5d9300b0e3dc8bc0b03ee1e5f5e8191f195576de3763e7721f607c",
+      "ownership": "framework",
+      "path": "docs/esx_framework_map.md",
+      "result_sha256": "7d5bf0faab5d9300b0e3dc8bc0b03ee1e5f5e8191f195576de3763e7721f607c"
+    },
+    {
+      "action": "preserve",
+      "before_sha256": "b432a73ec16a49dc9f2583d0db5bc6fc11d94a0e4e8018f6a3d1598185f58c9d",
+      "master_sha256": "fc16bd9971a00938ef5e63224c599da29d6a28f446eae36cf86b4ebabfe10933",
+      "ownership": "project",
+      "path": "docs/model_contract.md",
+      "result_sha256": "b432a73ec16a49dc9f2583d0db5bc6fc11d94a0e4e8018f6a3d1598185f58c9d"
+    },
+    {
+      "action": "preserve",
+      "before_sha256": "950392834f9773e4643c4469bdb45e1f6533df18de52c70378305ab59fcc665c",
+      "master_sha256": "3648f4e8a8f3c98855795c8bd50b05ca41eb51ee971339b708df47a7abed3489",
+      "ownership": "project",
+      "path": "esx/project.json",
+      "result_sha256": "950392834f9773e4643c4469bdb45e1f6533df18de52c70378305ab59fcc665c"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "876bc60758970acfeba5c49d40f674831252ae2a35e2451b1b7fae61f6f41790",
+      "master_sha256": "876bc60758970acfeba5c49d40f674831252ae2a35e2451b1b7fae61f6f41790",
+      "ownership": "framework",
+      "path": "esx/project_instructions.md",
+      "result_sha256": "876bc60758970acfeba5c49d40f674831252ae2a35e2451b1b7fae61f6f41790"
+    },
+    {
+      "action": "preserve",
+      "before_sha256": "5cdac07f1c71adde1ec1b58b970940bf3b6041e0b6e0ba5d85df8f03dc138df2",
+      "master_sha256": "95ccc52632b116865bab01ecf01572b80b957ce8968e3cf38444b2b834be7438",
+      "ownership": "project",
+      "path": "esx/project_profile.md",
+      "result_sha256": "5cdac07f1c71adde1ec1b58b970940bf3b6041e0b6e0ba5d85df8f03dc138df2"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "52b5a6f48d22c341f326bf446a431575f84ccc4d7333b8d724e3ec8ee8cde317",
+      "master_sha256": "52b5a6f48d22c341f326bf446a431575f84ccc4d7333b8d724e3ec8ee8cde317",
+      "ownership": "framework",
+      "path": "esx/templates/agent_report.json",
+      "result_sha256": "52b5a6f48d22c341f326bf446a431575f84ccc4d7333b8d724e3ec8ee8cde317"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "c6fa2c4e2ee85a1e5709e843653320c4e99167f632e7b5c4310d7c216202e379",
+      "master_sha256": "c6fa2c4e2ee85a1e5709e843653320c4e99167f632e7b5c4310d7c216202e379",
+      "ownership": "framework",
+      "path": "esx/templates/agent_report_guide.md",
+      "result_sha256": "c6fa2c4e2ee85a1e5709e843653320c4e99167f632e7b5c4310d7c216202e379"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "bd19b9cb59e0502de270ffb8281a30da47e5a1c11ebe22cab2eca799c3d6003b",
+      "master_sha256": "bd19b9cb59e0502de270ffb8281a30da47e5a1c11ebe22cab2eca799c3d6003b",
+      "ownership": "framework",
+      "path": "esx/templates/brief.md",
+      "result_sha256": "bd19b9cb59e0502de270ffb8281a30da47e5a1c11ebe22cab2eca799c3d6003b"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "2a8511384aabc11ce33a99fbf291f3bb1343f1861943e001c227c81d027ddfec",
+      "master_sha256": "2a8511384aabc11ce33a99fbf291f3bb1343f1861943e001c227c81d027ddfec",
+      "ownership": "framework",
+      "path": "esx/templates/diagnosis_checkpoint.json",
+      "result_sha256": "2a8511384aabc11ce33a99fbf291f3bb1343f1861943e001c227c81d027ddfec"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "5810975c6f3fa40c274dee5db7c32992df07bfb1a02c1f87bce8b6e3ac328760",
+      "master_sha256": "5810975c6f3fa40c274dee5db7c32992df07bfb1a02c1f87bce8b6e3ac328760",
+      "ownership": "framework",
+      "path": "esx/templates/diagnosis_checkpoint.md",
+      "result_sha256": "5810975c6f3fa40c274dee5db7c32992df07bfb1a02c1f87bce8b6e3ac328760"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "bcddf9eda5f15ac6b7812cb5d67127a7d16d5b0ec54eeece00c5414d0acb9d5e",
+      "master_sha256": "bcddf9eda5f15ac6b7812cb5d67127a7d16d5b0ec54eeece00c5414d0acb9d5e",
+      "ownership": "framework",
+      "path": "esx/templates/domain_skill.md",
+      "result_sha256": "bcddf9eda5f15ac6b7812cb5d67127a7d16d5b0ec54eeece00c5414d0acb9d5e"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "01aa22cf50acda75ca787f33344f11341fa11401ef6b2ad8bdda1f6888eb60df",
+      "master_sha256": "01aa22cf50acda75ca787f33344f11341fa11401ef6b2ad8bdda1f6888eb60df",
+      "ownership": "framework",
+      "path": "esx/templates/experiment.md",
+      "result_sha256": "01aa22cf50acda75ca787f33344f11341fa11401ef6b2ad8bdda1f6888eb60df"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "80522ac665d31b47eaa9c9c27d6d20e23baebac57ed969650630db3931690ddf",
+      "master_sha256": "80522ac665d31b47eaa9c9c27d6d20e23baebac57ed969650630db3931690ddf",
+      "ownership": "framework",
+      "path": "esx/templates/issue_done.json",
+      "result_sha256": "80522ac665d31b47eaa9c9c27d6d20e23baebac57ed969650630db3931690ddf"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "af060c0796ce6bbaaf4163975907fdbec52d3ffe9888551fe0b2b3b3d1a68a39",
+      "master_sha256": "af060c0796ce6bbaaf4163975907fdbec52d3ffe9888551fe0b2b3b3d1a68a39",
+      "ownership": "framework",
+      "path": "esx/templates/scope_decision.json",
+      "result_sha256": "af060c0796ce6bbaaf4163975907fdbec52d3ffe9888551fe0b2b3b3d1a68a39"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "a7fb4ea57d3546a5a1c290ecdad19cc81bb69e3759cc10d54b1c61840de0f9f3",
+      "master_sha256": "a7fb4ea57d3546a5a1c290ecdad19cc81bb69e3759cc10d54b1c61840de0f9f3",
+      "ownership": "framework",
+      "path": "esx/templates/verification_matrix.md",
+      "result_sha256": "a7fb4ea57d3546a5a1c290ecdad19cc81bb69e3759cc10d54b1c61840de0f9f3"
+    },
+    {
+      "action": "preserve",
+      "before_sha256": "511b2fe9cef303aad79d28dc2370951e5b950915dafd454d658d97ec7bbbc457",
+      "master_sha256": "58807865bffcc45253a16858a9ce3444a3088bd3d03141d4172beac32aa58997",
+      "ownership": "project",
+      "path": "lessons_learned.md",
+      "result_sha256": "511b2fe9cef303aad79d28dc2370951e5b950915dafd454d658d97ec7bbbc457"
+    },
+    {
+      "action": "preserve",
+      "before_sha256": "07c60f778849c4dad8abf31b1dd74b0a9a58f06040074a604249702f15c1de20",
+      "master_sha256": "c3192f188392e2a517506e8e3e05bb53cf6e7f7b7bb690b793aa7d486ca5e69f",
+      "ownership": "project",
+      "path": "lessons_learned_evidence.md",
+      "result_sha256": "07c60f778849c4dad8abf31b1dd74b0a9a58f06040074a604249702f15c1de20"
+    },
+    {
+      "action": "preserve",
+      "before_sha256": "c18474720fd3ea531594416ede76352a3e7bf0246208ab07f0dc07eab970fe2c",
+      "master_sha256": "698c02b48b3e3f4c1920321e5869a23e6406b003ceaceeac683125ae84115448",
+      "ownership": "project",
+      "path": "long_term_goals.md",
+      "result_sha256": "c18474720fd3ea531594416ede76352a3e7bf0246208ab07f0dc07eab970fe2c"
+    },
+    {
+      "action": "preserve",
+      "before_sha256": "4d465c95e8317cf2d2c04cee8207b556ffc9f76b97c31a6321d1317b730769fd",
+      "master_sha256": "4d465c95e8317cf2d2c04cee8207b556ffc9f76b97c31a6321d1317b730769fd",
+      "ownership": "project",
+      "path": "old_lessons_learned.md",
+      "result_sha256": "4d465c95e8317cf2d2c04cee8207b556ffc9f76b97c31a6321d1317b730769fd"
+    },
+    {
+      "action": "preserve",
+      "before_sha256": "879c563b9b97d638b8fb591a67313a73b16beda16617accab41ee7cf1d4f4420",
+      "master_sha256": "6faa9cc0821ef684c47301a55053d37d72cf4115b51e50c208da30a2d3a83a7c",
+      "ownership": "project",
+      "path": "open_issues.md",
+      "result_sha256": "879c563b9b97d638b8fb591a67313a73b16beda16617accab41ee7cf1d4f4420"
+    },
+    {
+      "action": "update",
+      "before_sha256": "73f11651c7e2d2f59d044857cac972ceadbcfb85be072966c13a53086fc42ccf",
+      "master_sha256": "d8134805ef6cf0ed6a20d92db0ce838569e08c9b7e67c5506bbfb403dab7a8ae",
+      "ownership": "framework",
+      "path": "tools/esx/agent_runtime.py",
+      "result_sha256": "d8134805ef6cf0ed6a20d92db0ce838569e08c9b7e67c5506bbfb403dab7a8ae"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "c7d0a93bde035f6c6c9061b587e67b2e0f38fceb6d882b07fa61c09f6251528f",
+      "master_sha256": "c7d0a93bde035f6c6c9061b587e67b2e0f38fceb6d882b07fa61c09f6251528f",
+      "ownership": "framework",
+      "path": "tools/esx/audit.py",
+      "result_sha256": "c7d0a93bde035f6c6c9061b587e67b2e0f38fceb6d882b07fa61c09f6251528f"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "c93f267f3b9599e7372c85d0551d0b7db03c6f2f64bbd15296ca4574d6c736be",
+      "master_sha256": "c93f267f3b9599e7372c85d0551d0b7db03c6f2f64bbd15296ca4574d6c736be",
+      "ownership": "framework",
+      "path": "tools/esx/bounded_command.py",
+      "result_sha256": "c93f267f3b9599e7372c85d0551d0b7db03c6f2f64bbd15296ca4574d6c736be"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "7c07cedc77d53094a0624f397ad2ecda05dd38e6f4c0800f382a3388c2bf9d2c",
+      "master_sha256": "7c07cedc77d53094a0624f397ad2ecda05dd38e6f4c0800f382a3388c2bf9d2c",
+      "ownership": "framework",
+      "path": "tools/esx/brief.py",
+      "result_sha256": "7c07cedc77d53094a0624f397ad2ecda05dd38e6f4c0800f382a3388c2bf9d2c"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "13203177eac7d8e0758d9f7a21cef28219863946f627218d9a5ad080cbc2f12b",
+      "master_sha256": "13203177eac7d8e0758d9f7a21cef28219863946f627218d9a5ad080cbc2f12b",
+      "ownership": "framework",
+      "path": "tools/esx/check_ralph_hook.py",
+      "result_sha256": "13203177eac7d8e0758d9f7a21cef28219863946f627218d9a5ad080cbc2f12b"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "c83e5e2e849bcb3600abf5937643e0474b04ef2c2e7e462900b6b2ab79b2d1cc",
+      "master_sha256": "c83e5e2e849bcb3600abf5937643e0474b04ef2c2e7e462900b6b2ab79b2d1cc",
+      "ownership": "framework",
+      "path": "tools/esx/closeout_doctor.py",
+      "result_sha256": "c83e5e2e849bcb3600abf5937643e0474b04ef2c2e7e462900b6b2ab79b2d1cc"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "e8a1750bcf1e778840b10b36dc0a6ef41209b7891b582c3b31ef47a0d8c0e129",
+      "master_sha256": "e8a1750bcf1e778840b10b36dc0a6ef41209b7891b582c3b31ef47a0d8c0e129",
+      "ownership": "framework",
+      "path": "tools/esx/doc_contract.py",
+      "result_sha256": "e8a1750bcf1e778840b10b36dc0a6ef41209b7891b582c3b31ef47a0d8c0e129"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "ad18b13710528cb4700b576011e0e6b2bb5cc0b069faacd21b962e668fb54d3a",
+      "master_sha256": "ad18b13710528cb4700b576011e0e6b2bb5cc0b069faacd21b962e668fb54d3a",
+      "ownership": "framework",
+      "path": "tools/esx/doc_inventory.py",
+      "result_sha256": "ad18b13710528cb4700b576011e0e6b2bb5cc0b069faacd21b962e668fb54d3a"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "7f026661c07a333d7ad22a4529535aca90cd0fb26a21d8395ec24c98d1e34d6b",
+      "master_sha256": "7f026661c07a333d7ad22a4529535aca90cd0fb26a21d8395ec24c98d1e34d6b",
+      "ownership": "framework",
+      "path": "tools/esx/final_verification.py",
+      "result_sha256": "7f026661c07a333d7ad22a4529535aca90cd0fb26a21d8395ec24c98d1e34d6b"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "f9252f8732ee194ba16945f436375c6b377c9ce586dcf249d7b46e1907409224",
+      "master_sha256": "f9252f8732ee194ba16945f436375c6b377c9ce586dcf249d7b46e1907409224",
+      "ownership": "framework",
+      "path": "tools/esx/footer_contract.py",
+      "result_sha256": "f9252f8732ee194ba16945f436375c6b377c9ce586dcf249d7b46e1907409224"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "033fd5bae311c1c39b0f25c1c23204a9e0ef736b72d15c834261eaca8155e1cc",
+      "master_sha256": "033fd5bae311c1c39b0f25c1c23204a9e0ef736b72d15c834261eaca8155e1cc",
+      "ownership": "framework",
+      "path": "tools/esx/hooks.py",
+      "result_sha256": "033fd5bae311c1c39b0f25c1c23204a9e0ef736b72d15c834261eaca8155e1cc"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "7dffeab8afdbb92b5e92c4b5c7a5d3a2f32dcd9f2ee68265764bb285a80d347b",
+      "master_sha256": "7dffeab8afdbb92b5e92c4b5c7a5d3a2f32dcd9f2ee68265764bb285a80d347b",
+      "ownership": "framework",
+      "path": "tools/esx/issue_candidates.py",
+      "result_sha256": "7dffeab8afdbb92b5e92c4b5c7a5d3a2f32dcd9f2ee68265764bb285a80d347b"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "6913650c1775316ab6550fef288d3f47d0169ab2367cc72ba82be9dbe3ff1e9a",
+      "master_sha256": "6913650c1775316ab6550fef288d3f47d0169ab2367cc72ba82be9dbe3ff1e9a",
+      "ownership": "framework",
+      "path": "tools/esx/ledger_transaction.py",
+      "result_sha256": "6913650c1775316ab6550fef288d3f47d0169ab2367cc72ba82be9dbe3ff1e9a"
+    },
+    {
+      "action": "update",
+      "before_sha256": "40685a3f4a9451b31355058133f311b833dccf8de6552d96deeb1c64b16e1cab",
+      "master_sha256": "130c6726d9f4fb254cae99dc8ad0be725c4e4d85928f531b9bdcd30f266f1dd3",
+      "ownership": "framework",
+      "path": "tools/esx/loop_control.py",
+      "result_sha256": "130c6726d9f4fb254cae99dc8ad0be725c4e4d85928f531b9bdcd30f266f1dd3"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "d8daa5060dde049416b252423b8495895c0a8b0123ee5e365cb9fbff93857f97",
+      "master_sha256": "d8daa5060dde049416b252423b8495895c0a8b0123ee5e365cb9fbff93857f97",
+      "ownership": "framework",
+      "path": "tools/esx/loop_gate.py",
+      "result_sha256": "d8daa5060dde049416b252423b8495895c0a8b0123ee5e365cb9fbff93857f97"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "a0fa20a2a6067b03c90e5a9fa3a231efd9dced3a42a922b66e34e5923b2d42e8",
+      "master_sha256": "a0fa20a2a6067b03c90e5a9fa3a231efd9dced3a42a922b66e34e5923b2d42e8",
+      "ownership": "framework",
+      "path": "tools/esx/loop_iteration.py",
+      "result_sha256": "a0fa20a2a6067b03c90e5a9fa3a231efd9dced3a42a922b66e34e5923b2d42e8"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "7cc5452179a049cf23bc3b0871eec12e308443b914628a044ac42eddf594af20",
+      "master_sha256": "7cc5452179a049cf23bc3b0871eec12e308443b914628a044ac42eddf594af20",
+      "ownership": "framework",
+      "path": "tools/esx/loop_lifecycle.py",
+      "result_sha256": "7cc5452179a049cf23bc3b0871eec12e308443b914628a044ac42eddf594af20"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "6e6ebaba623b82a0b558d68dc8bb5508187c659b6aed5d33b91cf6adfa8b654e",
+      "master_sha256": "6e6ebaba623b82a0b558d68dc8bb5508187c659b6aed5d33b91cf6adfa8b654e",
+      "ownership": "framework",
+      "path": "tools/esx/notifications.py",
+      "result_sha256": "6e6ebaba623b82a0b558d68dc8bb5508187c659b6aed5d33b91cf6adfa8b654e"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "7617390a16cec56771c910504970f86c1c663a36155cb08e630a098cc947d73e",
+      "master_sha256": "7617390a16cec56771c910504970f86c1c663a36155cb08e630a098cc947d73e",
+      "ownership": "framework",
+      "path": "tools/esx/orient.py",
+      "result_sha256": "7617390a16cec56771c910504970f86c1c663a36155cb08e630a098cc947d73e"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "13772b9f053d36748422895e7d5c780f84e46cd493dac40f7b796f4fc27aecdf",
+      "master_sha256": "13772b9f053d36748422895e7d5c780f84e46cd493dac40f7b796f4fc27aecdf",
+      "ownership": "framework",
+      "path": "tools/esx/permission_match.py",
+      "result_sha256": "13772b9f053d36748422895e7d5c780f84e46cd493dac40f7b796f4fc27aecdf"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "29a1315ef14a582e513d6153594c50e50f3e819137180e048939be1fee99bc79",
+      "master_sha256": "29a1315ef14a582e513d6153594c50e50f3e819137180e048939be1fee99bc79",
+      "ownership": "framework",
+      "path": "tools/esx/process_evidence.py",
+      "result_sha256": "29a1315ef14a582e513d6153594c50e50f3e819137180e048939be1fee99bc79"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "65192baebc07c9abbd4bc2ca5fddbbc7f9043e227a5b48e182cbc0a0747ab02a",
+      "master_sha256": "65192baebc07c9abbd4bc2ca5fddbbc7f9043e227a5b48e182cbc0a0747ab02a",
+      "ownership": "framework",
+      "path": "tools/esx/project.py",
+      "result_sha256": "65192baebc07c9abbd4bc2ca5fddbbc7f9043e227a5b48e182cbc0a0747ab02a"
+    },
+    {
+      "action": "update",
+      "before_sha256": "186925d4389517b7f0bd757de6bba44c3491270f43b8214a45480a5dd7780cdd",
+      "master_sha256": "5c644aea11d0423a6439d6ca79cc50155b59d1788514f7a07d36dd9c538a6f52",
+      "ownership": "framework",
+      "path": "tools/esx/ralph_stop.py",
+      "result_sha256": "5c644aea11d0423a6439d6ca79cc50155b59d1788514f7a07d36dd9c538a6f52"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "fb6818dcade0580eb36225a77417212c48773dd1a9b506e08e8f2f6a2bb8ec4f",
+      "master_sha256": "fb6818dcade0580eb36225a77417212c48773dd1a9b506e08e8f2f6a2bb8ec4f",
+      "ownership": "framework",
+      "path": "tools/esx/records.py",
+      "result_sha256": "fb6818dcade0580eb36225a77417212c48773dd1a9b506e08e8f2f6a2bb8ec4f"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "71b70e01c8df508e030c17b6089fec29d6f57cf092c94522378af34551399067",
+      "master_sha256": "71b70e01c8df508e030c17b6089fec29d6f57cf092c94522378af34551399067",
+      "ownership": "framework",
+      "path": "tools/esx/runtime_recovery.py",
+      "result_sha256": "71b70e01c8df508e030c17b6089fec29d6f57cf092c94522378af34551399067"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "064fb7104e62412f20cec196e7058b8cae6a564c8d8d80c1655cf79cef6784bc",
+      "master_sha256": "064fb7104e62412f20cec196e7058b8cae6a564c8d8d80c1655cf79cef6784bc",
+      "ownership": "framework",
+      "path": "tools/esx/runtime_tool_hook.py",
+      "result_sha256": "064fb7104e62412f20cec196e7058b8cae6a564c8d8d80c1655cf79cef6784bc"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "8b66849745db88dc5eb9ce8a289b99310121d56455f5dc2bc624396bf6548dec",
+      "master_sha256": "8b66849745db88dc5eb9ce8a289b99310121d56455f5dc2bc624396bf6548dec",
+      "ownership": "framework",
+      "path": "tools/esx/self_improvement.py",
+      "result_sha256": "8b66849745db88dc5eb9ce8a289b99310121d56455f5dc2bc624396bf6548dec"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "d7c776df580982e966fc2da582a20f3af44ba2c0d860dae6bd4285f9cf2d080a",
+      "master_sha256": "d7c776df580982e966fc2da582a20f3af44ba2c0d860dae6bd4285f9cf2d080a",
+      "ownership": "framework",
+      "path": "tools/esx/team_accounting.py",
+      "result_sha256": "d7c776df580982e966fc2da582a20f3af44ba2c0d860dae6bd4285f9cf2d080a"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "962be71a159c6bd99843025706b3ee2db98a4b7a5c7ef5dbc34589067fb68808",
+      "master_sha256": "962be71a159c6bd99843025706b3ee2db98a4b7a5c7ef5dbc34589067fb68808",
+      "ownership": "framework",
+      "path": "tools/esx/team_budget.py",
+      "result_sha256": "962be71a159c6bd99843025706b3ee2db98a4b7a5c7ef5dbc34589067fb68808"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "7e5700b7d10580973993131a3fc51d95029289fea4570f52c968be418f9963b0",
+      "master_sha256": "7e5700b7d10580973993131a3fc51d95029289fea4570f52c968be418f9963b0",
+      "ownership": "framework",
+      "path": "tools/esx/team_driver.py",
+      "result_sha256": "7e5700b7d10580973993131a3fc51d95029289fea4570f52c968be418f9963b0"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "4c7813d520da77f52ace140156bb71cde6ca05a054e0f80d7b00ff6dc410a400",
+      "master_sha256": "4c7813d520da77f52ace140156bb71cde6ca05a054e0f80d7b00ff6dc410a400",
+      "ownership": "framework",
+      "path": "tools/esx/team_retrospective.py",
+      "result_sha256": "4c7813d520da77f52ace140156bb71cde6ca05a054e0f80d7b00ff6dc410a400"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "a78ffd00ea3bc1c77f592dc826913558f03dcfa6a3379e99163be70c138402b7",
+      "master_sha256": "a78ffd00ea3bc1c77f592dc826913558f03dcfa6a3379e99163be70c138402b7",
+      "ownership": "framework",
+      "path": "tools/esx/verify.py",
+      "result_sha256": "a78ffd00ea3bc1c77f592dc826913558f03dcfa6a3379e99163be70c138402b7"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "09132c50279976273144d8e3855000af6b08ef7a88fa4c726bece173132cc469",
+      "master_sha256": "09132c50279976273144d8e3855000af6b08ef7a88fa4c726bece173132cc469",
+      "ownership": "framework",
+      "path": "tools/esx/workflow_handoff.py",
+      "result_sha256": "09132c50279976273144d8e3855000af6b08ef7a88fa4c726bece173132cc469"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "f388048bf1978a921a970e72efd4329b998cd802dce296aa89b5cad845ac1169",
+      "master_sha256": "f388048bf1978a921a970e72efd4329b998cd802dce296aa89b5cad845ac1169",
+      "ownership": "framework",
+      "path": "tools/esx/workflow_policy.py",
+      "result_sha256": "f388048bf1978a921a970e72efd4329b998cd802dce296aa89b5cad845ac1169"
+    },
+    {
+      "action": "unchanged",
+      "before_sha256": "9921e2b747d9a119aeb270dd1d9c7df63e1a04def41007f568624e9891c08384",
+      "master_sha256": "9921e2b747d9a119aeb270dd1d9c7df63e1a04def41007f568624e9891c08384",
+      "ownership": "framework",
+      "path": "tools/esx/workflow_records.py",
+      "result_sha256": "9921e2b747d9a119aeb270dd1d9c7df63e1a04def41007f568624e9891c08384"
+    }
+  ],
+  "from_version": "1.5.6",
+  "master": "external-master",
+  "project": ".",
+  "schema_version": 1,
+  "status": "applied",
+  "summary": {
+    "preserve": 20,
+    "unchanged": 70,
+    "update": 3
+  },
+  "to_version": "1.5.8"
+}

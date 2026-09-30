@@ -242,13 +242,6 @@ def _step_locked(root, hook_input):
         return archive(root, state, original, 'SUSPEND', n, 'active must be true or false')
     if parsed['active'] == 'false':
         return {}
-    owner = parsed['header_fields'].get('owner_session')
-    caller = hook_input.get('session_id')
-    if owner and caller and caller != owner:
-        # Another Claude process in the project directory (e.g. a bare `claude --print`)
-        # must never advance, end or announce the owner's loop (TEAM-LOOP-FOREIGN-STOP-001).
-        log(root, 'FOREIGN_STOP', n, f'ignored Stop from session {caller}; loop owned by {owner}')
-        return {}
     if limit and n >= limit:
         # Reserve one bounded notification-only handoff after the last work turn.
         # The saved marker prevents unavailable delivery from extending work forever.

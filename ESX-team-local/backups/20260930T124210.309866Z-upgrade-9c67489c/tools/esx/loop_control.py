@@ -7,7 +7,6 @@ budget so a later hook cannot revive the removed state.
 """
 import argparse
 import json
-import re
 import os
 from pathlib import Path
 import sys
@@ -17,30 +16,6 @@ from ralph_stop import archive, loop_lock, parse_state
 
 ROOT = Path(__file__).resolve().parents[2]
 STATE = '.claude/esx-loop.local.md'
-
-
-def owner_session():
-    """The Claude Code session running this command; only its Stop events drive the loop."""
-    value = os.environ.get('CLAUDE_CODE_SESSION_ID', '').strip()
-    return value if re.fullmatch(r'[A-Za-z0-9_-]{8,128}', value) else None
-
-
-def bind_owner(root):
-    """An explicit /esx-loop continuation from another session takes ownership of the loop."""
-    owner = owner_session()
-    if not owner:
-        return None
-    with loop_lock(root):
-        state = local(root, STATE)
-        if not state.exists():
-            return None
-        text = state.read_text()
-        head, sep, body = text.partition('\n---\n')
-        if re.search(r'(?m)^owner_session:\s*' + re.escape(owner) + r'\s*$', head):
-            return owner
-        head = re.sub(r'(?m)^owner_session:.*\n?', '', head).rstrip('\n') + '\nowner_session: ' + owner
-        atomic_bytes(state, (head + sep + body).encode())
-        return owner
 
 
 def start(root, prompt, max_iterations=30, completion_promise='ESX-LOOP-NO-ACTIONABLE-WORK'):
@@ -62,10 +37,8 @@ def start(root, prompt, max_iterations=30, completion_promise='ESX-LOOP-NO-ACTIO
             raise ValueError('ESX state already exists; inspect or cancel it before starting a new loop')
         if local(root, '.claude/ralph-loop.local.md').exists():
             raise ValueError('external Ralph state exists; resolve that loop before starting ESX')
-        owner = owner_session()
         data = ('---\nactive: true\nrun_id: ' + uuid.uuid4().hex + '\niteration: 1\nmax_iterations: ' + str(max_iterations)
-                + '\ncompletion_promise: ' + json.dumps(completion_promise)
-                + ('\nowner_session: ' + owner if owner else '') + '\n---\n' + prompt)
+                + '\ncompletion_promise: ' + json.dumps(completion_promise) + '\n---\n' + prompt)
         atomic_bytes(state, data.encode())
         return {'status': 'active', 'state': STATE, 'iteration': 1, 'max_iterations': max_iterations}
 
@@ -83,7 +56,7 @@ def run(root, max_iterations=None):
     if current['status'] == 'active':
         if max_iterations is not None and max_iterations != current['max_iterations']:
             raise ValueError('active loop budget differs; continue with run and no budget override')
-        result = dict(current, action='continued', owner_session=bind_owner(root))
+        result = dict(current, action='continued')
     else:
         prompt = local(root, 'devel-loop/autonomous_prompt.md').read_text()
         result = dict(start(root, prompt, 30 if max_iterations is None else max_iterations), action='started')

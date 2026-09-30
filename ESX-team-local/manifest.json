@@ -109,8 +109,8 @@
       "ownership": "project"
     },
     "closed_issues.md": {
-      "baseline_sha256": "d2af86b91de5a03d50fb6b4197f2f98f86e7ae654ee0317d949b2c5605a171b5",
-      "installed_sha256": "d2af86b91de5a03d50fb6b4197f2f98f86e7ae654ee0317d949b2c5605a171b5",
+      "baseline_sha256": "11386fb9635404026b246701c982d59e26ae8db6557af6c1553cb595bb59e76c",
+      "installed_sha256": "11386fb9635404026b246701c982d59e26ae8db6557af6c1553cb595bb59e76c",
       "master_sha256": "d2af86b91de5a03d50fb6b4197f2f98f86e7ae654ee0317d949b2c5605a171b5",
       "ownership": "project"
     },
@@ -193,8 +193,8 @@
       "ownership": "project"
     },
     "devel-loop/self-improvement/open-ESX-team-issues.md": {
-      "baseline_sha256": "d8e59c101eabdf729c3d08dcf6be255c0ef0666355bb7b2cf4d3137958ece2ee",
-      "installed_sha256": "d8e59c101eabdf729c3d08dcf6be255c0ef0666355bb7b2cf4d3137958ece2ee",
+      "baseline_sha256": "189753b2e66fb5613e5abed2a9fb64af93f8edb9067d4ad9cb7d4814a2c070a0",
+      "installed_sha256": "189753b2e66fb5613e5abed2a9fb64af93f8edb9067d4ad9cb7d4814a2c070a0",
       "master_sha256": "d8e59c101eabdf729c3d08dcf6be255c0ef0666355bb7b2cf4d3137958ece2ee",
       "ownership": "project"
     },
@@ -319,14 +319,14 @@
       "ownership": "framework"
     },
     "lessons_learned.md": {
-      "baseline_sha256": "58807865bffcc45253a16858a9ce3444a3088bd3d03141d4172beac32aa58997",
-      "installed_sha256": "58807865bffcc45253a16858a9ce3444a3088bd3d03141d4172beac32aa58997",
+      "baseline_sha256": "511b2fe9cef303aad79d28dc2370951e5b950915dafd454d658d97ec7bbbc457",
+      "installed_sha256": "511b2fe9cef303aad79d28dc2370951e5b950915dafd454d658d97ec7bbbc457",
       "master_sha256": "58807865bffcc45253a16858a9ce3444a3088bd3d03141d4172beac32aa58997",
       "ownership": "project"
     },
     "lessons_learned_evidence.md": {
-      "baseline_sha256": "c3192f188392e2a517506e8e3e05bb53cf6e7f7b7bb690b793aa7d486ca5e69f",
-      "installed_sha256": "c3192f188392e2a517506e8e3e05bb53cf6e7f7b7bb690b793aa7d486ca5e69f",
+      "baseline_sha256": "07c60f778849c4dad8abf31b1dd74b0a9a58f06040074a604249702f15c1de20",
+      "installed_sha256": "07c60f778849c4dad8abf31b1dd74b0a9a58f06040074a604249702f15c1de20",
       "master_sha256": "c3192f188392e2a517506e8e3e05bb53cf6e7f7b7bb690b793aa7d486ca5e69f",
       "ownership": "project"
     },
@@ -343,15 +343,15 @@
       "ownership": "project"
     },
     "open_issues.md": {
-      "baseline_sha256": "be64bcc39c1fb8cb5abaea5f6c1dda8063335caad7bd4f0700fc6e07a006c4a0",
-      "installed_sha256": "be64bcc39c1fb8cb5abaea5f6c1dda8063335caad7bd4f0700fc6e07a006c4a0",
+      "baseline_sha256": "879c563b9b97d638b8fb591a67313a73b16beda16617accab41ee7cf1d4f4420",
+      "installed_sha256": "879c563b9b97d638b8fb591a67313a73b16beda16617accab41ee7cf1d4f4420",
       "master_sha256": "6faa9cc0821ef684c47301a55053d37d72cf4115b51e50c208da30a2d3a83a7c",
       "ownership": "project"
     },
     "tools/esx/agent_runtime.py": {
-      "baseline_sha256": "73f11651c7e2d2f59d044857cac972ceadbcfb85be072966c13a53086fc42ccf",
-      "installed_sha256": "73f11651c7e2d2f59d044857cac972ceadbcfb85be072966c13a53086fc42ccf",
-      "master_sha256": "73f11651c7e2d2f59d044857cac972ceadbcfb85be072966c13a53086fc42ccf",
+      "baseline_sha256": "d8134805ef6cf0ed6a20d92db0ce838569e08c9b7e67c5506bbfb403dab7a8ae",
+      "installed_sha256": "d8134805ef6cf0ed6a20d92db0ce838569e08c9b7e67c5506bbfb403dab7a8ae",
+      "master_sha256": "d8134805ef6cf0ed6a20d92db0ce838569e08c9b7e67c5506bbfb403dab7a8ae",
       "ownership": "framework"
     },
     "tools/esx/audit.py": {
@@ -427,9 +427,9 @@
       "ownership": "framework"
     },
     "tools/esx/loop_control.py": {
-      "baseline_sha256": "40685a3f4a9451b31355058133f311b833dccf8de6552d96deeb1c64b16e1cab",
-      "installed_sha256": "40685a3f4a9451b31355058133f311b833dccf8de6552d96deeb1c64b16e1cab",
-      "master_sha256": "40685a3f4a9451b31355058133f311b833dccf8de6552d96deeb1c64b16e1cab",
+      "baseline_sha256": "130c6726d9f4fb254cae99dc8ad0be725c4e4d85928f531b9bdcd30f266f1dd3",
+      "installed_sha256": "130c6726d9f4fb254cae99dc8ad0be725c4e4d85928f531b9bdcd30f266f1dd3",
+      "master_sha256": "130c6726d9f4fb254cae99dc8ad0be725c4e4d85928f531b9bdcd30f266f1dd3",
       "ownership": "framework"
     },
     "tools/esx/loop_gate.py": {
@@ -481,9 +481,9 @@
       "ownership": "framework"
     },
     "tools/esx/ralph_stop.py": {
-      "baseline_sha256": "186925d4389517b7f0bd757de6bba44c3491270f43b8214a45480a5dd7780cdd",
-      "installed_sha256": "186925d4389517b7f0bd757de6bba44c3491270f43b8214a45480a5dd7780cdd",
-      "master_sha256": "186925d4389517b7f0bd757de6bba44c3491270f43b8214a45480a5dd7780cdd",
+      "baseline_sha256": "5c644aea11d0423a6439d6ca79cc50155b59d1788514f7a07d36dd9c538a6f52",
+      "installed_sha256": "5c644aea11d0423a6439d6ca79cc50155b59d1788514f7a07d36dd9c538a6f52",
+      "master_sha256": "5c644aea11d0423a6439d6ca79cc50155b59d1788514f7a07d36dd9c538a6f52",
       "ownership": "framework"
     },
     "tools/esx/records.py": {
@@ -559,9 +559,9 @@
       "ownership": "framework"
     }
   },
-  "master_fingerprint": "7dd7e47687ab1fe8f82ff2ef16ddd4e81dc306b57b66448f3a63d0f312f1913b",
+  "master_fingerprint": "c1bccfd68f1fa2639b7f6296e2520a04924d6bed93c9953917c92a504cd77136",
   "master_repository": "external-master",
   "schema_version": 1,
-  "updated_at": "2026-09-30T05:52:23.796679+00:00",
-  "version": "1.5.6"
+  "updated_at": "2026-09-30T12:42:10.371333+00:00",
+  "version": "1.5.8"
 }
