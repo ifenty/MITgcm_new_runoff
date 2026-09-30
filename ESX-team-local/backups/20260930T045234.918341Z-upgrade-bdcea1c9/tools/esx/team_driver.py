@@ -114,11 +114,11 @@ def _run(root, *, host='claude', model=None, max_passes=5, usd=30, minutes=120,
             error = 'invalid provider cost; retain full reservation'
             usage['cost_usd'] = None
         settlement = budget.settle(root,event,usage['cost_usd'])
-        overshoot = bool(settlement.get('provider_overshoot'))  # recorded, never a failure or a stop
+        if settlement.get('provider_overshoot'): error = 'provider exceeded reservation; run stopped'
         record = {'event_id':event,'agent_type':'arch','issue_id':issue,'run_id':run_state['id'],
                   'session_id':run_state['coordinator_session_id'],'started_at':started,'finished_at':accounting.now(),
                   'status':'completed' if proc is not None and proc.returncode==0 and not error else 'failed',
-                  'error':error,'provider_overshoot':overshoot,'provider':host,'budget':reservation,
+                  'error':error,'provider':host,'budget':reservation,
                   'accounting_components':[{'event_id':event,'kind':'coordinator',**usage}]}
         accounting.atomic(folder/'record.json',record)
         if proc is not None: run_state['session_started'] = True

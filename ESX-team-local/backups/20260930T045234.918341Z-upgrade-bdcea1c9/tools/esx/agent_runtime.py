@@ -722,9 +722,8 @@ def _run_turn(root, *, role=None, issue=None, prompt, session=None, correction_r
             error = 'invalid provider cost; full reservation retained'
             usage['cost_usd'] = None
         settlement = team_budget.settle(root, event_id, usage.get('cost_usd'))
-        # Reservations are nominal (team_budget): an overshoot is recorded data, never a
-        # turn failure. A retained session's per-turn cost grows with its context.
-        provider_overshoot = bool(settlement.get('provider_overshoot'))
+        if settlement.get('provider_overshoot'):
+            error = 'provider exceeded reservation; further launches are blocked'
         footer = footer_from(message)
         review_outcome = None
         status = "completed"
@@ -766,7 +765,6 @@ def _run_turn(root, *, role=None, issue=None, prompt, session=None, correction_r
                   "iteration_timestamp": iteration_timestamp,
                   "status": status, "error": error, "footer": footer,
                   "review_outcome": review_outcome,
-                  "provider_overshoot": provider_overshoot,
                   "execution_phase": ("launch_failed" if code is None else
                       "approved" if status == "completed" and (footer or {}).get("verdict") in ("APPROVE", "APPROVE_WITH_FIXES")
                       else "completed" if status == "completed" else "executed_" + status),

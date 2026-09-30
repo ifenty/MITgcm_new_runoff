@@ -217,8 +217,8 @@
       "ownership": "framework"
     },
     "docs/code_map.md": {
-      "baseline_sha256": "cbab0daa95c44dadd1ec06a62f5ab80802a5cec6ee9c4b474a36482c7cd6e3ce",
-      "installed_sha256": "cbab0daa95c44dadd1ec06a62f5ab80802a5cec6ee9c4b474a36482c7cd6e3ce",
+      "baseline_sha256": "9a45afff6536e7d131246286d2485c776549ac6aff2e84f30f52bb5336115862",
+      "installed_sha256": "9a45afff6536e7d131246286d2485c776549ac6aff2e84f30f52bb5336115862",
       "master_sha256": "e8c17e527b26c6761e11689c9c006cd55f9d6228af924e00a7f36088c6bd4a95",
       "ownership": "project"
     },
@@ -349,9 +349,9 @@
       "ownership": "project"
     },
     "tools/esx/agent_runtime.py": {
-      "baseline_sha256": "96caf1170e034a56028accbaa16197b7207ed5e701ddbc0cc0f2d7d500c6d4d1",
-      "installed_sha256": "96caf1170e034a56028accbaa16197b7207ed5e701ddbc0cc0f2d7d500c6d4d1",
-      "master_sha256": "96caf1170e034a56028accbaa16197b7207ed5e701ddbc0cc0f2d7d500c6d4d1",
+      "baseline_sha256": "5f534ae00cf67c7bd198c0ddc596ef4561d0f058c19c00805c32bd550991fb78",
+      "installed_sha256": "5f534ae00cf67c7bd198c0ddc596ef4561d0f058c19c00805c32bd550991fb78",
+      "master_sha256": "5f534ae00cf67c7bd198c0ddc596ef4561d0f058c19c00805c32bd550991fb78",
       "ownership": "framework"
     },
     "tools/esx/audit.py": {
@@ -523,9 +523,9 @@
       "ownership": "framework"
     },
     "tools/esx/team_driver.py": {
-      "baseline_sha256": "b18d0c6ce777b411609694a022aca26cd6c57d4c6da9da54b06a426bad62bb98",
-      "installed_sha256": "b18d0c6ce777b411609694a022aca26cd6c57d4c6da9da54b06a426bad62bb98",
-      "master_sha256": "b18d0c6ce777b411609694a022aca26cd6c57d4c6da9da54b06a426bad62bb98",
+      "baseline_sha256": "7e5700b7d10580973993131a3fc51d95029289fea4570f52c968be418f9963b0",
+      "installed_sha256": "7e5700b7d10580973993131a3fc51d95029289fea4570f52c968be418f9963b0",
+      "master_sha256": "7e5700b7d10580973993131a3fc51d95029289fea4570f52c968be418f9963b0",
       "ownership": "framework"
     },
     "tools/esx/team_retrospective.py": {
@@ -559,9 +559,9 @@
       "ownership": "framework"
     }
   },
-  "master_fingerprint": "95bf28bfdc180ae5ddd8accbcb5b637156b94034b52a952779a7c01d9d11e5c1",
+  "master_fingerprint": "e5d75f5d5754a4ec9334fbe683245bb36ca6eba33cb69ab26c5db7fb58eae04c",
   "master_repository": "external-master",
   "schema_version": 1,
-  "updated_at": "2026-09-30T04:20:40.542493+00:00",
-  "version": "1.5.4"
+  "updated_at": "2026-09-30T04:52:34.958302+00:00",
+  "version": "1.5.5"
 }
