@@ -130,7 +130,7 @@ Rows may appear in any order. Sorting by source and then cell is recommended.
 | Variable | Dims | Type | Req. | Model | Meaning |
 |---|---|---|---|---|---|
 | `target_source` | `(target)` | int | R | yes | 0-based index into `source`. Attribute `instance_dimension = "source"`. |
-| `target_cell` | `(target)` | int (int32 recommended; int64 allowed) | R | yes | 0-based global cell index, `cell = i + mitgcm_grid_nx · j`. `(i, j)` are the 0-based positions in the global 2D array that MITgcm reads from a dense `runoffFile` on this grid, with `i` varying fastest (Fortran order). For exch2 cubed-sphere and LLC grids this is the exch2 global I/O map (`exch2_global_Nx` × `exch2_global_Ny`, the `Global Map (IO)` line that exch2 writes to `w2_tile_topology.NNNN.log`, or to STDOUT when `W2_printMsg = 0`), not the `SIZE.h` Nx × Ny, and it depends on `W2_mapIO`: e.g. 192 × 32 for cs32 with `W2_mapIO = -1` and 90 × 1170 for LLC90 with `W2_mapIO = 1`. The index does not depend on the tile size or MPI layout. |
+| `target_cell` | `(target)` | int (int32 recommended; int64 allowed) | R | yes | 0-based global cell index, `cell = i + mitgcm_grid_nx · j`. `(i, j)` are the 0-based positions in the global 2D array that MITgcm reads from a dense `runoffFile` on this grid, with `i` varying fastest (Fortran order). For exch2 cubed-sphere and LLC grids this is the exch2 global I/O map (`exch2_global_Nx` × `exch2_global_Ny`, the `Global Map (IO)` line, which exch2 writes to `w2_tile_topology.NNNN.log` when `W2_printMsg < 0` (the default, `-1`) and to STDOUT otherwise), not the `SIZE.h` Nx × Ny, and it depends on `W2_mapIO`: e.g. 192 × 32 for cs32 with `W2_mapIO = -1` and 90 × 1170 for LLC90 with `W2_mapIO = 1`. The index does not depend on the tile size or MPI layout. |
 | `target_fraction` | `(target)` | double (float allowed) | R | yes | Share of the source's flux sent to this cell, `units = "1"`. Each value is in `[0, 1]`. Each source's fractions sum to 1 within 1e-6. |
 | `target_level` | `(target)` | int | O | yes | Reserved for 3D runoff: the 1-based model level `k`. Schema 1.0 allows only 1. If absent, every target is level 1. |
 | `target_cell_area` | `(target)` | double (float allowed) | O | yes | Horizontal area `rA` of the cell on the grid the file was built for, in m². If present, the model compares it with its own `rA` (relative tolerance 1e-4) to catch a file built for a different grid. |
@@ -174,7 +174,7 @@ record is one contiguous hyperslab. Stored as float (32-bit) or double.
 | `mitgcm_grid_ny` | int | R | Height of that layout. The model stops if `(nx, ny)` differs from its own global layout. |
 | `mitgcm_time_sampling` | string | R | `constant` (one record), `fixed` (a constant period, e.g. hourly or daily), `monthly` (calendar months) or `yearly` (calendar years). |
 | `mitgcm_time_period` | double | R if `fixed` | Record spacing in seconds, e.g. 3600 or 86400. |
-| `mitgcm_time_repeat` | string | O | `none` (default) or `annual`: the records are a climatology that repeats every model year. |
+| `mitgcm_time_repeat` | string | O | `none` (default) or `annual`: the records are a climatology. A `monthly` climatology repeats every model calendar year; a `fixed`-period climatology repeats with a cycle equal to the span of its bounds (§7). |
 
 `data.exf` settings override every timing attribute above. Exact parameter names
 are defined in RUNOFF-005.
@@ -263,10 +263,12 @@ that the calendar is written explicitly.
   for a single record, and the records cover exactly
   one year (e.g. 12 monthly or 365 daily records). The year number in `time` is
   nominal. A monthly climatology starts in January, because exf monthly records
-  (period `-12`) are January to December. The repeat cycle is the span of the
-  bounds (first start to last end), so a daily climatology built on a leap
-  nominal year repeats every 366 days. On a Gregorian model calendar a fixed
-  cycle drifts against calendar years; the reader (RUNOFF-005) documents this.
+  (period `-12`) are January to December, and exf repeats them every model
+  calendar year (no fixed repeat cycle). A `fixed`-period climatology repeats
+  with a cycle equal to the span of its bounds (first start to last end), so a
+  daily climatology built on a leap nominal year repeats every 366 days; on a
+  Gregorian model calendar that fixed cycle drifts against calendar years, and
+  the reader (RUNOFF-005) documents this.
   How `time` maps to model time when `pkg/cal` is not compiled is decided in
   RUNOFF-005.
 - **Checking several files (`X01`):** files are compared in the order given, so
@@ -290,8 +292,9 @@ that the calendar is written explicitly.
 ## 8. Storage, chunking and compression
 
 The main use case is daily records for 50 years at 10⁵–10⁶ sources: tens of GB
-per variable in float32. The model reads two bracketing records of every
-time series per update, so:
+per variable in float32. The model keeps the two records that bracket the current time and reads one
+new record of every time series each time that bracket advances (two at
+start-up), as exf dense fields do:
 
 - Time is the first (slowest) dimension of every time series.
 - Chunk time series with **1 record per chunk** along `time` and a large chunk
@@ -371,7 +374,7 @@ misbehave), **W** a warning (suspicious but usable), **I** information.
 | `U01` | E | A schema variable listed in §6 has a missing or disallowed `units` attribute. Index variables must not have one. |
 | `P01` | W | A time-series chunk spans more than one record along `time`. |
 | `P02` | E | A model-read variable uses an HDF5 filter other than deflate, shuffle or fletcher32. |
-| `X01` | E | Across several files: identical source, alias and target tables, grid attributes and variable set; records in time order, with each file's first bound equal to the previous file's last bound; yearly files share one within-year start offset. |
+| `X01` | E | Across several files: identical source, alias and target tables, grid attributes and variable set; records in time order, with each file's first bound equal to the previous file's last bound; `_YYYY` files share one offset of their first `time` value from 1 January of the year in their name; for `fixed` sampling the spacing across each file boundary equals `mitgcm_time_period`. |
 | `R01` | E | (`--grid-dir`) A target cell is on land (`hFacC` = 0 at level 1). |
 | `R02` | E | (`--grid-dir`) `target_cell_area` differs from `RAC` by more than 1e-4 relative. |
 | `R03` | W | (`--grid-dir`) `target_lon` / `target_lat` differ from `XC` / `YC` by more than 1e-3 degrees. |
