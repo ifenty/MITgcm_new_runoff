@@ -40,12 +40,13 @@ are separate from ESX transformation issues and are not selected by `loop_gate.p
 ## 🔴 PROPOSED: Manual claude runs in the project directory can hijack the ESX loop
 
 **Date Identified**: 2026-09-30  05:39
-**Status**: Proposed
+**Status**: Implemented — awaiting publication/effectiveness evidence
 **UUID**: TEAM-LOOP-FOREIGN-STOP-001
 **Category**: loop_stop_hook_isolation
 **Severity**: High
 **Assessment**: devel-loop/self-improvement/assessments/2026-09-30-runoff-001/assessment.md
-**Anchors**: tools/esx/ralph_stop.py; .claude/settings.json
+**Anchors**: tools/esx/ralph_stop.py; tools/esx/loop_control.py; .claude/settings.json
+**Implementation-Reference**: ESX-Team 03c7b76 (1.5.8), deployed in project commit 0c3546d
 
 ### Issue
 The project Stop hook runs for every Claude process started in the project directory, not only the Arch session that owns the loop. A manual `claude --print` witness run received the loop continuation prompt, advanced five iterations and emitted the completion promise, which ended the loop mid-issue.
