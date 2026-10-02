@@ -38,7 +38,12 @@ forcing tests" section of ``MITgcm/verification/lab_sea/README.md``):
 * ``runoffperiod = -1``: records at the middle of consecutive calendar months,
   record 1 being the month of the runoff start date (``exf_getmonthsrec.F``).
 
-One line is printed per case. The exit status is non-zero when a statistic
+One line is printed per case, ending with the range of the interpolation
+weight of the later record over the monitor times (``--json`` also lists the
+records held and the records with non-zero weight at those times). The
+``input.rnof_daily`` and ``input.rnof_yearly`` runs print the monitor every
+12 h, so the weights 0, 0.5 and (in the yearly case) the year-wrap weight all
+occur. The exit status is non-zero when a statistic
 differs by more than the tolerance (1e-12 relative to the largest runoff
 value), when a run directory or its monitor output is missing, or when no
 case is found.
@@ -154,20 +159,24 @@ class Case:
             return "yearly files"
         return "repeat cycle" if self.cycle > 0 else "no repeat"
 
-    def field(self, date):
-        """Runoff (m/s) that pkg/exf applies at ``date``."""
+    def bracket(self, date):
+        """The two records pkg/exf holds at ``date`` and the weight of the
+        later one: ``((year0, rec0), (year1, rec1), weight)``.
+
+        Record numbers are 1-based as in the model output, and the year is
+        0 unless yearly files are used. The weight is 0 exactly on a record
+        time, where the later record is read but does not contribute.
+        """
         if self.period == 0:
-            return self.records()[0]
+            return (0, 1), (0, 1), 0.0
         if self.period == -12:
             (_, m0), (_, m1), w = month_bracket(date)
-            r = self.records()
-            return (1 - w) * r[m0 - 1] + w * r[m1 - 1]
+            return (0, m0), (0, m1), w
         if self.period == -1:
             (y0, m0), (y1, m1), w = month_bracket(date)
             first = 12 * self.start.year + self.start.month
-            r = self.records()
-            return ((1 - w) * r[12 * y0 + m0 - first]
-                    + w * r[12 * y1 + m1 - first])
+            return ((0, 12 * y0 + m0 - first + 1),
+                    (0, 12 * y1 + m1 - first + 1), w)
         if self.period < 0:
             raise ValueError("unsupported runoffperiod %g" % self.period)
         p = self.period
@@ -184,25 +193,28 @@ class Case:
                 sec += in_year
             t = sec - offset
             k = int((t + 0.5) // p)
-            r0 = self.records(year)
             if offset + (k + 1) * p >= in_year:
-                w = (t % p) / (in_year - k * p)
-                return (1 - w) * r0[k] + w * self.records(year + 1)[0]
-            w = (t % p) / p
-            return (1 - w) * r0[k] + w * r0[k + 1]
+                return (year, k + 1), (year + 1, 1), (t % p) / (in_year - k * p)
+            return (year, k + 1), (year, k + 2), (t % p) / p
         t = (date - self.start).total_seconds()
-        r = self.records()
         if self.cycle > 0:
             t0 = t % self.cycle
             k0 = int((t0 + 0.5) // p)
             k1 = int(((t + p) % self.cycle + 0.5) // p)
-            w = (t0 % p) / p
-            return (1 - w) * r[k0] + w * r[k1]
+            return (0, k0 + 1), (0, k1 + 1), (t0 % p) / p
         if t < 0:
             raise ValueError("time before the first runoff record")
         k = int((t + 0.5) // p)
-        w = (t % p) / p
-        return (1 - w) * r[k] + w * r[k + 1]
+        return (0, k + 1), (0, k + 2), (t % p) / p
+
+    def field(self, date):
+        """Runoff (m/s) that pkg/exf applies at ``date``: the linear
+        combination of the two bracketing records."""
+        (y0, k0), (y1, k1), w = self.bracket(date)
+        r0 = self.records(y0 or None)[k0 - 1]
+        if w == 0.0:
+            return r0
+        return (1 - w) * r0 + w * self.records(y1 or None)[k1 - 1]
 
 
 def area_weights():
@@ -254,9 +266,16 @@ def check_case(directory, suffix, weights):
         return result
     worst = dict.fromkeys(STATS, 0.0)
     distinct = set()
+    held, weighted, wmin, wmax = set(), set(), 1.0, 0.0
     try:
         for i, t in enumerate(series["time"]):
             date = case.base + dt.timedelta(seconds=t)
+            r0, r1, w = case.bracket(date)
+            held.update([r0, r1])
+            weighted.add(r0 if w < 1.0 else r1)
+            if w > 0.0:
+                weighted.add(r1)
+            wmin, wmax = min(wmin, w), max(wmax, w)
             expected = statistics(case.field(date), weights)
             distinct.add(series["max"][i])
             for s in STATS:
@@ -269,9 +288,13 @@ def check_case(directory, suffix, weights):
         samples=n, distinct_max_values=len(distinct),
         first=str(case.base + dt.timedelta(seconds=series["time"][0])),
         last=str(case.base + dt.timedelta(seconds=series["time"][-1])),
-        worst_relative_error=worst)
+        worst_relative_error=worst,
+        records_held=sorted(held), records_with_weight=sorted(weighted),
+        weight_min=wmin, weight_max=wmax)
     result["ok"] = all(v <= TOLERANCE for v in worst.values())
-    result["message"] = "largest relative error %.1e" % max(worst.values())
+    result["message"] = ("largest relative error %.1e; weight of the later "
+                         "record %.3f..%.3f over the monitor times"
+                         % (max(worst.values()), wmin, wmax))
     return result
 
 
