@@ -1,0 +1,212 @@
+{
+  "retrospective": {
+    "schema_version": 3,
+    "id": "ESX-002",
+    "iteration": 1,
+    "closes_timestamp": "2026-10-02T16:03:12.398486+00:00",
+    "timestamp": "2026-10-02T16:06:47Z",
+    "accounting": {
+      "path": "devel-loop/loop_state/accounting/1b9eece365aee9e68480ecd7e3e6f9bafae9635d386ebd3ee1bf2e380e6fba7e.json",
+      "sha256": "1b9eece365aee9e68480ecd7e3e6f9bafae9635d386ebd3ee1bf2e380e6fba7e"
+    },
+    "measured": {
+      "span_minutes": 3,
+      "dispatches": {
+        "bob": 1
+      },
+      "rounds": {
+        "bob": 1
+      },
+      "cost_usd": {
+        "bob": 0.8746440000000001
+      },
+      "unknown_cost_event_ids": [],
+      "coordinator_coverage": "recorded",
+      "billing_status": "provider_reported_not_invoice_reconciled",
+      "coordinator": {
+        "tool_measured_minutes": 0.0,
+        "self_reported_minutes": 25.0,
+        "self_reported_usd": null,
+        "provider_reported_usd": null
+      },
+      "cost_scope": "cost_usd and span-based figures describe dispatched agents; coordinator cost is recorded separately: Arch self-reported 25 min, cost unknown (coordinator.self_reported; not added to cost_usd)"
+    },
+    "problems": [],
+    "solutions": [],
+    "confirmations": [
+      {
+        "category": "kit_upgrade_acceptance",
+        "summary": "Running a real retained dispatch as the acceptance witness of a kit upgrade exercised wait, start-receipt enforcement and permission judgment in one iteration.",
+        "evidence": "Bob b8a28b11 event e54e8aa9 completed under ESX 1.6.0; agent_runtime.py wait returned idle after 72.1 s in one foreground call; --next required --check-start before dispatch."
+      }
+    ],
+    "carry_forward": [],
+    "no_problem_reason": ""
+  },
+  "accounting": {
+    "billing_status": "provider_reported_not_invoice_reconciled",
+    "by_phase": {
+      "implementation": {
+        "effort_seconds": 81.3376190662384,
+        "elapsed_seconds": 81.3376190662384,
+        "events": 1
+      },
+      "orientation": {
+        "effort_seconds": 0.18539214134216309,
+        "elapsed_seconds": 0.18539214134216309,
+        "events": 5
+      },
+      "verification": {
+        "effort_seconds": 5.193561792373657,
+        "elapsed_seconds": 5.193561792373657,
+        "events": 2
+      }
+    },
+    "by_role": {
+      "bob": {
+        "dispatches": 1,
+        "reported_usd": 0.8746440000000001,
+        "rounds": 1,
+        "seconds": 81.39945816993713,
+        "tool_calls": 22,
+        "unknown_cost_events": 0,
+        "unknown_tool_call_events": 0,
+        "usage": {
+          "cache_creation_input_tokens": 21658,
+          "cache_read_input_tokens": 184376,
+          "input_tokens": 24,
+          "output_tokens": 7903
+        }
+      }
+    },
+    "child_elapsed_seconds": 81.39945816993713,
+    "components": [
+      {
+        "event_id": "e54e8aa9bd5a49508dd4798c7f6bd203",
+        "kind": "turn",
+        "parent_event_id": "e54e8aa9bd5a49508dd4798c7f6bd203",
+        "reported_usd": 0.8746440000000001,
+        "role": "bob",
+        "source": "devel-loop/loop_state/agent_runtime/sessions/b8a28b11-6b7f-40c9-8ce9-0e4b9da76b96/turns/e54e8aa9bd5a49508dd4798c7f6bd203/record.json"
+      }
+    ],
+    "coordinator": {
+      "coverage": "recorded",
+      "included_in_reported_usd": "no",
+      "provider_reported_usd": null,
+      "self_reported": {
+        "minutes": 25.0,
+        "records": [
+          {
+            "minutes": 25.0,
+            "phase": "coordination",
+            "record_id": "72dec887a54a437d87d10d9d92731066",
+            "recorded_at": "2026-10-02T16:06:47.040031+00:00",
+            "source": "Arch interactive session 8a3b12fb; wall-clock for the ESX-002 iteration; USD not observable (unknown)",
+            "usd": null
+          }
+        ],
+        "records_without_usd": 1,
+        "usd": null
+      },
+      "tool_measured": {
+        "basis": "wall time of gate commands run as arch; excludes interactive session time",
+        "effort_seconds": 2.097592830657959,
+        "elapsed_seconds": 2.097592830657959,
+        "events": 2
+      }
+    },
+    "coordinator_coverage": "recorded",
+    "end": "2026-10-02T16:06:17.589207+00:00",
+    "issue_id": "ESX-002",
+    "missing_timing_event_ids": [],
+    "outside_child_intervals_seconds": 103.79126286506653,
+    "phase_events": [
+      {
+        "event_id": "3995051b5cc848c3ac2f3b6478ff3acf",
+        "finished_at": "2026-10-02T16:03:25.826192+00:00",
+        "issue_id": "ESX-002",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.06270551300258376,
+        "started_at": "2026-10-02T16:03:25.763483+00:00"
+      },
+      {
+        "event_id": "f2f6175df4594626b072c37af01943ec",
+        "finished_at": "2026-10-02T16:04:02.804721+00:00",
+        "issue_id": "ESX-002",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.02965124198817648,
+        "started_at": "2026-10-02T16:04:02.775071+00:00"
+      },
+      {
+        "event_id": "00c9a461000c4d6c84ac41eeeb057368",
+        "finished_at": "2026-10-02T16:04:10.029982+00:00",
+        "issue_id": "ESX-002",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.02926779698464088,
+        "started_at": "2026-10-02T16:04:10.000720+00:00"
+      },
+      {
+        "event_id": "26e14ccaec894444a0b8b0419afd5902",
+        "finished_at": "2026-10-02T16:04:14.182047+00:00",
+        "issue_id": "ESX-002",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.029039921995718032,
+        "started_at": "2026-10-02T16:04:14.153009+00:00"
+      },
+      {
+        "event_id": "b3fb1843ed8a402cbff1b0589a3af260",
+        "finished_at": "2026-10-02T16:04:18.794092+00:00",
+        "issue_id": "ESX-002",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.03472649899777025,
+        "started_at": "2026-10-02T16:04:18.759359+00:00"
+      },
+      {
+        "event_id": "a421dab2784f4d62a3cc4eefed8871da",
+        "finished_at": "2026-10-02T16:04:32.390061+00:00",
+        "issue_id": "ESX-002",
+        "phase": "verification",
+        "reason": null,
+        "role": "b8a28b11-6b7f-40c9-8ce9-0e4b9da76b96",
+        "seconds": 3.158675636019325,
+        "started_at": "2026-10-02T16:04:29.231383+00:00"
+      },
+      {
+        "event_id": "5c97e1db9aae49128b1614778bb4e4c2",
+        "finished_at": "2026-10-02T16:05:00.328834+00:00",
+        "issue_id": "ESX-002",
+        "phase": "implementation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 81.33762731400202,
+        "started_at": "2026-10-02T16:03:38.991215+00:00"
+      },
+      {
+        "event_id": "3200eb88db6a46049a5651398569ea87",
+        "finished_at": "2026-10-02T16:06:05.540453+00:00",
+        "issue_id": "ESX-002",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 2.0348931530024856,
+        "started_at": "2026-10-02T16:06:03.505569+00:00"
+      }
+    ],
+    "reported_usd": 0.8746440000000001,
+    "schema_version": 2,
+    "span_seconds": 185.19072103500366,
+    "start": "2026-10-02T16:03:12.398486+00:00",
+    "unknown_cost_event_ids": []
+  }
+}

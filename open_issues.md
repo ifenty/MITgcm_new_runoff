@@ -26,59 +26,6 @@ A closed dependency prompts reconsideration; it does not automatically unblock w
 <Hypothesis, bounded change/inquiry, independent oracle, tolerances and completion criteria>
 ```
 
-## UNRESOLVED: ESX runtime hook makes every retained-agent Bash call require approval
-
-**Date Identified**: 2026-09-29T22:20:00Z
-**Status**: Unresolved
-**UUID**: ESX-002
-**Anchors**: tools/esx/runtime_tool_hook.py::handle; tools/esx/agent_runtime.py::<module>
-
-### Issue or research question
-`runtime_tool_hook.handle` returns `updatedInput` that rewrites every Bash command to
-`/usr/bin/python3 tools/esx/bounded_command.py --timeout … -- /bin/bash -c '<cmd>'`.
-Its docstring says "normal tool permission checks still run". But Claude Code checks
-permissions on the *rewritten* command, so no project allow rule (`Bash(python3 *)`,
-`Bash(pwd)`, …) can match. Every Bash call from a retained role session (Bob, Richard,
-Scout, …) in the default permission mode is denied with "This command requires approval".
-Roles can still Read, Edit and Write, but can't run tests, builds or verification.
-Richard's independently executed check, which acceptance requires, is impossible.
-
-A second defect hides this: `agent_runtime.py probe` runs tools-disabled turns and passes,
-and nothing in the kit validates role tool permissions live (the probe output says
-"role tool permissions need separate live validation").
-
-### Evidence
-- RUNOFF-001 Bob session `a7e61b17-6617-47f7-b90c-b7a2124c40c7`, turn
-  `3cc0d65cc31349ecad3b173640b664ac`: `pwd`,
-  `/home/ifenty/miniforge3/envs/ecco/bin/python --version`, `python3 tools/esx/doc_contract.py …`
-  and `ls -la …` were all denied (`permission_denied`, `decision_reason_type: other`),
-  although `Bash(python3 *)` and `Bash(ls *)` are allowlisted and `pwd`/`--version` were added.
-- Control: the same CLI binary (2.1.285) with the same project settings but without the
-  `--settings` PreToolUse hook ran `ls -la`, `python3 --version` and `wc -l` successfully
-  (`devel-loop/loop_state/permprobe.jsonl`, 2026-09-29).
-
-### Scientific or engineering impact
-Blocks every scientific_change workflow: implementation can't run its tests, and the
-independent review's executed check can't run. Local workaround (2026-09-29): an allow rule
-for the wrapper prefix in `.claude/settings.local.json`,
-`Bash(/usr/bin/python3 /home/ifenty/Projects/MITgcm_new_runoff/tools/esx/bounded_command.py *)`.
-That rule allows any command inside the wrapper, so role sessions effectively bypass the allowlist.
-
-### Proposed action and acceptance
-Fix in ESX-Team upstream (github.com/ifenty/ESX-Team):
-- evaluate the original command against the project allow/deny rules inside the hook,
-  and return `permissionDecision` explicitly;
-- add a live tool-permission witness to `agent_runtime.py probe`: one allowed Bash
-  command must run and one disallowed command must be denied.
-
-Acceptance: with the wrapper rule removed, a role session runs an allowlisted command,
-is denied a non-allowlisted one, and the probe fails on the current hook.
-
-### Resolution evidence (2026-09-29)
-Fixed upstream in ESX-Team 1.5.1 (8c7ea7d) and 1.5.2 (c92ebe4), both deployed here with no conflicts. The hook now judges the original command with `permission_match` and explicitly allows only allowlisted commands. The live probe runs an allowed and a denied Bash witness, and passes here (`devel-loop/loop_state/probe-152.json`). A matcher witness on this project's rules allows ecco pytest, quoted multi-line `python3 -c` and `cd && python3`. Heredocs, file redirects and unlisted commands get no decision; deny wins through `&&` and `|`. Wrapper allow rule and `Bash(mkdir *)` removed. Awaiting formal closeout.
-
-Acceptance witness on ESX-Team 1.6.0 (2026-10-02): with the workaround rules removed, a retained Bob session (b8a28b11, event e54e8aa9) ran allowlisted commands (pwd, the pinned-python pytest, python3 -c, `ls | head`), was refused the unlisted `mkdir` with nothing created, and the turn recorded the denial without a dispatcher crash. The live probe passes (`devel-loop/loop_state/probe-160.json`).
-
 ## UNRESOLVED: ESX dispatch adapter crashes on Claude Code permission_denied events
 
 **Date Identified**: 2026-09-29T22:05:00Z
