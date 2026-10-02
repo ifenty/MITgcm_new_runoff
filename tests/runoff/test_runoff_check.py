@@ -10,6 +10,9 @@ int64 cells, yearly file pairs, NETCDF3, JSON output, grid checks from
 MITgcm-style grid files (tiled and global), and the streamed large case.
 The ``python -m MITgcmutils.runoff.check`` entry point and the package's lazy
 exports are exercised in subprocesses, with RuntimeWarning as an error.
+Tables-only mode is checked on a file without time series (clean, with one
+S10 finding), on a table fault (still reported) and a time-series fault (not
+looked at), and on several files (tables compared, time order skipped).
 """
 
 import json
@@ -1088,9 +1091,63 @@ def test_package_exports_are_lazy():
 
 
 # ---------------------------------------------------------------------------
+# Tables-only mode (RUNOFF-009): time and time-series rules skipped, S10 says so
+
+NO_SERIES = dict(time=None, time_bnds=None, runoff_flux=None, runoff_temperature=None,
+                 runoff_salinity=None, ptracers={})
+
+
+def test_tables_only_accepts_a_file_without_time_series(tmp_path, grid_dir):
+    p = build(tmp_path, NO_SERIES)
+    full = check_files(p)
+    assert {"S03", "S04"} <= full.rules("E"), full.format_text()   # time dim, time, flux
+    r = check_files(p, grid_dir=grid_dir, tables_only=True)
+    assert r.errors == [] and r.warnings == [], r.format_text()
+    s10 = [f for f in r.findings if f.rule == "S10"]
+    assert len(s10) == 1 and s10[0].level == "I" and s10[0].file == p
+    for skipped in schema.TABLES_ONLY_SKIPPED:
+        assert skipped in s10[0].message
+    assert r.stats["tables_only"] == list(schema.TABLES_ONLY_SKIPPED)
+    assert main([p]) == 1
+    assert main([p, "--tables-only", "--strict"]) == 0
+
+
+def test_tables_only_still_checks_the_tables(tmp_path):
+    """Table rules keep their meaning; only time and time-series rules are skipped."""
+    p = build(tmp_path, dict(NO_SERIES, target_fraction=[0.7, 0.3, 1.0, 0.5, 0.49]))
+    r = check_files(p, tables_only=True)
+    assert r.rules("E") == {"T05"}, r.format_text()
+    # A time-series fault in a full file is not looked at in tables-only mode.
+    q = build(tmp_path, modifier=setv("runoff_flux", (2, 1), np.nan), name="full.nc")
+    assert "D02" in check_files(q).rules("E")
+    r = check_files(q, tables_only=True)
+    assert r.errors == [] and r.rules() == {"S10"}, r.format_text()
+
+
+def test_tables_only_several_files(tmp_path):
+    """X01 still compares the tables; its time order and continuity checks are skipped."""
+    a = build(tmp_path, NO_SERIES, name="a.nc")
+    b = build(tmp_path, NO_SERIES, name="b.nc")
+    r = check_files([a, b], tables_only=True)
+    assert r.errors == [] and r.warnings == [], r.format_text()
+    assert r.stats["tables_only"] == list(schema.TABLES_ONLY_SKIPPED
+                                          + schema.TABLES_ONLY_SKIPPED_MULTI)
+    # Two full files covering the same days overlap (X01), unless only tables are checked.
+    fa, fb = build(tmp_path, name="fa.nc"), build(tmp_path, name="fb.nc")
+    assert check_files([fa, fb]).rules("E") == {"X01"}
+    r = check_files([fa, fb], tables_only=True)
+    assert r.errors == [] and r.warnings == [], r.format_text()
+    c = build(tmp_path, dict(NO_SERIES, target_fraction=[0.6, 0.4, 1.0, 0.5, 0.5]),
+              name="c.nc")
+    r = check_files([a, c], tables_only=True)
+    assert r.rules("E") == {"X01"}, r.format_text()
+    assert any("target_fraction" in f.message for f in r.errors)
+
+
+# ---------------------------------------------------------------------------
 # Every rule of schema section 9 is demonstrated above
 
-DEMONSTRATED_ELSEWHERE = {"X01", "R01", "R02", "R03", "P02"}
+DEMONSTRATED_ELSEWHERE = {"X01", "R01", "R02", "R03", "P02", "S10"}
 
 
 def test_every_rule_has_a_demonstration():

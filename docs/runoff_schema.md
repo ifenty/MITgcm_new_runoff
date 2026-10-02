@@ -9,7 +9,8 @@ A runoff file describes a set of **sources** (rivers, glaciers, ice-sheet basins
 groundwater outlets and so on). Each source feeds one or more ocean **target
 cells** with a fixed **fraction** of its water. Each source has time series on
 one shared **time** axis: a volume flux, and optionally temperature, salinity and
-passive-tracer concentrations.
+passive-tracer concentrations. To build the target table from source locations
+and an MITgcm grid, see [Building the target table](#13-building-the-target-table).
 
 The file has three kinds of content:
 
@@ -327,6 +328,15 @@ MITgcm grid output (`hFacC`, `RAC`, `XC`, `YC`) and runs the grid checks as well
 It reads time series one block of records at a time, so memory stays bounded for
 very large files.
 
+`--tables-only` (`check_files(..., tables_only=True)`) checks a file that holds
+only the source, alias and target tables, such as the output of the target-table
+builder (§13) before its time series are added. In this mode the `time` dimension
+(`S03`) and the `time` and `runoff_flux` variables (`S04`) are not required. The
+time and time-series rules `M01`–`M06`, `D01`–`D09` and `P01` are skipped, even
+for time variables that are present. With several files, `X01` still compares
+the tables but skips the time order and continuity checks. Every other rule runs
+unchanged, and each file gets one `S10` finding listing what was skipped.
+
 Each finding has a rule id. **E** is an error (the model would stop or
 misbehave), **W** a warning (suspicious but usable), **I** information.
 
@@ -341,6 +351,7 @@ misbehave), **W** a warning (suspicious but usable), **I** information.
 | `S07` | E | A model-read variable carries `scale_factor` or `add_offset`. |
 | `S08` | E | A model-read text attribute (§1) is NC_STRING instead of `char`, or is not ASCII. If the checker can't load libnetcdf to read attribute types, it reports `S08` as a W finding (not checked) instead. |
 | `S09` | E | `_FillValue` or `missing_value` on a model-read variable is not numeric of the variable's type. |
+| `S10` | I | (`--tables-only`) The time and time-series rules listed above were not checked. |
 | `G01` | E | `mitgcm_grid_nx` and `mitgcm_grid_ny` are positive integers. |
 | `I01` | E | `source_id` values are non-empty, allowed characters, ≤ 64 characters. |
 | `I02` | E | `source_id` values are unique. |
@@ -568,3 +579,157 @@ of existing content, and a reader refuses a major version it doesn't know.
 3D runoff (`target_level` other than 1) is planned as version 1.1. A 1.0 reader
 already reads `target_level` and stops on any value other than 1, so it never
 silently puts subsurface runoff at the surface.
+
+## 13. Building the target table
+
+`build_targets` and `write_targets` (module `MITgcmutils.runoff.targets`, also a
+command-line tool) build the source, alias and target tables (§3.2–3.4) from
+source locations and MITgcm grid output. You then append the time series, or
+write the tables into an existing runoff file.
+
+**Inputs.**
+
+- **Grid:** MITgcm grid output, global or tiled: `hFacC` (level 1, wet where
+  > 0), `XC`, `YC` (cell centers, degrees), `XG`, `YG` (south-west cell corners,
+  degrees) and `RAC` (m²). `mitgcm_grid_nx` and `mitgcm_grid_ny` come from the
+  array shape, and `target_cell` uses the checker's flattening `c = i + nx·j`.
+  Only spherical grids in degrees are supported.
+- **Sources:** either a CSV file or a schema-1.0 NetCDF file.
+  - The CSV has the columns `source_id`, `lon`, `lat` (degrees), optional `name`,
+    `type`, `notes`, `reference` and `alt_names` (aliases separated by `;`), and
+    optional per-source option columns (below).
+  - The NetCDF file supplies `source_id`, `source_lon`, `source_lat`, the other
+    `source_*` metadata and the alias table, and its sources use the default
+    options.
+
+**Options.** Each option has a default, set on the command line, which a CSV
+column of the same name overrides per source. An empty cell uses the default.
+Distances are in meters, or a number followed by `km` or `m`.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `emission` | `pointwise` | `pointwise` or `spread` |
+| `spread_type` | none | `gaussian`, `exponential` or `linear`; required for `spread` |
+| `spread_scale` | none | $X$, the distance at which the kernel falls to $1/e$ of its peak; required for `spread` |
+| `cutoff` | $3X$ | Largest distance $r$ of a target cell. For `linear`, the cutoff is $R_\mathrm{cut}$, or this value if it is smaller. |
+| `max_snap_distance` | 50 km | Largest distance from a source to its snapped cell |
+
+**Algorithm.**
+
+1. **Snapping:** each source goes to the wet cell whose center is nearest by
+   great-circle distance (haversine formula, sphere radius 6371000 m, or
+   `--earth-radius`). Exact ties go to the lowest cell index. If that cell is
+   farther than `max_snap_distance`, the builder stops with an error that names
+   the source, the distance and the cell.
+2. **Pointwise emission:** one target, fraction 1, at the snapped cell.
+3. **Spread emission:** the distance of wet cell $c$ is measured from the
+   snapped cell $c_0$:
+
+   $$r_c = \min_{c_0 \to c} \sum_k d(c_k, c_{k+1}),$$
+
+   where $d$ is the great-circle distance between two cell centers. The
+   minimum is over paths $c_0, c_1, \dots, c$ of wet cells, where each step
+   goes to a cell that shares a cell edge. So $r = 0$ at the snapped cell. The
+   distance from the source point to the snapped cell is limited by
+   `max_snap_distance` and recorded in `source_snap_distance`, but it is not
+   part of $r$. Every cell with $r_c \le$ `cutoff` is a candidate, and its
+   fraction is
+
+   $$f_c = \frac{W(r_c)\,A_c}{\sum_{c'} W(r_{c'})\,A_{c'}},$$
+
+   where $A_c$ is `RAC`. The kernels are:
+
+   - exponential: $W = e^{-r/X}$
+   - gaussian: $W = e^{-r^2/X^2}$
+   - linear: $W = \max(0,\ 1 - r/R_\mathrm{cut})$, with $R_\mathrm{cut} = X/(1 - e^{-1})$
+
+   Each gives $W(X) = W(0)/e$. Zero weights are dropped, and the fractions sum
+   to 1 in double precision. The kernel peak, $W(0) = 1$, is at the snapped
+   cell, so a source that lies inland of its snapped cell still spreads from
+   the coast.
+
+   Because $r$ follows connected water, a fjord on the far side of a peninsula,
+   or an enclosed lake, gets nothing even when it is close in a straight line.
+   Weighting by $W\,A$ makes the runoff per unit area, $W$ times a constant,
+   independent of cell size.
+
+**Neighbours.** Two wet cells are neighbours when they share a cell edge.
+
+- **One-block grids** (lat-lon, and curvilinear grids without exch2): the
+  neighbours of $(i, j)$ are $(i \pm 1, j)$ and $(i, j \pm 1)$. The grid wraps
+  from $i = n_x - 1$ to $i = 0$ when it is zonally periodic.
+- **exch2 cubed-sphere and LLC layouts:** array neighbours at face edges are not
+  grid neighbours. The builder finds each cell's four corners as grid vertices:
+  - its own `XG`/`YG` south-west corner;
+  - the south-west corners of its array neighbours, where these form a
+    quadrilateral centered on the cell;
+  - a geometric search from the cell center at face edges.
+
+  Cells that share two corners are neighbours.
+
+On the `global_ocean.cs32x15` grid with every cell treated as wet, this gives
+every cell 4 neighbours: 12288 edges in total, 384 of them across faces. This is
+exactly what a closed cube of 6 × 32 × 32 cells has. The method has not been
+tested on an LLC grid.
+
+**Output.** `write_targets` writes the tables of §3.2–3.4, sorted by source and
+then cell. `target_cell` is `int` (`int64` only when a cell index would exceed
+2³¹ − 1), `target_cell_area` is `RAC`, and `target_lon`/`target_lat` are
+`XC`/`YC`.
+
+It also writes user variables (§5):
+
+- `target_distance`: $r$, in m (0 at the snapped cell, so 0 for a pointwise
+  target)
+- `source_snap_distance`: great-circle distance from the source point to the
+  center of its snapped cell, in m
+- `source_emission`
+- `source_spread_type`: `none` for pointwise sources
+- `source_spread_scale` and `source_cutoff` (the cutoff actually used), in m;
+  NaN for pointwise sources
+
+The global attributes include `mitgcm_runoff_schema_version`,
+`mitgcm_grid_nx`/`ny`, `source` (builder version), `history` (the command line)
+and `comment` (the kernel convention).
+
+A new file has no time dimension, so check it with `--tables-only`. With
+`--into RUNOFF.nc`, the output is instead a copy of an existing runoff file, with
+the same `source_id` list in the same order, whose target table, alias table and
+builder-written source variables are replaced. Its time series and all other
+content are copied unchanged.
+
+**Command line.** It exits 0 on success, 1 on invalid input or checker errors in
+the output, and 2 on a usage or I/O problem. It runs the checker on the output
+unless you pass `--no-check`. The other flags are `--cutoff`,
+`--max-snap-distance`, `--earth-radius`, `--connectivity {auto,index,corners}`
+(the neighbour method; `auto` chooses from the grid geometry) and `--grid-name`.
+
+```sh
+python -m MITgcmutils.runoff.targets sources.csv --grid-dir run/ -o targets.nc \
+    --spread-type gaussian
+python -m MITgcmutils.runoff.targets sources.csv --grid-dir run/ -o runoff.nc \
+    --into runoff.nc --emission spread --spread-type linear --spread-scale 20km
+```
+
+With this `sources.csv`, the first command makes `amazon` pointwise (the
+default) and spreads `jakobshavn` with a gaussian of $X = 10$ km:
+
+```text
+source_id,lon,lat,name,type,alt_names,emission,spread_scale
+jakobshavn,-50.1,69.17,Jakobshavn Isbræ,glacier,Sermeq Kujalleq;Ilulissat Glacier,spread,10km
+amazon,-50.0,-0.2,Amazon,river,,,
+```
+
+From Python:
+
+```python
+from MITgcmutils.runoff import build_targets, check_files, write_targets
+
+tables = build_targets("sources.csv", "run/", spread_type="gaussian")
+write_targets("targets.nc", tables)
+check_files("targets.nc", grid_dir="run/", tables_only=True)
+```
+
+The builder uses `scipy`'s k-d tree for nearest-cell searches when `scipy` is
+installed. Otherwise it uses a slower pure-numpy search that gives identical
+results.
