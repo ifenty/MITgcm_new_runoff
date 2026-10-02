@@ -18,9 +18,13 @@ from live source.
 | Namelist | `MITgcm/pkg/exf/exf_readparms.F::<module>` (`EXF_READPARMS`) | `data.exf` → `runofffile`, `runoffperiod`, `runoffStartTime`, `runoffRepCycle`, `useExfYearlyFields` in `EXF_PARAM.h` | [model contract](model_contract.md) §Time axis; `tests/mitgcm_oracle.sh` |
 | Parameter report | `MITgcm/pkg/exf/exf_summary.F::<module>` (`EXF_SUMMARY`) | parameters → `STDOUT` | contribution rule: new parameters are reported here |
 | Consistency checks | `MITgcm/pkg/exf/exf_check.F::<module>` (`EXF_CHECK`) | parameters → stop on invalid setup | planned: sparse and dense are mutually exclusive |
-| Dense field read and time interpolation | `MITgcm/pkg/exf/exf_getffields.F::<module>` (`EXF_GETFFIELDS`) → `MITgcm/pkg/exf/exf_set_gen.F::<module>` (`EXF_SET_GEN`) | `runofffile` records → `runoff`, `runoff0`, `runoff1` (m/s) | `global_ocean.cs32x15/input.icedyn` via `tests/mitgcm_oracle.sh` |
-| Record selection | `MITgcm/pkg/exf/exf_getffieldrec.F::<module>` (`EXF_GetFFieldRec`), `MITgcm/pkg/exf/exf_getmonthsrec.F::<module>` (`EXF_GetMonthsRec`) | time, period, repeat cycle → record indices and weights | [verification matrix](verification_matrix.md) timing cases |
-| Yearly file names | `MITgcm/pkg/exf/exf_getyearlyfieldname.F::<module>` (`exf_GetYearlyFieldName`) | base name + year → `name_YYYY` | lab_sea yearly case (planned) |
+| Dense field read and time interpolation | `MITgcm/pkg/exf/exf_getffields.F::<module>` (`EXF_GETFFIELDS`) → `MITgcm/pkg/exf/exf_set_gen.F::<module>` (`EXF_SET_GEN`) | `runofffile` records → `runoff`, `runoff0`, `runoff1` (m/s) | `global_ocean.cs32x15/input.icedyn` and `lab_sea/input.rnof_*` via `tests/mitgcm_oracle.sh` |
+| Constant field (`runoffperiod = 0`) | `MITgcm/pkg/exf/exf_init_fld.F::<module>` (`EXF_INIT_FLD`), called from `MITgcm/pkg/exf/exf_init_varia.F::<module>` | record 1 of `runofffile`, read once → `runoff` | `lab_sea/input.rnof_const` |
+| Record selection | `MITgcm/pkg/exf/exf_set_fld.F::<module>` (`EXF_SET_FLD`) chooses by period: `MITgcm/pkg/exf/exf_getffieldrec.F::<module>` (`EXF_GetFFieldRec`) for a positive period, `MITgcm/pkg/cal/cal_getmonthsrec.F::<module>` (`cal_GetMonthsRec`) for `-12`, `MITgcm/pkg/exf/exf_getmonthsrec.F::<module>` (`EXF_GetMonthsRec`) for `-1`; start time from `MITgcm/pkg/exf/exf_getffield_start.F::<module>` (`EXF_GETFFIELD_START`) | time, period, repeat cycle → record indices and weights | `lab_sea/input.rnof_daily`, `input.rnof_clim`, `input.rnof_month` (`-12`), `input.rnof_month1` (`-1`); conventions with line references in `MITgcm/verification/lab_sea/README.md::<module>` |
+| Yearly file names | `MITgcm/pkg/exf/exf_getyearlyfieldname.F::<module>` (`exf_GetYearlyFieldName`) | base name + year → `name_YYYY` | `lab_sea/input.rnof_yearly` |
+| Range check | `MITgcm/pkg/exf/exf_check_range.F::<module>` (`EXF_CHECK_RANGE`), run at the first step when `useExfCheckRange` is set | `runoff` → stop if negative or above 1e-6 m/s on a wet cell | all `lab_sea/input.rnof_*` cases keep it on |
+| Dense lab_sea runoff generator | `MITgcm/verification/lab_sea/input.rnof_const/gendata.py::main` (the same script is kept in every `input.rnof_<X>`; the case comes from the directory name) | `bathy.labsea1979` + source table → dense float32 runoff records and `runoff_sources.txt` | the six `lab_sea/input.rnof_*` oracle runs |
+| Dense runoff timing check | `tests/runoff/lab_sea_runoff_timing_check.py::main`: settings and records per case in `tests/runoff/lab_sea_runoff_timing_check.py::Case` (`Case.field` applies the exf timing conventions), monitor values from `tests/runoff/lab_sea_runoff_timing_check.py::monitor_series`, comparison in `tests/runoff/lab_sea_runoff_timing_check.py::check_case` | `input.rnof_*/data.exf`, runoff records and `output_esx_input.rnof_*[_mpiN]/output.txt` → one PASS/FAIL line per case, exit 1 on a mismatch above 1e-12 or a missing run | [verification matrix](verification_matrix.md) direct timing check; run after the oracle commands |
 | Heat content of runoff | `MITgcm/pkg/exf/exf_mapfields.F::<module>` (`EXF_MAPFIELDS`) | `runoff`, `runoftemp` (`ALLOW_RUNOFTEMP`) → surface fluxes | `global_ocean.cs32x15/input.seaice` via `tests/mitgcm_oracle.sh` |
 | Diagnostics | `MITgcm/pkg/exf/exf_diagnostics_fill.F::<module>` (`EXF_DIAGNOSTICS_FILL`) | `runoff` → diagnostics output | planned hold-exact direct check |
 | Driver order | `MITgcm/pkg/exf/exf_getforcing.F::<module>` (`EXF_GETFORCING`) | calls `EXF_GETFFIELDS`, then `EXF_MAPFIELDS` | — |
@@ -40,7 +44,14 @@ from live source.
   end or FAIL.
 - **Suites** (configured in [project.json](../esx/project.json)):
   - `focused`: cs32 `input.seaice` and lab_sea `input`.
-  - `scientific`: adds MPI variants and the no-change experiments.
+  - `scientific`: adds MPI variants, the no-change experiments and the six
+    lab_sea dense runoff cases `input.rnof_{const,daily,month,month1,clim,yearly}`,
+    each single-process and with `-mpi 2`, followed by
+    `tests/runoff/lab_sea_runoff_timing_check.py` (and `--mpi 2`), which reads
+    the run directories those commands leave behind.
+- **New reference output:** `compare_results.sh` pairs `input.<X>` with
+  `results/output.<X>.txt`. For a new case, run it once single-process and copy
+  `output_esx_input.<X>/output.txt` to that name.
   - Run them with `/home/ifenty/miniforge3/envs/ecco/bin/python tools/esx/verify.py --suite <name> --owner <role>`.
 - **Oracles and planned cases:** [verification_matrix.md](verification_matrix.md).
 - **Underlying Docker scripts:** `MITgcm/verification/{experiment_compile,experiment_run_no_compile,compare_results}.sh`

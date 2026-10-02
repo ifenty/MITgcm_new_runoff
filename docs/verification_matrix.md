@@ -14,11 +14,19 @@ runs on the unmodified code today.
 | Dense runoff baseline, cubed sphere (**configured**) | `global_ocean.cs32x15/input.icedyn`: 30-day records, 12 tiles | `results/output.icedyn.txt` | digit threshold | `tests/mitgcm_oracle.sh global_ocean.cs32x15 input.icedyn` | local | yes |
 | Dense runoff + runoff temperature, cubed sphere (**configured**) | `global_ocean.cs32x15/input.seaice` (`ALLOW_RUNOFTEMP`) | `results/output.seaice.txt` | digit threshold | `tests/mitgcm_oracle.sh global_ocean.cs32x15 input.seaice` (and `-mpi 4`) | local | yes |
 | Sparse = dense, cubed sphere, exch2 multi-tile/multi-process | converted `core_rnof_1_cs32.bin` (+ `runoff_temperature.bin`); `SIZE.h` 12 tiles and `SIZE.h_mpi` 4 processes × 3 tiles | the two rows above | round-off from flux·frac/rA vs precomputed m/s | new `input.<X>` via `tests/mitgcm_oracle.sh … [-mpi 4]` | local | yes |
-| Sparse = dense, lat-lon, constant runoff | new `lab_sea/input.<X>`; sources include one spanning a tile boundary and the MPI process boundary | dense-path reference run saved as `results/output.<X>.txt` | digit threshold | `tests/mitgcm_oracle.sh lab_sea input.<X> [-mpi 2]` | local | yes |
-| Daily records, non-repeating | lab_sea, ≥ 1 month | dense daily reference | digit threshold | as above | local | yes |
-| Calendar-monthly records (`period = -12`) | lab_sea, spanning ≥ 2 month boundaries | dense monthly reference | digit threshold | as above | local | yes |
-| Monthly climatology wrap (`RepCycle` = 1 year) | lab_sea, crossing Dec → Jan | dense climatology reference | digit threshold | as above | local | yes |
-| Yearly `_YYYY` files | lab_sea, run crossing 31 Dec → 1 Jan | dense yearly-field reference (`useExfYearlyFields`) | digit threshold | as above | local | yes |
+| Dense runoff baseline, lat-lon, constant runoff (**configured**) | `lab_sea/input.rnof_const`: `runoffperiod = 0`, 48 steps; seven coastal source cells, one group spanning the tile and MPI process boundary between columns 9 and 10 | `results/output.rnof_const.txt` (single-process dense run) | digit threshold; the `-mpi 2` run must match the single-process reference | `tests/mitgcm_oracle.sh lab_sea input.rnof_const` and `tests/mitgcm_oracle.sh lab_sea input.rnof_const -mpi 2` | local | yes |
+| Dense runoff baseline, daily records, non-repeating (**configured**) | `lab_sea/input.rnof_daily`: `runoffperiod = 86400`, `runoffRepCycle = 0`, 32 days, records 1 to 33 read | `results/output.rnof_daily.txt` | as above | `tests/mitgcm_oracle.sh lab_sea input.rnof_daily` and `tests/mitgcm_oracle.sh lab_sea input.rnof_daily -mpi 2` | local | yes |
+| Dense runoff baseline, repeating monthly climatology (12 calendar-month records repeated every year) (**configured**) | `lab_sea/input.rnof_month`: `runoffperiod = -12`, 61 days from 1 January, crossing two month boundaries and two mid-month record changes; records 12, 1, 2, 3 | `results/output.rnof_month.txt` | as above | `tests/mitgcm_oracle.sh lab_sea input.rnof_month` and `tests/mitgcm_oracle.sh lab_sea input.rnof_month -mpi 2` | local | yes |
+| Dense runoff baseline, calendar-month records, non-repeating (**configured**) | `lab_sea/input.rnof_month1`: `runoffperiod = -1`, `runoffstartdate1 = 19781201`, 61 days from 1 January, crossing two month boundaries; records 1 (December 1978) to 4 (March 1979) | `results/output.rnof_month1.txt` | as above | `tests/mitgcm_oracle.sh lab_sea input.rnof_month1` and `tests/mitgcm_oracle.sh lab_sea input.rnof_month1 -mpi 2` | local | yes |
+| Dense runoff baseline, 12 equally spaced records with a repeat cycle (**configured**) | `lab_sea/input.rnof_clim`: `runoffperiod = 2628000`, `runoffRepCycle = 31536000` (365 days), 50 days from 1 December, wrapping from record 12 to record 1 | `results/output.rnof_clim.txt` | as above | `tests/mitgcm_oracle.sh lab_sea input.rnof_clim` and `tests/mitgcm_oracle.sh lab_sea input.rnof_clim -mpi 2` | local | yes |
+| Dense runoff baseline, yearly `_YYYY` files (**configured**) | `lab_sea/input.rnof_yearly`: `useExfYearlyFields`, daily records, 26 days from 20 December, reading `runoff_yearly_1978` and `runoff_yearly_1979` | `results/output.rnof_yearly.txt` | as above | `tests/mitgcm_oracle.sh lab_sea input.rnof_yearly` and `tests/mitgcm_oracle.sh lab_sea input.rnof_yearly -mpi 2` | local | yes |
+| Dense runoff timing, direct check (**configured**) | the run directories of the six `lab_sea/input.rnof_*` cases, single-process and `-mpi 2`; needs the oracle runs above to have been made | monitor statistics `exf_runoff_max`, `_min`, `_mean`, `_sd` versus the field interpolated from the input records under the exf timing conventions, at every monitor time | ≤ 1e-12 relative to the largest runoff value (real*8 interpolation of float32 records) | `{python} tests/runoff/lab_sea_runoff_timing_check.py` and `{python} tests/runoff/lab_sea_runoff_timing_check.py --mpi 2` | local | yes |
+| Sparse = dense, lat-lon, constant runoff | the `input.rnof_const` runoff converted to sparse form; sources include one spanning a tile boundary and the MPI process boundary | `results/output.rnof_const.txt` | digit threshold | new `lab_sea/input.<X>` via `tests/mitgcm_oracle.sh lab_sea input.<X> [-mpi 2]` | local | yes |
+| Sparse = dense, daily records, non-repeating | the `input.rnof_daily` runoff, ≥ 1 month | `results/output.rnof_daily.txt` | digit threshold | as above | local | yes |
+| Sparse = dense, repeating monthly climatology (`period = -12`) | the `input.rnof_month` runoff, spanning ≥ 2 month boundaries | `results/output.rnof_month.txt` | digit threshold | as above | local | yes |
+| Sparse = dense, calendar-month records, non-repeating (`period = -1`; schema `monthly` sampling with repeat `none`) | the `input.rnof_month1` runoff, spanning ≥ 2 month boundaries | `results/output.rnof_month1.txt` | digit threshold | as above | local | yes |
+| Sparse = dense, climatology wrap (`RepCycle` = 1 year) | the `input.rnof_clim` runoff, crossing Dec → Jan | `results/output.rnof_clim.txt` | digit threshold | as above | local | yes |
+| Sparse = dense, yearly `_YYYY` files | the `input.rnof_yearly` runoff, run crossing 31 Dec → 1 Jan | `results/output.rnof_yearly.txt` (`useExfYearlyFields`) | digit threshold | as above | local | yes |
 | Hold-exact interpolation mode | lab_sea, daily or monthly | input values themselves: `runoff` diagnostic = Σ flux·frac/rA of the current record; no dense oracle exists | ≤ 1e-12 relative (real*8 arithmetic on float32 inputs) | new check script (RUNOFF-005) | local | yes |
 | Fraction-sum and refusal behavior | invalid files: sum ≠ 1, land cell, off-grid index, unknown tracer, sparse + dense both set | expected fatal `EXF` error text in `STDOUT` | exact message match | new negative-test script (RUNOFF-004) | local | yes |
 | Volume conservation | any sparse case | Σ runoff·rA = Σ flux_s(t) | ≤ 1e-12 relative | new check script | local | yes |
@@ -36,8 +44,21 @@ runs on the unmodified code today.
   - `isomip/input.icefront`: the `pkg/icefront` `SGRunOff*` settings are commented
     out.
   - `cpl_aim+ocn` and `aim.5l_cs`: coupler and land-model runoff.
-- For the lab_sea yearly-file case, `lab_sea/input/data.exf_YearlyFields` and
-  `data_YearlyFields` show a `useExfYearlyFields` setup to copy from.
+- The lab_sea dense runoff cases, their source cells and the exf timing
+  conventions they rely on (with source line references) are described in the
+  "Runoff forcing tests" section of `MITgcm/verification/lab_sea/README.md`.
+  `gendata.py` in each `input.rnof_<X>` writes the runoff files and
+  `runoff_sources.txt`, the list of source cells to convert to sparse form.
+- Runoff in these cases stays below 1e-6 m/s, because `useExfCheckRange` stops
+  the run at the first step above that value (`exf_check_range.F`).
+- `runoffperiod = -12` is a 12-record calendar-month climatology that repeats
+  every year (`input.rnof_month`). Calendar-month records that do not repeat
+  use `runoffperiod = -1` (`exf_set_fld.F`, `exf_getmonthsrec.F`), with
+  record 1 the month of the runoff start date (`input.rnof_month1`).
+- `useExfYearlyFields` applies to every exf field and excludes a non-zero
+  `repeatPeriod`, so `input.rnof_yearly` follows
+  `lab_sea/input/data.exf_YearlyFields` for the other forcing fields and links
+  their files under `_1978` and `_1979` names in `prepare_run`.
 - The lab_sea runoff-temperature case needs a `-mods` code directory with
   `ALLOW_RUNOFTEMP` defined, because the forward build uses the default
   `EXF_OPTIONS.h`.

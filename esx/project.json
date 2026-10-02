@@ -16,7 +16,13 @@
     "MITgcm/verification/global_ocean.cs32x15/input.icedyn",
     "MITgcm/verification/global_ocean.cs32x15/input.seaice",
     "MITgcm/verification/lab_sea/code",
-    "MITgcm/verification/lab_sea/input"
+    "MITgcm/verification/lab_sea/input",
+    "MITgcm/verification/lab_sea/input.rnof_clim",
+    "MITgcm/verification/lab_sea/input.rnof_const",
+    "MITgcm/verification/lab_sea/input.rnof_daily",
+    "MITgcm/verification/lab_sea/input.rnof_month",
+    "MITgcm/verification/lab_sea/input.rnof_month1",
+    "MITgcm/verification/lab_sea/input.rnof_yearly"
   ],
   "output_paths": [
     "MITgcm/verification/1D_ocean_ice_column/build_esx",
@@ -29,6 +35,18 @@
     "MITgcm/verification/lab_sea/build_esx",
     "MITgcm/verification/lab_sea/build_esx_mpi2",
     "MITgcm/verification/lab_sea/output_esx_input",
+    "MITgcm/verification/lab_sea/output_esx_input.rnof_clim",
+    "MITgcm/verification/lab_sea/output_esx_input.rnof_clim_mpi2",
+    "MITgcm/verification/lab_sea/output_esx_input.rnof_const",
+    "MITgcm/verification/lab_sea/output_esx_input.rnof_const_mpi2",
+    "MITgcm/verification/lab_sea/output_esx_input.rnof_daily",
+    "MITgcm/verification/lab_sea/output_esx_input.rnof_daily_mpi2",
+    "MITgcm/verification/lab_sea/output_esx_input.rnof_month",
+    "MITgcm/verification/lab_sea/output_esx_input.rnof_month1",
+    "MITgcm/verification/lab_sea/output_esx_input.rnof_month1_mpi2",
+    "MITgcm/verification/lab_sea/output_esx_input.rnof_month_mpi2",
+    "MITgcm/verification/lab_sea/output_esx_input.rnof_yearly",
+    "MITgcm/verification/lab_sea/output_esx_input.rnof_yearly_mpi2",
     "MITgcm/verification/lab_sea/output_esx_input_mpi2",
     "MITgcm/verification/offline_exf_seaice/build_esx",
     "MITgcm/verification/offline_exf_seaice/output_esx_input",
@@ -137,6 +155,88 @@
         "lab_sea",
         "input",
         "-mpi",
+        "2"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "lab_sea",
+        "input.rnof_const"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "lab_sea",
+        "input.rnof_const",
+        "-mpi",
+        "2"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "lab_sea",
+        "input.rnof_daily"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "lab_sea",
+        "input.rnof_daily",
+        "-mpi",
+        "2"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "lab_sea",
+        "input.rnof_month"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "lab_sea",
+        "input.rnof_month",
+        "-mpi",
+        "2"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "lab_sea",
+        "input.rnof_month1"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "lab_sea",
+        "input.rnof_month1",
+        "-mpi",
+        "2"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "lab_sea",
+        "input.rnof_clim"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "lab_sea",
+        "input.rnof_clim",
+        "-mpi",
+        "2"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "lab_sea",
+        "input.rnof_yearly"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "lab_sea",
+        "input.rnof_yearly",
+        "-mpi",
+        "2"
+      ],
+      [
+        "{python}",
+        "tests/runoff/lab_sea_runoff_timing_check.py"
+      ],
+      [
+        "{python}",
+        "tests/runoff/lab_sea_runoff_timing_check.py",
+        "--mpi",
         "2"
       ],
       [
