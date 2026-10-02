@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "status": "PASS",
+  "source_sha256": {
+    "tools/esx/doc_contract.py": "ebb42c8181804f8cb846a9c83ac36280fec7019191a373e7817d50b8ba7794e0",
+    "devel-loop/self-improvement/assessments/2026-10-02-esx-160/validate_plan_reuse.py": "0b666d860169c99ff5d6ce5ff4c588e55e2d11b3da3c217c6180876f0dad48f8"
+  },
+  "stable": true,
+  "checks": [
+    {
+      "command": [
+        "python3",
+        "devel-loop/self-improvement/assessments/2026-10-02-esx-160/validate_plan_reuse.py"
+      ],
+      "executed": true,
+      "exit": 0,
+      "output": {
+        "path": "devel-loop/self-improvement/assessments/2026-10-02-esx-160/plan-reuse-receipt.txt",
+        "sha256": "d272f70d0f120062c4c63e14ecc0b0d7dafd074bd019cef9a449b92414f62383"
+      }
+    }
+  ]
+}
