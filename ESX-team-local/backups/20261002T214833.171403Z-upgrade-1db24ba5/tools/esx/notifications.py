@@ -153,12 +153,9 @@ def loop_status(root):
     else:
         eta = 'unknown time' if actionable else '~0 min'
     status = 'cancelling after the current issue' if ralph_stop.cancel_request(state) is not None else 'working'
-    held = ralph_stop.pause_request(state)
-    if held is not None:
-        status = 'paused (' + held[0] + ')' + (', then ' + status if status != 'working' else '')
     where = f'{status} on {issue} ({phase})' if issue else f'{status}, {phase}'
     return {'iteration': state['iteration'], 'limit': state['limit'], 'issue': issue, 'phase': phase,
-            'status': status, 'eta': eta, 'open_issues': len(opened), 'paused': held is not None,
+            'status': status, 'eta': eta, 'open_issues': len(opened),
             'text': f"Loop iteration {state['iteration']}/{state['limit']}: {where}; {eta} remaining; "
                     f"{len(opened)} open issues."}
 
@@ -183,8 +180,6 @@ def heartbeat(root):
     if minutes is None or not route.get('provider') or route.get('provider') in ('none', 'disabled'):
         return None
     facts = loop_status(root)
-    if facts.get('paused'):
-        return None
     with ledger(root) as data:
         seen = data['runs'].get(run)
         if seen is None:

@@ -334,11 +334,7 @@ def main(argv: list[str] | None = None) -> int:
     followup.add_argument('--issue', required=True)
     followup.add_argument('--disposition', choices=('implemented', 'deferred'), required=True)
     followup.add_argument('--reason', required=True)
-    followup.add_argument('--evidence', metavar='PATH#SHA256',
-                          help='for --disposition implemented: a process validation receipt as PATH#SHA256, where '
-                               'PATH is the JSON written by `process_evidence.py --output PATH --source FILE -- '
-                               'COMMAND` (it must record version 1 PASS) and SHA256 is the hash that command '
-                               'printed. Example: devel-loop/self-improvement/assessments/x/check.json#3fa9...')
+    followup.add_argument('--evidence', help='hashed process validation receipt for an implemented fix')
     promote = sub.add_parser('promote')
     promote.add_argument('--issue', required=True)
     promote.add_argument('--closure', required=True, help='JSON fields and sections; original sections preserved')

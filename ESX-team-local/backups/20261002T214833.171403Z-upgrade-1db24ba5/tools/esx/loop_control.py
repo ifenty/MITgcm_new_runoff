@@ -13,9 +13,7 @@ from pathlib import Path
 import sys
 import uuid
 from project import atomic_bytes, local
-import ralph_stop
-from ralph_stop import (archive, cancel_request, log, loop_lock, parse_state, pause_request, set_field,
-                        work_in_progress)
+from ralph_stop import archive, cancel_request, log, loop_lock, parse_state, set_field, work_in_progress
 
 ROOT = Path(__file__).resolve().parents[2]
 STATE = '.claude/esx-loop.local.md'
@@ -86,15 +84,7 @@ def run(root, max_iterations=None):
         if max_iterations is not None and max_iterations != current['max_iterations']:
             raise ValueError('active loop budget differs; continue with run and no budget override')
         result = dict(current, action='continued', owner_session=bind_owner(root))
-        if current.get('paused'):
-            # Continuing a paused loop only lifts the pause. A cancel requested before
-            # or during the pause stays pending and still ends the loop after the
-            # current iteration.
-            clear_pause(root)
-            for key in ('paused', 'pause_reason', 'paused_until'):
-                result.pop(key, None)
-            result['pause'] = 'resumed'
-        elif current.get('cancelling'):
+        if current.get('cancelling'):
             # An explicit continuation is the owner changing their mind.
             with loop_lock(root):
                 state = local(root, STATE)
@@ -127,85 +117,7 @@ def status(root):
         pending = cancel_request(parsed)
         if pending is not None:
             result.update(cancelling=True, cancel_reason=pending, finishing=work_in_progress(root))
-        held = pause_request(parsed)
-        if held is not None:
-            result.update(paused=True, pause_reason=held[0], paused_until=held[1])
         return result
-
-
-def clear_pause(root):
-    """Remove the pause fields from the live state; True when the loop was paused."""
-    with loop_lock(root):
-        state = local(root, STATE)
-        if not state.exists():
-            return False
-        parsed = parse_state(state.read_text())
-        was = parsed['header_fields'].get('paused') == 'true'
-        header = parsed['header']
-        for key in ('paused', 'pause_reason', 'paused_until'):
-            header = set_field(header, key, None)
-        if header != parsed['header']:
-            atomic_bytes(state, ('---\n' + header + '\n---\n' + parsed['prompt']).encode())
-        return was
-
-
-def pause(root, reason, minutes=None, until=None):
-    """Hold the loop without ending it or spending its budget.
-
-    For a coordinator that cannot work, typically at a provider usage limit. While
-    paused the Stop hook lets every turn end and changes nothing. The hold lasts
-    until `run` (or `resume`); ``minutes`` or ``until`` (an ISO time) only make it
-    lift by itself, after which the next Stop behaves normally. A pending cancel is
-    kept. `abort` still ends the loop at once.
-    """
-    if os.environ.get('ESX_AGENT_RUNTIME_CHILD') == '1':
-        raise ValueError('retained role sessions cannot pause the parent ESX loop')
-    if not isinstance(reason, str) or not reason.strip():
-        raise ValueError('pause needs a reason')
-    if minutes is not None and until is not None:
-        raise ValueError('give --minutes or --until, not both')
-    deadline = None
-    if minutes is not None:
-        if type(minutes) not in (int, float) or minutes <= 0:
-            raise ValueError('--minutes must be positive')
-        deadline = ralph_stop.clock() + minutes * 60
-    elif until is not None:
-        import datetime as dt
-        try:
-            moment = dt.datetime.fromisoformat(str(until).replace('Z', '+00:00'))
-        except ValueError as exc:
-            raise ValueError('--until must be an ISO time, e.g. 2026-10-02T21:00:00+00:00') from exc
-        if moment.tzinfo is None:
-            raise ValueError('--until needs a UTC offset, e.g. 2026-10-02T21:00:00+00:00')
-        deadline = moment.timestamp()
-        if deadline <= ralph_stop.clock():
-            raise ValueError('--until is in the past')
-    root = Path(root).resolve()
-    with loop_lock(root):
-        state = local(root, STATE)
-        if not state.exists():
-            raise ValueError('no active ESX loop to pause')
-        parsed = parse_state(state.read_text())
-        if parsed['active'] != 'true':
-            raise ValueError('no active ESX loop to pause')
-        header = set_field(parsed['header'], 'paused', 'true')
-        header = set_field(header, 'pause_reason', json.dumps(reason.strip()))
-        header = set_field(header, 'paused_until', None if deadline is None else f'{deadline:.0f}')
-        atomic_bytes(state, ('---\n' + header + '\n---\n' + parsed['prompt']).encode())
-        log(root, 'PAUSE_REQUESTED', parsed['iteration'], reason.strip())
-        return {'status': 'paused', 'state': STATE, 'iteration': parsed['iteration'],
-                'pause_reason': reason.strip(), 'paused_until': deadline,
-                'detail': 'The Stop hook now lets turns end without advancing the loop. Resume with /esx-loop '
-                          '(loop_control.py run) or loop_control.py resume. A pending cancel is unchanged.'}
-
-
-def resume(root):
-    """Lift a pause and nothing else; a pending cancel stays pending."""
-    root = Path(root).resolve()
-    if not local(root, STATE).exists():
-        return {'status': 'inactive', 'state': STATE}
-    was = clear_pause(root)
-    return dict(status(root), pause='resumed' if was else 'not paused')
 
 
 def status_line(root):
@@ -305,11 +217,6 @@ def main(argv=None):
     report.add_argument('--line', action='store_true', help="print the one-line owner status instead of JSON")
     alarm = sub.add_parser('wake', help='sleep, then print the status line; run in the background during a wait')
     alarm.add_argument('--minutes', type=float, help='default: communication.screen_status_minutes, else 15')
-    hold = sub.add_parser('pause', help='hold the loop without ending it or spending its budget (e.g. at a usage limit)')
-    hold.add_argument('--reason', required=True)
-    hold.add_argument('--minutes', type=float, help='lift the hold after this many minutes')
-    hold.add_argument('--until', help='lift the hold at this ISO time with a UTC offset')
-    sub.add_parser('resume', help='lift a pause; a pending cancel stays pending')
     stop = sub.add_parser('cancel', help='let the active iteration finish; start no new one')
     stop.add_argument('--reason', default='cancelled by the project owner')
     halt = sub.add_parser('abort', help='end the loop now, abandoning any iteration in progress')
@@ -324,10 +231,6 @@ def main(argv=None):
             result = cancel(args.root, args.reason)
         elif args.action == 'abort':
             result = cancel(args.root, args.reason, now=True)
-        elif args.action == 'pause':
-            result = pause(args.root, args.reason, args.minutes, args.until)
-        elif args.action == 'resume':
-            result = resume(args.root)
         elif args.action == 'wake':
             print(wake(args.root, args.minutes))
             return 0

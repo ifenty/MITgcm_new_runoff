@@ -131,9 +131,6 @@ WORKING_RULES = {
            'that would also hold for a wrong figure.\n'
            '- After your last edit, search the repository for statements your change makes stale, including in '
            'files you did not otherwise touch (READMEs, contracts, validation reports), and correct them.\n'
-           '- When your change replaces a measured figure or a reading of one, add a row for it to '
-           'devel-loop/loop_state/figures-ISSUE.tsv (old<TAB>new<TAB>note) and, before sealing, run '
-           '`doc_contract.py stale --issue ISSUE` and deal with every line it lists.\n'
            '- You draft and seal the documentation plan from the live source, reusing the last sealed report with '
            '`doc_contract.py draft --previous`, and report the sealed reference. Give each changed target its own '
            'judgment; do not copy one reason across targets.\n'
@@ -149,30 +146,7 @@ WORKING_RULES = {
           '- Run your orientation command last, after your reading and checks.'}
 
 
-def figures_section(root, issue, figures=()):
-    """Lines that still contain a superseded figure, for the implementer and the reviewer.
-
-    Uses the issue's figures table when it exists, plus any figures given directly.
-    """
-    table = project.local(Path(root), doc_contract.figures_path(issue))
-    rows = doc_contract.read_figures(table) if table.is_file() else []
-    rows += [{'old': figure, 'new': '', 'note': ''} for figure in figures]
-    if not rows:
-        return ''
-    found = doc_contract.stale_lines(root, rows, limit=60)
-    out = ['# Superseded figures still present',
-           f"{found['lines']} inventoried line(s) contain a figure this issue supersedes "
-           f"({len(rows)} figure(s) checked). Correct each line, or keep it deliberately when it quotes the old "
-           'value as history and says so.']
-    out += [f"  {hit['path']}:{hit['line']}: [{hit['figure']}"
-            + (f" -> {hit['new']}" if hit['new'] else '') + f"] {hit['text'][:160]}" for hit in found['hits']]
-    if found['truncated']:
-        out.append(f"  ... {found['truncated']} more; run doc_contract.py stale --issue {issue}")
-    return '\n'.join(out)
-
-
-def build(root, role, issue, design, question=None, packet=None, correction_round=0, sweep_symbols=(),
-          sweep_figures=()):
+def build(root, role, issue, design, question=None, packet=None, correction_round=0, sweep_symbols=()):
     start = json_file(root, STATE + '/issue-start.json')
     require(start['id'] == issue, 'brief must name the active issue')
     require(isinstance(design, str) and design.strip(), 'provide the bounded design and acceptance tests')
@@ -202,10 +176,8 @@ def build(root, role, issue, design, question=None, packet=None, correction_roun
     if role == 'richard':
         footer['documentation_review']['report'] = dict(packet['maintenance']['documentation'])
     swept = sweep_section(root, sweep_symbols)
-    figures = figures_section(root, issue, sweep_figures)
     return '\n\n'.join([
         '# ' + role + ': ' + issue, '# Design and acceptance\n' + design, *([swept] if swept else []),
-        *([figures] if figures else []),
         '# Question\n' + (question or 'Implement the bounded design and report actual focused checks.'),
         '# Expected cost and effort\n' + json.dumps(start.get('budget', {})) +
         '\nThese are recorded expectations, not caps: nothing will stop you at them, and exceeding one is measured '
@@ -239,14 +211,10 @@ def main():
     p.add_argument('--sweep-symbol', action='append', default=[], metavar='NAME',
                    help='a default, symbol or contract name whose meaning this change affects; repeatable. '
                         'The brief lists every file:line in the project that mentions it as an explicit target.')
-    p.add_argument('--sweep-figure', action='append', default=[], metavar='OLD',
-                   help='a measured figure or reading this change supersedes; repeatable. The brief lists every '
-                        'inventoried line that still contains it. The issue table '
-                        'devel-loop/loop_state/figures-ISSUE.tsv is always included when present.')
     a = p.parse_args()
     value = build(a.root.resolve(), a.role, a.issue, (a.root / a.design).read_text(), a.question,
                   json.loads((a.root / a.packet).read_text()) if a.packet else None, a.round,
-                  a.sweep_symbol, a.sweep_figure)
+                  a.sweep_symbol)
     if a.output:
         (a.root / a.output).write_text(value)
     else:

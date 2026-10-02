@@ -150,34 +150,6 @@ def transcript_report(path):
     return None
 
 
-def duplicate_completion(root, agent_id, footer):
-    """The earlier completed event this stop merely repeats, or None.
-
-    A native agent can stop more than once at the end of one turn: once with its
-    report, and again when background work it started finishes. The second stop
-    carries the same report. Counting it as a newer completion would supersede
-    the first and invalidate a packet already built from it, although nothing was
-    reviewed again. Only the agent's most recent record is compared, so the same
-    footer after an intervening turn is a new completion.
-    """
-    log = local(Path(root), "devel-loop/loop_state/dispatch_log.jsonl")
-    if not agent_id or not isinstance(footer, dict) or not log.is_file():
-        return None
-    last = None
-    for line in log.read_text().splitlines():
-        if not line.strip():
-            continue
-        try:
-            row = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(row, dict) and row.get("agent_id") == agent_id:
-            last = row
-    if last and last.get("status") == "completed" and last.get("footer") == footer:
-        return last.get("duplicate_of") or last.get("event_id")
-    return None
-
-
 def stop_record(root, event, *, transport="native_subagent"):
     """Persist a native hook stop without equating a stop with a completed report."""
     event = event if isinstance(event, dict) else {}
@@ -217,10 +189,6 @@ def stop_record(root, event, *, transport="native_subagent"):
         "message_chars": len(message), "report_source": report_source,
         "report": reference(report_path, Path(root)),
     }
-    original = duplicate_completion(root, event.get("agent_id"), footer) if status == "completed" else None
-    if original:
-        # Kept in the log as what happened; excluded wherever the latest completion counts.
-        record["duplicate_of"] = original
     append_record(root, record)
     return record
 
@@ -444,28 +412,6 @@ def permission_denials(path):
 
 
 APPROVAL_ERROR = 'approval needs a successful executed check and no must_fix findings'
-
-
-def provider_limit(path):
-    """The provider's refusal of a turn for a usage or rate limit, or None.
-
-    Read from the machine-readable stream, never from the human text: a
-    `rate_limit_event` whose status is "rejected", or a result with HTTP status
-    429. `reset_at` is the provider's own reset time in UTC when it gave one.
-    A turn refused this way did no work and says nothing about the role or the
-    assignment, so the coordinator should pause until the reset, not correct it.
-    """
-    found = None
-    for event in stream_events(path):
-        info = event.get("rate_limit_info") if event.get("type") == "rate_limit_event" else None
-        if isinstance(info, dict) and info.get("status") == "rejected":
-            stamp = info.get("resetsAt")
-            found = {"limit_type": info.get("rateLimitType"),
-                     "reset_at": datetime.fromtimestamp(stamp, timezone.utc).isoformat()
-                     if isinstance(stamp, (int, float)) and not isinstance(stamp, bool) else None}
-        elif event.get("type") == "result" and event.get("api_error_status") == 429 and found is None:
-            found = {"limit_type": None, "reset_at": None}
-    return found
 
 
 def changes_requested(role, footer, errors):
@@ -967,7 +913,6 @@ def _run_turn(root, *, role=None, issue=None, prompt, session=None, correction_r
                   "replacement": replacement,
                   "effective_permission_mode": (init or {}).get("permissionMode"),
                   "permission_denials": permission_denials(turn / "stdout.jsonl"),
-                  "provider_limit": provider_limit(turn / "stdout.jsonl") if status == "failed" else None,
                   "report": reference(turn / "report.md", root),
                   "invocation": reference(turn / "invocation.json", root),
                   "stream": reference(turn / "stdout.jsonl", root),

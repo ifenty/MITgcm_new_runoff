@@ -150,8 +150,7 @@ def readiness(root, packet, stage='review', owner=None):
             latest = {}
             for event in dispatches:
                 footer = event.get('footer') or {}
-                if (event.get('agent_type') == 'richard' and event.get('issue_id', footer.get('issue_id')) == issue
-                        and not event.get('duplicate_of')):
+                if event.get('agent_type') == 'richard' and event.get('issue_id', footer.get('issue_id')) == issue:
                     latest[event['agent_id']] = event
             chosen = {entry['dispatch_event_id'] for entry in selected}
             for agent, event in latest.items():
@@ -237,9 +236,7 @@ def command(root, args):
                 result.append(dict(agent=event['agent_type'], dispatch_id=event['agent_id'],
                     dispatch_event_id=event['event_id'], correction_round=event.get('correction_round', footer.get('correction_round')),
                     status=event.get('status', 'completed'),
-                    selection_scope='duplicate' if event.get('duplicate_of') else
-                    'history' if event.get('ts', '') < start['timestamp'] else 'current',
-                    **({'duplicate_of': event['duplicate_of']} if event.get('duplicate_of') else {})))
+                    selection_scope='history' if event.get('ts', '') < start['timestamp'] else 'current'))
             print(json.dumps(result, indent=2))
             return 0
         packet = assemble(root, start, events, read(args.select), read(args.candidate),

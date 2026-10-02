@@ -381,40 +381,6 @@ class Gate:
             streak.append(number)
         return sorted(streak)
 
-    def pause_pending(self):
-        """(reason, until) while the loop is paused, else None."""
-        loop = local(self.root, '.claude/esx-loop.local.md')
-        if not loop.exists():
-            return None
-        import ralph_stop
-        try:
-            return ralph_stop.pause_request(ralph_stop.parse_state(loop.read_text()))
-        except (ValueError, UnicodeError):
-            return None
-
-    def provider_limit_notice(self):
-        """Advice to pause when the last role turn of the active issue was refused for a usage limit."""
-        start_path = local(self.root, f'{STATE}/issue-start.json')
-        if not start_path.exists():
-            return None
-        issue = json.loads(start_path.read_text()).get('id')
-        last = next((r for r in reversed(json_lines(local(self.root, f'{STATE}/dispatch_log.jsonl')))
-                     if r.get('issue_id') == issue), None)
-        refused = (last or {}).get('provider_limit')
-        if not isinstance(refused, dict):
-            return None
-        reset = refused.get('reset_at')
-        try:
-            pending = reset is None or dt.datetime.fromisoformat(reset) > dt.datetime.now(dt.timezone.utc)
-        except (ValueError, TypeError):
-            pending = True
-        if not pending:
-            return None
-        return (f"LIMIT: the provider refused the last {last.get('agent_type')} turn for a usage limit"
-                + (f' that resets at {reset}' if reset else '') + '. The turn did no work; do not correct or '
-                'replace the role. Pause until then: tools/esx/loop_control.py pause --reason "provider usage limit"'
-                + (f' --until {reset}' if reset else '') + ', then end the turn and resume the same session later.')
-
     def cancel_pending(self):
         """The owner's reason when the loop is to end after the current iteration, else None."""
         loop = local(self.root, '.claude/esx-loop.local.md')
@@ -438,17 +404,6 @@ class Gate:
             # For the owner's screen, not the chat channel: relay it when a long
             # wait or run means they have seen nothing for a while.
             print('STATUS: ' + facts['text'])
-        held = self.pause_pending()
-        if held is not None:
-            reason, until = held
-            when = ('until ' + dt.datetime.fromtimestamp(until, dt.timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
-                    if until is not None else 'with no end time')
-            print(f'PAUSED: the loop is paused ({reason}), {when}. Start no work and dispatch nothing. '
-                  'End the turn; resume with /esx-loop (tools/esx/loop_control.py run) when work is possible again.')
-            return 0
-        limit = self.provider_limit_notice()
-        if limit:
-            print(limit)
         opened, closed, _ = validate_records(self.root, self.ledger_overrides)
         notifications.synchronize(self.root)
         message = notifications.notice(self.root)

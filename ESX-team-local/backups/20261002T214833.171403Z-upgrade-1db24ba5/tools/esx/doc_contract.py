@@ -803,71 +803,6 @@ def parse_receipt(value):
     return parse_ref(text)
 
 
-def figures_path(issue):
-    """Where an issue keeps its table of superseded figures."""
-    return f'{STATE}/figures-{issue}.tsv'
-
-
-def read_figures(path):
-    """Rows of a superseded-figures table: ``old<TAB>new<TAB>note`` per line.
-
-    The implementer writes a row for every measured figure or reading the change
-    replaces. ``new`` and ``note`` may be empty. Lines starting with # are comments.
-    """
-    rows = []
-    for number, line in enumerate(Path(path).read_text().splitlines(), 1):
-        if not line.strip() or line.lstrip().startswith('#'):
-            continue
-        cells = [cell.strip() for cell in line.split('\t')]
-        require(cells[0], f'{path}:{number}: a row needs the superseded figure in its first column')
-        rows.append({'old': cells[0], 'new': cells[1] if len(cells) > 1 else '',
-                     'note': cells[2] if len(cells) > 2 else ''})
-    return rows
-
-
-def figure_pattern(old):
-    """Match a figure as a whole token, with or without thousands separators."""
-    import re
-    forms = {old}
-    if re.fullmatch(r'\d{4,}', old):
-        forms.add(f'{int(old):,}')
-    elif re.fullmatch(r'\d{1,3}(,\d{3})+', old):
-        forms.add(old.replace(',', ''))
-    body = '|'.join(re.escape(form) for form in sorted(forms, key=len, reverse=True))
-    # Not part of a longer number or word: "456" must not match "1456", "4567" or "0.456".
-    return re.compile(r'(?<![0-9A-Za-z_.,])(?:' + body + r')(?![0-9A-Za-z_]|[.,][0-9])')
-
-
-def stale_lines(root, figures, limit=200):
-    """Every inventoried line that still contains a superseded figure.
-
-    A change that re-measures a result leaves the old number, and readings of it,
-    in passages it does not edit. This lists them so the implementer can correct
-    or deliberately keep each one before sealing. It judges nothing: a line that
-    quotes the old figure as history is listed too.
-    """
-    from doc_inventory import paths
-    root = Path(root).resolve()
-    patterns = [(row, figure_pattern(row['old'])) for row in figures]
-    hits = []
-    for name in sorted(paths(root)):
-        path = local(root, name)
-        # The kit's own tools are not the project's documentation.
-        if name.startswith('tools/esx/') or not path.is_file():
-            continue
-        try:
-            text = path.read_text()
-        except (UnicodeDecodeError, OSError):
-            continue
-        for number, line in enumerate(text.splitlines(), 1):
-            for row, pattern in patterns:
-                if pattern.search(line):
-                    hits.append({'figure': row['old'], 'new': row['new'], 'note': row['note'],
-                                 'path': name, 'line': number, 'text': line.strip()[:240]})
-    return {'figures': len(figures), 'lines': len(hits), 'hits': hits[:limit],
-            'truncated': max(len(hits) - limit, 0)}
-
-
 NAVIGATE_EXAMPLE = '''example:
   doc_contract.py navigate --issue PROJECT-001 --role bob \\
     --baseline '{"path": "devel-loop/loop_state/maintenance/<sha>.json", "sha256": "<sha>"}' \\
@@ -880,16 +815,6 @@ NAVIGATE_EXAMPLE = '''example:
 spaces as hyphens). Give at least two --target entries, each path::symbol or
 path::<module>, and at least one --doc. --baseline may also be the path of a file
 holding the reference. To repeat an earlier orientation use --reuse-args RECEIPT.
-'''
-
-
-STALE_EXAMPLE = '''example:
-  printf '17934\\t16123\\tisomip tke_after cells above 1%%\\n26-41 m\\t0.029 m\\tlab_sea hbl max\\n' \\
-    > devel-loop/loop_state/figures-PROJECT-001.tsv
-  doc_contract.py stale --issue PROJECT-001
-
-Each row is old<TAB>new<TAB>note. A figure matches as a whole token, with or without
-thousands separators (17934 also finds 17,934). The command lists lines; it judges none.
 '''
 
 
@@ -924,11 +849,6 @@ def main():
     for name in ('seal', 'check'):
         command = sub.add_parser(name, help='validate a filled documentation plan' if name == 'check' else 'validate and store a filled plan')
         command.add_argument('plan', type=Path)
-    old = sub.add_parser('stale', help='list inventoried lines that still contain a superseded figure',
-                         formatter_class=argparse.RawDescriptionHelpFormatter, epilog=STALE_EXAMPLE)
-    old.add_argument('--issue', help='use devel-loop/loop_state/figures-ISSUE.tsv')
-    old.add_argument('--figures', type=Path, help='a table of superseded figures: old<TAB>new<TAB>note per line')
-    old.add_argument('--limit', type=int, default=200)
     args = parser.parse_args()
     try:
         if args.command == 'baseline':
@@ -945,11 +865,6 @@ def main():
             result = navigate(args.root, args.issue, args.baseline, args.role, args.map, args.target, args.doc, args.use)
         elif args.command == 'draft':
             result = draft(args.root, args.issue, args.baseline, args.previous)
-        elif args.command == 'stale':
-            if (args.issue is None) == (args.figures is None):
-                parser.error('give --issue or --figures')
-            table = args.figures if args.figures else local(args.root, figures_path(args.issue))
-            result = stale_lines(args.root, read_figures(table), args.limit)
         elif args.command == 'check-orientation':
             validate_orientation(args.root, args.receipt, args.issue, args.baseline, args.role)
             result = {'valid': True, 'evidence': 'reused', 'orientation': args.receipt}
@@ -958,15 +873,6 @@ def main():
             require(isinstance(report, dict), 'documentation plan must be an object')
             result = seal(args.root, report) if args.command == 'seal' else {
                 'valid': True, 'references': validate_report(args.root, report, report.get('issue_id'), report.get('baseline'))}
-            table = local(args.root, figures_path(str(report.get('issue_id'))))
-            if args.command == 'seal' and table.is_file():
-                # Advisory: the seal stands, but the implementer should have looked at each of these.
-                found = stale_lines(args.root, read_figures(table))
-                if found['lines']:
-                    print(f"documentation contract: {found['lines']} inventoried line(s) still contain a superseded "
-                          f"figure from {figures_path(str(report.get('issue_id')))}; list them with "
-                          f"`doc_contract.py stale --issue {report.get('issue_id')}` and correct or keep each one "
-                          'deliberately.', file=sys.stderr)
         print(json.dumps(result, indent=2, sort_keys=True))
     except (ValueError, OSError, KeyError, TypeError, SyntaxError) as exc:
         parser.exit(1, f'documentation contract: {exc}\n')

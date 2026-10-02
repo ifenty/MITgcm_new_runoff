@@ -193,13 +193,6 @@ loop is alive.
   This status goes to the screen only, never to the chat channel.
 - The chat channel gets one short heartbeat per `communication.heartbeat_minutes`
   (queued by the outbox like any other event) in place of a post per iteration.
-- When you cannot work, pause the loop instead of fighting the Stop hook. The usual
-  case is a usage limit: the host tells you to stop, or `--next` prints `LIMIT:`
-  because the provider refused a role's turn. Run `python3 tools/esx/loop_control.py
-  pause --reason "provider usage limit"` (add `--until <reset time>` when you know
-  it), report what is done and what is left, and end the turn. A paused loop
-  advances nothing and ends nothing. A turn refused for a usage limit did no work:
-  resume the same role session afterwards; do not correct or replace it.
 - `/esx-loop cancel` stops the next iteration from starting. It never stops the
   iteration in progress: keep the dispatched agents running and finish the issue
   through its retrospective. Only `abort` abandons work.

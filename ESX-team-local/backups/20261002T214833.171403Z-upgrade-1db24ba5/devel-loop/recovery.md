@@ -207,19 +207,3 @@ never overwritten. Unknown cost retains its reservation. Do not delete budget
 ledgers or reset timestamps to resume. Use the existing Owner-authorized extension
 interface described in [bounded operations](team_operations.md). A stopped loop
 retains retrospective debt for completion before the next issue.
-
-## Repeated stops and provider limits
-
-A native agent can stop more than once at the end of one turn: once with its
-report, and again when background work it started finishes. The second stop
-repeats the same footer. It is recorded with `duplicate_of: <event id>` and kept
-in the dispatch log, but it is not a new completion: `selections` lists it with
-`selection_scope: "duplicate"`, a packet cannot select it, and it never replaces
-the original as the reviewer's latest completion. A packet built from the
-original therefore stays valid.
-
-A retained turn the provider refuses for a usage or rate limit is recorded as
-failed with a `provider_limit` object (`limit_type`, and `reset_at` in UTC when
-the provider gave one). It did no work. `--next` prints `LIMIT:` with the pause
-command to run. After the reset, resume the same session; select the failed turn
-and its completed continuation together when building the packet.

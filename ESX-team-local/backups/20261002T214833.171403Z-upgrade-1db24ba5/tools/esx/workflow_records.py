@@ -94,9 +94,6 @@ issue and their own correction round. New selections must follow its start time.
     record = matches[0]
     require(record.get('agent_id') == agent and record.get('agent_type') == role,
             f'{event}: completion agent identity/role mismatch')
-    require(not record.get('duplicate_of'),
-            f"{event}: this stop only repeats completion {record.get('duplicate_of')} of the same agent; "
-            'select that event instead')
     if record.get('status', 'completed') != 'completed':
         require(record.get('status') in ('incomplete', 'failed', 'running'),
                 f'{event}: runtime completion is incomplete or failed')
@@ -365,7 +362,7 @@ in the dispatch log, which the packet identifies by immutable completion IDs.
     latest = {}
     for record in dispatches:
         footer = record.get('footer') or {}
-        if (record.get('issue_id') or footer.get('issue_id')) == start.get('id') and not record.get('duplicate_of'):
+        if (record.get('issue_id') or footer.get('issue_id')) == start.get('id'):
             latest[(record.get('agent_type'), record.get('agent_id'))] = record
     rounds = {}
     for (role, _), record in latest.items():

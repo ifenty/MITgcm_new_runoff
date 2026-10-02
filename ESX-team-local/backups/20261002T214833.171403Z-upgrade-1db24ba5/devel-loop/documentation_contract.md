@@ -150,21 +150,6 @@ what a judgment depends on is decided by what it claims:
   elsewhere. It never carries forward undeclared either. Declare the code it
   describes as `dependencies` and it is reused while that code is unchanged.
 
-When a change replaces a measured figure or a reading of one, the old value
-survives in passages the change does not edit. Keep a table of superseded figures
-in `devel-loop/loop_state/figures-ISSUE.tsv`, one row per figure as
-`old<TAB>new<TAB>note`, and before sealing run:
-
-```sh
-python3 tools/esx/doc_contract.py stale --issue ISSUE
-```
-
-It lists every inventoried line that still contains a superseded figure, matching
-whole tokens with or without thousands separators. Correct each line, or keep it
-deliberately when it quotes the old value as history and says so. `seal` reports
-how many such lines remain; the count is advisory. Briefs built with `brief.py`
-include the same list, and the reviewer checks it.
-
 The draft reports how many judgments it `reused`. The implementer drafts and
 seals the plan from the live source and gives each blank judgment its own reason;
 do not refill a plan by copying reasons from an earlier one. Review changes

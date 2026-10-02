@@ -175,31 +175,6 @@ def set_field(header, key, value):
     return header if value is None else header + '\n' + key + ': ' + str(value)
 
 
-def pause_request(parsed):
-    """(reason, until) while the loop is paused, else None (TEAM-LOOP-USAGE-LIMIT-PAUSE-001).
-
-    ``until`` is epoch seconds or None. A pause with a time that has passed is no
-    pause: the next Stop behaves normally again. Nothing resumes by itself; an
-    expiry only lifts the hold.
-    """
-    fields = parsed['header_fields']
-    if fields.get('paused') != 'true':
-        return None
-    raw = fields.get('pause_reason', '')
-    try:
-        reason = json.loads(raw) if raw.startswith('"') else raw
-    except ValueError:
-        reason = raw
-    reason = reason if isinstance(reason, str) and reason.strip() else 'paused by the coordinator'
-    try:
-        until = float(fields['paused_until']) if fields.get('paused_until') else None
-    except ValueError:
-        until = None
-    if until is not None and clock() >= until:
-        return None
-    return reason, until
-
-
 def cancel_request(parsed):
     """The owner's pending cancellation reason, or None (TEAM-LOOP-CANCEL-DRAIN-001)."""
     fields = parsed['header_fields']
@@ -369,16 +344,6 @@ def _step_locked(root, hook_input):
         # must never advance, end or announce the owner's loop (TEAM-LOOP-FOREIGN-STOP-001).
         log(root, 'FOREIGN_STOP', n, f'ignored Stop from session {caller}; loop owned by {owner}')
         return {}
-    paused = pause_request(parsed)
-    if paused is not None:
-        # The coordinator cannot work (typically a provider usage limit). Let the
-        # turn end and touch nothing: no iteration, no wait count, no heartbeat,
-        # no ending. A pending cancel is kept and takes effect after the resume.
-        reason, until = paused
-        when = ('until ' + dt.datetime.fromtimestamp(until, dt.timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
-                if until is not None else 'until /esx-loop resumes it')
-        log(root, 'PAUSED', n, f'{reason}; {when}; stop allowed, iteration not advanced')
-        return {'systemMessage': f'ESX loop paused at iteration {n}/{limit} ({reason}), {when}. Nothing is wrong.'}
     cancelled = cancel_request(parsed)
     if cancelled is not None and work_in_progress(root) is None:
         # The owner's cancel takes effect here, where a new iteration would start
@@ -458,8 +423,6 @@ def _step_locked(root, hook_input):
     header = re.sub(r'(?m)^[ \t]*iteration[ \t]*:[ \t]*[^\r\n]*$',
                     'iteration: ' + str(n + 1), parsed['header'])
     header = set_field(header, 'dispatch_waits', None)
-    for key in ('paused', 'pause_reason', 'paused_until'):
-        header = set_field(header, key, None)
     header = set_field(header, 'advance_times',
                        ','.join(f'{t:.0f}' for t in (recent + [moment])[-MAX_ADVANCES:]))
     updated = ('---\n' + header + '\n---\n' + parsed['prompt']).encode()

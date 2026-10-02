@@ -150,11 +150,6 @@ def known_completion_iteration(event, start, histories):
         for row in histories)
 
 
-def duplicate(record):
-    """A stop that only repeats an earlier completion of the same agent (see agent_runtime.duplicate_completion)."""
-    return isinstance(record, dict) and bool(record.get('duplicate_of'))
-
-
 def current_review(event, records, done, candidate_signature):
     """Identify the latest successful reviewer turn for this iteration and source."""
     if (event.get('agent_type') != 'richard' or not completed(event)
@@ -164,7 +159,7 @@ def current_review(event, records, done, candidate_signature):
         return False
     latest = next((row for row in reversed(records)
                    if row.get('agent_type') == 'richard' and row.get('agent_id') == event.get('agent_id')
-                   and identity(row, 'issue_id') == done.get('id') and not duplicate(row)), None)
+                   and identity(row, 'issue_id') == done.get('id')), None)
     return latest is not None and latest.get('event_id') == event.get('event_id')
 
 
@@ -218,8 +213,7 @@ supersede an unavailable reviewer only through an explicit disposition with evid
         return ["cannot measure the current review candidate signature"]
     errors, latest, referenced = [], {}, {}
     for record in records:
-        if (record.get("agent_type") == "richard" and identity(record, "issue_id") == done.get("id")
-                and not duplicate(record)):
+        if record.get("agent_type") == "richard" and identity(record, "issue_id") == done.get("id"):
             latest[record.get("agent_id")] = record
     for entry in (done.get("subagents") or {}).get("richard", []):
         if isinstance(entry, dict) and not entry.get("waived"):
