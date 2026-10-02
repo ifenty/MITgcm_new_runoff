@@ -126,3 +126,31 @@ For the next issue with at least two correction rounds, no reviewer finding conc
 
 ### Expected Effect
 No stale-disposition findings per multi-round issue.
+
+## 🔴 PROPOSED: Default 30-minute role turn limit cuts off large implementation turns
+
+**Date Identified**: 2026-09-30  15:30
+**Status**: Proposed
+**UUID**: TEAM-TURN-TIMEOUT-001
+**Category**: role_turn_timeout
+**Severity**: Medium
+**Assessment**: devel-loop/self-improvement/assessments/2026-09-30-runoff-001/assessment.md
+**Anchors**: tools/esx/agent_runtime.py
+
+### Issue
+`agent_runtime.py start/followup` default to `--timeout 1800`. A large implementation brief (RUNOFF-009: a 1,500-line module plus tests) hit the limit and the process group was killed mid-work. The turn was recorded as failed and needed a resume turn; the in-flight tool call and the unfinished message were lost.
+
+### Evidence
+Bob session 018a3ef4, turn 58df9207: status failed, error timeout, after 30 minutes. targets.py was on disk but no tests. The resume turn 75acd0df with `--timeout 7200` completed.
+
+### Potential Impact
+Wasted spend on the killed turn's tail, and a failed record that needs a continuation.
+
+### Proposed Fix
+Raise the default (e.g. 3600–7200 s for bob); take the default per role or from the budget kind; warn at 80% of the limit so the role can checkpoint and report; document `--timeout` in the brief template.
+
+### Acceptance Criteria
+A large Bob brief completes in one turn without a timeout, or the turn ends with a report before the limit.
+
+### Expected Effect
+No implementation turns lost to the default timeout.

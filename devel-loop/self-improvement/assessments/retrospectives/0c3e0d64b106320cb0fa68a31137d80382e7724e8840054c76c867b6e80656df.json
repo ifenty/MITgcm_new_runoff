@@ -1,0 +1,1454 @@
+{
+  "retrospective": {
+    "schema_version": 3,
+    "id": "RUNOFF-009",
+    "iteration": 1,
+    "closes_timestamp": "2026-09-30T14:59:32.623569+00:00",
+    "timestamp": "2026-10-02T13:47:19Z",
+    "accounting": {
+      "path": "devel-loop/loop_state/accounting/a3d9825a986482061b581c2e78f0ab0189b91089f43397e42ad5ab40fa9c68b1.json",
+      "sha256": "a3d9825a986482061b581c2e78f0ab0189b91089f43397e42ad5ab40fa9c68b1"
+    },
+    "measured": {
+      "span_minutes": 2805,
+      "dispatches": {
+        "bob": 8,
+        "richard": 12
+      },
+      "rounds": {
+        "bob": 6,
+        "richard": 12
+      },
+      "cost_usd": {
+        "bob": 168.2688521999999,
+        "richard": 145.593188
+      },
+      "unknown_cost_event_ids": [
+        "58df920733e142d8b9e37c5e081f6332"
+      ],
+      "coordinator_coverage": "recorded",
+      "billing_status": "provider_reported_not_invoice_reconciled",
+      "coordinator": {
+        "tool_measured_minutes": 4.5,
+        "self_reported_minutes": 420.0,
+        "self_reported_usd": null,
+        "provider_reported_usd": null
+      },
+      "cost_scope": "cost_usd and span-based figures describe dispatched agents; coordinator cost is recorded separately: Arch self-reported 420 min, cost unknown (coordinator.self_reported; not added to cost_usd)"
+    },
+    "problems": [
+      {
+        "category": "documentation_disposition_drift",
+        "summary": "Arch again sealed a documentation plan from stale templates (RUNOFF-001 reasons for the new test_targets.py and code-map row), costing a review round finding from both reviewers.",
+        "evidence": "RUNOFF-009 round-0 must-fix lists (ce7e284c, 9e7ef5a1) naming sealed report e2ebc36a; Bob own report 43a1a9e1 was accurate and was adopted from round 1.",
+        "minutes_lost": 40
+      },
+      {
+        "category": "role_turn_timeout",
+        "summary": "The default 30-minute turn limit killed Bob mid-implementation; a resume turn was needed and the first turn is recorded as failed.",
+        "evidence": "Bob 018a3ef4 turn 58df9207 failed: timeout; resume turn 75acd0df with --timeout 7200 completed the brief.",
+        "minutes_lost": 35
+      },
+      {
+        "category": "retained_session_cost_growth",
+        "summary": "Retained Bob and Richard sessions cost more every round as context grows: $314 of agent spend for one issue over 5 rounds, with late Bob turns far above the nominal $12 reservation.",
+        "evidence": "Retro accounting: bob 8 dispatches $168.27, richard 12 dispatches $145.59; provider_overshoot recorded on late turns.",
+        "minutes_lost": 0
+      },
+      {
+        "category": "design_premise_grid_kind",
+        "summary": "Connectivity auto-detection from geometry failed silently on four successive reviewer layouts before the design changed to a declared grid kind.",
+        "evidence": "Richard B must-fix lists rounds 1-4 (records 2442fb8f, a543755b, 0682223540, a21e7c51); diagnosis checkpoints r2 and r4; lesson LL-004.",
+        "minutes_lost": 240
+      }
+    ],
+    "solutions": [
+      {
+        "problem": 0,
+        "action": "filed",
+        "issue": "TEAM-DOC-DISPOSITION-DRIFT-001"
+      },
+      {
+        "problem": 1,
+        "action": "filed",
+        "issue": "TEAM-TURN-TIMEOUT-001"
+      },
+      {
+        "problem": 2,
+        "action": "deferred",
+        "issue": "TEAM-KIT-LIVE-DISPATCH-001",
+        "reason": "Cost growth of retained sessions is a kit design question (context compaction or periodic replacement with a handoff); to be raised in the owner-directed ESX-Team coordination with the 1D_Mixing_Model session right after this iteration."
+      },
+      {
+        "problem": 3,
+        "action": "deferred",
+        "issue": "TEAM-DOC-DISPOSITION-DRIFT-001",
+        "reason": "Not a process defect: a scientific design premise corrected through two diagnosis checkpoints and recorded as lesson LL-004; no process change is needed beyond holding the checkpoint, which the contract already requires."
+      }
+    ],
+    "confirmations": [
+      {
+        "category": "diagnosis_checkpoint",
+        "summary": "Holding the diagnosis checkpoint after two failed rounds changed the design instead of patching heuristics.",
+        "evidence": "After checkpoint r2 the grid kind became declared; after r4 coordinate thresholds became geometric tests; round 5 was approved by both reviewers."
+      },
+      {
+        "category": "implementer_owned_dispositions",
+        "summary": "Letting Bob draft and seal the documentation plan from the live source produced accurate, specific reasons.",
+        "evidence": "Reports 4e449806 through 80f74c70 were confirmed by both reviewers every round after round 0, with no stale-disposition finding."
+      }
+    ],
+    "carry_forward": [
+      "Pass --timeout 3600 or more on large Bob briefs; have Bob draft and seal the documentation plan, with Arch spot-checking it before review."
+    ],
+    "no_problem_reason": ""
+  },
+  "accounting": {
+    "billing_status": "provider_reported_not_invoice_reconciled",
+    "by_phase": {
+      "implementation": {
+        "effort_seconds": 6336.691913843155,
+        "elapsed_seconds": 6336.691913843155,
+        "events": 8
+      },
+      "orientation": {
+        "effort_seconds": 6.328588485717773,
+        "elapsed_seconds": 6.328588485717773,
+        "events": 31
+      },
+      "review": {
+        "effort_seconds": 7199.846486330032,
+        "elapsed_seconds": 4551.887913227081,
+        "events": 12
+      },
+      "verification": {
+        "effort_seconds": 626.7316555976868,
+        "elapsed_seconds": 626.3502094745636,
+        "events": 58
+      }
+    },
+    "by_role": {
+      "bob": {
+        "dispatches": 8,
+        "reported_usd": 168.2688521999999,
+        "rounds": 6,
+        "seconds": 6338.732275009155,
+        "tool_calls": 326,
+        "unknown_cost_events": 1,
+        "unknown_tool_call_events": 0,
+        "usage": {
+          "cache_creation_input_tokens": 1261360,
+          "cache_read_input_tokens": 71560252,
+          "input_tokens": 318,
+          "output_tokens": 407142
+        }
+      },
+      "richard": {
+        "dispatches": 12,
+        "reported_usd": 145.593188,
+        "rounds": 12,
+        "seconds": 7303.192733287811,
+        "tool_calls": 282,
+        "unknown_cost_events": 0,
+        "unknown_tool_call_events": 0,
+        "usage": {
+          "cache_creation_input_tokens": 1148191,
+          "cache_read_input_tokens": 65148721,
+          "input_tokens": 408,
+          "output_tokens": 610202
+        }
+      }
+    },
+    "child_elapsed_seconds": 10913.432086706161,
+    "components": [
+      {
+        "event_id": "58df920733e142d8b9e37c5e081f6332",
+        "kind": "turn",
+        "parent_event_id": "58df920733e142d8b9e37c5e081f6332",
+        "reported_usd": null,
+        "role": "bob",
+        "source": "devel-loop/loop_state/agent_runtime/sessions/018a3ef4-87c6-4a9b-8e45-a999017c7784/turns/58df920733e142d8b9e37c5e081f6332/record.json"
+      },
+      {
+        "event_id": "73a1d33d8d4a49b48f8c07239bc95d46",
+        "kind": "turn",
+        "parent_event_id": "73a1d33d8d4a49b48f8c07239bc95d46",
+        "reported_usd": 30.514505599999985,
+        "role": "bob",
+        "source": "devel-loop/loop_state/agent_runtime/sessions/018a3ef4-87c6-4a9b-8e45-a999017c7784/turns/73a1d33d8d4a49b48f8c07239bc95d46/record.json"
+      },
+      {
+        "event_id": "75acd0dfc71d4fa186f4a8a83661d4d4",
+        "kind": "turn",
+        "parent_event_id": "75acd0dfc71d4fa186f4a8a83661d4d4",
+        "reported_usd": 13.162044600000002,
+        "role": "bob",
+        "source": "devel-loop/loop_state/agent_runtime/sessions/018a3ef4-87c6-4a9b-8e45-a999017c7784/turns/75acd0dfc71d4fa186f4a8a83661d4d4/record.json"
+      },
+      {
+        "event_id": "9e28b28490064548a01905f981d3e213",
+        "kind": "turn",
+        "parent_event_id": "9e28b28490064548a01905f981d3e213",
+        "reported_usd": 17.739327799999998,
+        "role": "bob",
+        "source": "devel-loop/loop_state/agent_runtime/sessions/018a3ef4-87c6-4a9b-8e45-a999017c7784/turns/9e28b28490064548a01905f981d3e213/record.json"
+      },
+      {
+        "event_id": "a6a22ddf56c24d78888f52db7a90fec2",
+        "kind": "turn",
+        "parent_event_id": "a6a22ddf56c24d78888f52db7a90fec2",
+        "reported_usd": 22.943965199999994,
+        "role": "bob",
+        "source": "devel-loop/loop_state/agent_runtime/sessions/018a3ef4-87c6-4a9b-8e45-a999017c7784/turns/a6a22ddf56c24d78888f52db7a90fec2/record.json"
+      },
+      {
+        "event_id": "d5e508280bad4bc1a38f68edd9e48d2a",
+        "kind": "turn",
+        "parent_event_id": "d5e508280bad4bc1a38f68edd9e48d2a",
+        "reported_usd": 20.641926799999993,
+        "role": "bob",
+        "source": "devel-loop/loop_state/agent_runtime/sessions/018a3ef4-87c6-4a9b-8e45-a999017c7784/turns/d5e508280bad4bc1a38f68edd9e48d2a/record.json"
+      },
+      {
+        "event_id": "dafc6d315c044660b1d8acb375751281",
+        "kind": "turn",
+        "parent_event_id": "dafc6d315c044660b1d8acb375751281",
+        "reported_usd": 35.89375839999997,
+        "role": "bob",
+        "source": "devel-loop/loop_state/agent_runtime/sessions/018a3ef4-87c6-4a9b-8e45-a999017c7784/turns/dafc6d315c044660b1d8acb375751281/record.json"
+      },
+      {
+        "event_id": "fc57996f10be4137b6d2834a6535060a",
+        "kind": "turn",
+        "parent_event_id": "fc57996f10be4137b6d2834a6535060a",
+        "reported_usd": 27.373323799999984,
+        "role": "bob",
+        "source": "devel-loop/loop_state/agent_runtime/sessions/018a3ef4-87c6-4a9b-8e45-a999017c7784/turns/fc57996f10be4137b6d2834a6535060a/record.json"
+      },
+      {
+        "event_id": "02bb925312af45439526718606f12280",
+        "kind": "turn",
+        "parent_event_id": "02bb925312af45439526718606f12280",
+        "reported_usd": 16.9984714,
+        "role": "richard",
+        "source": "devel-loop/loop_state/agent_runtime/sessions/9e7ef5a1-33b8-4e56-9f06-2abc1cf54065/turns/02bb925312af45439526718606f12280/record.json"
+      },
+      {
+        "event_id": "347ee8b8f1284ccf8534b4192aa33843",
+        "kind": "turn",
+        "parent_event_id": "347ee8b8f1284ccf8534b4192aa33843",
+        "reported_usd": 12.489434999999999,
+        "role": "richard",
+        "source": "devel-loop/loop_state/agent_runtime/sessions/9e7ef5a1-33b8-4e56-9f06-2abc1cf54065/turns/347ee8b8f1284ccf8534b4192aa33843/record.json"
+      },
+      {
+        "event_id": "4f8863f2902447cea3fd3f0d5e0a275c",
+        "kind": "turn",
+        "parent_event_id": "4f8863f2902447cea3fd3f0d5e0a275c",
+        "reported_usd": 19.481284600000002,
+        "role": "richard",
+        "source": "devel-loop/loop_state/agent_runtime/sessions/9e7ef5a1-33b8-4e56-9f06-2abc1cf54065/turns/4f8863f2902447cea3fd3f0d5e0a275c/record.json"
+      },
+      {
+        "event_id": "59f95659113a40bfbb032f471cb89997",
+        "kind": "turn",
+        "parent_event_id": "59f95659113a40bfbb032f471cb89997",
+        "reported_usd": 7.617392,
+        "role": "richard",
+        "source": "devel-loop/loop_state/agent_runtime/sessions/9e7ef5a1-33b8-4e56-9f06-2abc1cf54065/turns/59f95659113a40bfbb032f471cb89997/record.json"
+      },
+      {
+        "event_id": "718086e7b8ac4bf9a2af3dec87549105",
+        "kind": "turn",
+        "parent_event_id": "718086e7b8ac4bf9a2af3dec87549105",
+        "reported_usd": 14.565281599999997,
+        "role": "richard",
+        "source": "devel-loop/loop_state/agent_runtime/sessions/9e7ef5a1-33b8-4e56-9f06-2abc1cf54065/turns/718086e7b8ac4bf9a2af3dec87549105/record.json"
+      },
+      {
+        "event_id": "bcc9f8032f144dd7abf5e801cbe4b23d",
+        "kind": "turn",
+        "parent_event_id": "bcc9f8032f144dd7abf5e801cbe4b23d",
+        "reported_usd": 10.624738799999998,
+        "role": "richard",
+        "source": "devel-loop/loop_state/agent_runtime/sessions/9e7ef5a1-33b8-4e56-9f06-2abc1cf54065/turns/bcc9f8032f144dd7abf5e801cbe4b23d/record.json"
+      },
+      {
+        "event_id": "439007597bfa4160937f32d8cc2cd2fa",
+        "kind": "turn",
+        "parent_event_id": "439007597bfa4160937f32d8cc2cd2fa",
+        "reported_usd": 6.5143486,
+        "role": "richard",
+        "source": "devel-loop/loop_state/agent_runtime/sessions/ce7e284c-b481-465f-a294-9e5f7d4e74a6/turns/439007597bfa4160937f32d8cc2cd2fa/record.json"
+      },
+      {
+        "event_id": "9800aa60266f49d4bd4b1a93fba24abf",
+        "kind": "turn",
+        "parent_event_id": "9800aa60266f49d4bd4b1a93fba24abf",
+        "reported_usd": 13.1867924,
+        "role": "richard",
+        "source": "devel-loop/loop_state/agent_runtime/sessions/ce7e284c-b481-465f-a294-9e5f7d4e74a6/turns/9800aa60266f49d4bd4b1a93fba24abf/record.json"
+      },
+      {
+        "event_id": "cbf3b4b87d3247bda7727cb906cfd57a",
+        "kind": "turn",
+        "parent_event_id": "cbf3b4b87d3247bda7727cb906cfd57a",
+        "reported_usd": 14.939659599999999,
+        "role": "richard",
+        "source": "devel-loop/loop_state/agent_runtime/sessions/ce7e284c-b481-465f-a294-9e5f7d4e74a6/turns/cbf3b4b87d3247bda7727cb906cfd57a/record.json"
+      },
+      {
+        "event_id": "d17eae212e01474baf7408bac86d1aaf",
+        "kind": "turn",
+        "parent_event_id": "d17eae212e01474baf7408bac86d1aaf",
+        "reported_usd": 9.543326,
+        "role": "richard",
+        "source": "devel-loop/loop_state/agent_runtime/sessions/ce7e284c-b481-465f-a294-9e5f7d4e74a6/turns/d17eae212e01474baf7408bac86d1aaf/record.json"
+      },
+      {
+        "event_id": "d9ace14eda52432789a5c63d4e00764a",
+        "kind": "turn",
+        "parent_event_id": "d9ace14eda52432789a5c63d4e00764a",
+        "reported_usd": 8.0391822,
+        "role": "richard",
+        "source": "devel-loop/loop_state/agent_runtime/sessions/ce7e284c-b481-465f-a294-9e5f7d4e74a6/turns/d9ace14eda52432789a5c63d4e00764a/record.json"
+      },
+      {
+        "event_id": "f8dd60e288554beba33944d250bef42b",
+        "kind": "turn",
+        "parent_event_id": "f8dd60e288554beba33944d250bef42b",
+        "reported_usd": 11.593275799999999,
+        "role": "richard",
+        "source": "devel-loop/loop_state/agent_runtime/sessions/ce7e284c-b481-465f-a294-9e5f7d4e74a6/turns/f8dd60e288554beba33944d250bef42b/record.json"
+      }
+    ],
+    "coordinator": {
+      "coverage": "recorded",
+      "included_in_reported_usd": "no",
+      "provider_reported_usd": null,
+      "self_reported": {
+        "minutes": 420.0,
+        "records": [
+          {
+            "minutes": 420.0,
+            "phase": "coordination",
+            "record_id": "48c610c5424646c18428e0336b98a5a0",
+            "recorded_at": "2026-10-02T13:47:19.273520+00:00",
+            "source": "Arch interactive session 8a3b12fb; active wall-clock for RUNOFF-009 excluding the usage-limit pause; USD not observable from inside the session (unknown)",
+            "usd": null
+          }
+        ],
+        "records_without_usd": 1,
+        "usd": null
+      },
+      "tool_measured": {
+        "basis": "wall time of gate commands run as arch; excludes interactive session time",
+        "effort_seconds": 271.56871223449707,
+        "elapsed_seconds": 271.56871223449707,
+        "events": 16
+      }
+    },
+    "coordinator_coverage": "recorded",
+    "end": "2026-10-02T13:44:13.905808+00:00",
+    "issue_id": "RUNOFF-009",
+    "missing_timing_event_ids": [],
+    "outside_child_intervals_seconds": 157367.8501522541,
+    "phase_events": [
+      {
+        "event_id": "1aaea1d153ca460ca7c459ecaea6b465",
+        "finished_at": "2026-09-30T14:59:44.515582+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.06027390399685828,
+        "started_at": "2026-09-30T14:59:44.455307+00:00"
+      },
+      {
+        "event_id": "fa3aae87f61b486d8d84ca123b9805bd",
+        "finished_at": "2026-09-30T15:01:49.764629+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.33503730799566256,
+        "started_at": "2026-09-30T15:01:49.429591+00:00"
+      },
+      {
+        "event_id": "b20ac313239f40cc8049ede9a265bfd6",
+        "finished_at": "2026-09-30T15:30:28.653004+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "implementation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 1800.3342358959999,
+        "started_at": "2026-09-30T15:00:28.318993+00:00"
+      },
+      {
+        "event_id": "707e1bcf3594456d92704de56bc390aa",
+        "finished_at": "2026-09-30T15:31:51.413460+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.3307340809988091,
+        "started_at": "2026-09-30T15:31:51.082722+00:00"
+      },
+      {
+        "event_id": "105d258f0138497daf520cc83b659ec5",
+        "finished_at": "2026-09-30T15:45:20.459124+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "seconds": 0.16071203799947398,
+        "started_at": "2026-09-30T15:45:20.298413+00:00"
+      },
+      {
+        "event_id": "29fe6ff230364e49b5327cb7b9b0f8f8",
+        "finished_at": "2026-09-30T15:45:31.447546+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.1985708850043011,
+        "started_at": "2026-09-30T15:45:31.248973+00:00"
+      },
+      {
+        "event_id": "5e4006e93721447fba72cf34cfaba1ca",
+        "finished_at": "2026-09-30T15:45:46.346847+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "018a3ef4-87c6-4a9b-8e45-a999017c7784",
+        "seconds": 10.796763864003879,
+        "started_at": "2026-09-30T15:45:35.550079+00:00"
+      },
+      {
+        "event_id": "1d75327006cd411c8069e2d3dc317d52",
+        "finished_at": "2026-09-30T15:47:22.735360+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "implementation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 974.0320098969969,
+        "started_at": "2026-09-30T15:31:08.703362+00:00"
+      },
+      {
+        "event_id": "a5ffbf707106466ead09b71a427bfc82",
+        "finished_at": "2026-10-02T11:05:02.132028+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.18817051700898446,
+        "started_at": "2026-10-02T11:05:01.943856+00:00"
+      },
+      {
+        "event_id": "18abebbf7ab84731b906c92687e260d4",
+        "finished_at": "2026-10-02T11:05:14.770856+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "018a3ef4-87c6-4a9b-8e45-a999017c7784",
+        "seconds": 11.34497478598496,
+        "started_at": "2026-10-02T11:05:03.425879+00:00"
+      },
+      {
+        "event_id": "a0eec9dec9a0481e8980aa59b2c08714",
+        "finished_at": "2026-10-02T11:05:51.869795+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "implementation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 210.19486630900064,
+        "started_at": "2026-10-02T11:02:21.674936+00:00"
+      },
+      {
+        "event_id": "6baa71d701374afdb5295ae9214e64e7",
+        "finished_at": "2026-10-02T11:07:11.099047+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.12654903301154263,
+        "started_at": "2026-10-02T11:07:10.972499+00:00"
+      },
+      {
+        "event_id": "9ca76428024f4f6c8926ce3ca39a6d27",
+        "finished_at": "2026-10-02T11:07:15.210327+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 4.046839448012179,
+        "started_at": "2026-10-02T11:07:11.163486+00:00"
+      },
+      {
+        "event_id": "cc58944f7e2e45f296a8134ab44abd53",
+        "finished_at": "2026-10-02T11:08:48.515857+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.23264015899621882,
+        "started_at": "2026-10-02T11:08:48.283216+00:00"
+      },
+      {
+        "event_id": "951cf856e8cc49109eb928a30d090dc1",
+        "finished_at": "2026-10-02T11:08:51.256216+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.18584930198267102,
+        "started_at": "2026-10-02T11:08:51.070365+00:00"
+      },
+      {
+        "event_id": "5be5207f1afa4b648b913dbcca16d430",
+        "finished_at": "2026-10-02T11:26:06.372083+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "ce7e284c-b481-465f-a294-9e5f7d4e74a6",
+        "seconds": 3.072337226010859,
+        "started_at": "2026-10-02T11:26:03.299742+00:00"
+      },
+      {
+        "event_id": "7d245aee05ad4b96a57d0feed6dd0598",
+        "finished_at": "2026-10-02T11:26:34.305717+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "ce7e284c-b481-465f-a294-9e5f7d4e74a6",
+        "seconds": 10.150776414986467,
+        "started_at": "2026-10-02T11:26:24.154939+00:00"
+      },
+      {
+        "event_id": "3eea16f38e56452c8acf2bb251daf3dc",
+        "finished_at": "2026-10-02T11:27:44.431946+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 10.856681076984387,
+        "started_at": "2026-10-02T11:27:33.575262+00:00"
+      },
+      {
+        "event_id": "ed2832e2e42c48ce9360593b77e7f045",
+        "finished_at": "2026-10-02T11:28:40.211185+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "review",
+        "reason": null,
+        "role": "richard",
+        "seconds": 1250.3186992440023,
+        "started_at": "2026-10-02T11:07:49.906102+00:00"
+      },
+      {
+        "event_id": "153b3a1983854391b0760b6bbe8246b5",
+        "finished_at": "2026-10-02T11:29:47.127990+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 2.7673468709981535,
+        "started_at": "2026-10-02T11:29:44.360640+00:00"
+      },
+      {
+        "event_id": "a0ccfa64005a4eaa8cdbc2b85f0098f6",
+        "finished_at": "2026-10-02T11:30:11.554599+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 2.5562628059997223,
+        "started_at": "2026-10-02T11:30:08.998333+00:00"
+      },
+      {
+        "event_id": "3602279fb3ee4456a9c9880871942148",
+        "finished_at": "2026-10-02T11:33:47.497617+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "review",
+        "reason": null,
+        "role": "richard",
+        "seconds": 1557.5990969720006,
+        "started_at": "2026-10-02T11:07:49.912101+00:00"
+      },
+      {
+        "event_id": "cb80652790ee4cc99bfad56bc97442bb",
+        "finished_at": "2026-10-02T11:43:22.978295+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.16264904299168848,
+        "started_at": "2026-10-02T11:43:22.815643+00:00"
+      },
+      {
+        "event_id": "2732a1c195914c1398ce4337dfc1dbf5",
+        "finished_at": "2026-10-02T11:43:36.204519+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "018a3ef4-87c6-4a9b-8e45-a999017c7784",
+        "seconds": 11.279888729011873,
+        "started_at": "2026-10-02T11:43:24.924622+00:00"
+      },
+      {
+        "event_id": "0a899a974b164d71ba061fe3a5900842",
+        "finished_at": "2026-10-02T11:44:23.293028+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "implementation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 603.231793532992,
+        "started_at": "2026-10-02T11:34:20.061244+00:00"
+      },
+      {
+        "event_id": "fb063b836085441798be26257989f967",
+        "finished_at": "2026-10-02T11:45:14.319731+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.12468670200905763,
+        "started_at": "2026-10-02T11:45:14.195021+00:00"
+      },
+      {
+        "event_id": "71162989856e4c7e87eb8a3986b4c0b6",
+        "finished_at": "2026-10-02T11:45:18.298145+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 3.906444245018065,
+        "started_at": "2026-10-02T11:45:14.391697+00:00"
+      },
+      {
+        "event_id": "4ace1ea8b9364e6cacea53fe5844f260",
+        "finished_at": "2026-10-02T11:47:08.458705+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "seconds": 0.1595291369885672,
+        "started_at": "2026-10-02T11:47:08.299179+00:00"
+      },
+      {
+        "event_id": "cda00bc5ee1a4032abcdce908fcb46ce",
+        "finished_at": "2026-10-02T11:47:31.728795+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.21996250600204803,
+        "started_at": "2026-10-02T11:47:31.508830+00:00"
+      },
+      {
+        "event_id": "df6e69fad9b4454db9fdf9e442c93980",
+        "finished_at": "2026-10-02T11:48:01.787960+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 2.723816109006293,
+        "started_at": "2026-10-02T11:47:59.064107+00:00"
+      },
+      {
+        "event_id": "018bec0660cd4f4284a398e2134669b4",
+        "finished_at": "2026-10-02T11:48:04.284048+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 2.4568046759814024,
+        "started_at": "2026-10-02T11:48:01.827241+00:00"
+      },
+      {
+        "event_id": "9f2b96db0e12436da4a455ebb65b77bf",
+        "finished_at": "2026-10-02T11:48:15.511347+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 11.185473693010863,
+        "started_at": "2026-10-02T11:48:04.325872+00:00"
+      },
+      {
+        "event_id": "be512d0fe019467187f089dc34d614dd",
+        "finished_at": "2026-10-02T11:48:36.817501+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "ce7e284c-b481-465f-a294-9e5f7d4e74a6",
+        "seconds": 3.222527236008318,
+        "started_at": "2026-10-02T11:48:33.594939+00:00"
+      },
+      {
+        "event_id": "4f5d3b09d78c40d6bfce55e778f45b23",
+        "finished_at": "2026-10-02T11:48:49.002224+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.14272586401784793,
+        "started_at": "2026-10-02T11:48:48.859492+00:00"
+      },
+      {
+        "event_id": "a776c0ba7a454ec6803b2adab0e0e26c",
+        "finished_at": "2026-10-02T11:48:51.197023+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "ce7e284c-b481-465f-a294-9e5f7d4e74a6",
+        "seconds": 11.076152955007274,
+        "started_at": "2026-10-02T11:48:40.120869+00:00"
+      },
+      {
+        "event_id": "0c69ad8973e846bfaeb5ce8003a69d92",
+        "finished_at": "2026-10-02T11:50:03.399581+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "review",
+        "reason": null,
+        "role": "richard",
+        "seconds": 229.73618694097968,
+        "started_at": "2026-10-02T11:46:13.663398+00:00"
+      },
+      {
+        "event_id": "5668e3ceed114c65be5a5b2f29ee8bcf",
+        "finished_at": "2026-10-02T11:59:31.706807+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 6.01281891099643,
+        "started_at": "2026-10-02T11:59:25.693985+00:00"
+      },
+      {
+        "event_id": "44b6dcf99292445db01a3f5640db58a9",
+        "finished_at": "2026-10-02T12:00:51.620682+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "review",
+        "reason": null,
+        "role": "richard",
+        "seconds": 877.6571134120168,
+        "started_at": "2026-10-02T11:46:13.963575+00:00"
+      },
+      {
+        "event_id": "ebbcec97f7054157ba1979da59940797",
+        "finished_at": "2026-10-02T12:07:46.479969+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.1923671260010451,
+        "started_at": "2026-10-02T12:07:46.287600+00:00"
+      },
+      {
+        "event_id": "e3fda75309174753b653f7977a150150",
+        "finished_at": "2026-10-02T12:07:59.447322+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "018a3ef4-87c6-4a9b-8e45-a999017c7784",
+        "seconds": 11.14496274900739,
+        "started_at": "2026-10-02T12:07:48.302355+00:00"
+      },
+      {
+        "event_id": "415518e582e74097a650f3ba41e7c3f4",
+        "finished_at": "2026-10-02T12:08:46.497699+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "implementation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 434.9455552599975,
+        "started_at": "2026-10-02T12:01:31.552150+00:00"
+      },
+      {
+        "event_id": "50699e8f324241899d0dcbafa0103960",
+        "finished_at": "2026-10-02T12:09:24.480742+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.12265101098455489,
+        "started_at": "2026-10-02T12:09:24.358066+00:00"
+      },
+      {
+        "event_id": "56f9c7e1daa440a2bdac6c6c0660322e",
+        "finished_at": "2026-10-02T12:09:28.487953+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 3.941138776979642,
+        "started_at": "2026-10-02T12:09:24.546810+00:00"
+      },
+      {
+        "event_id": "8c3dbaa8ddcd4c4fb83fb473cad1a4ea",
+        "finished_at": "2026-10-02T12:11:21.045448+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.32241926999995485,
+        "started_at": "2026-10-02T12:11:20.723029+00:00"
+      },
+      {
+        "event_id": "27458fba50f04c49b38fe0f541a18212",
+        "finished_at": "2026-10-02T12:12:09.519653+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.1566057979944162,
+        "started_at": "2026-10-02T12:12:09.363046+00:00"
+      },
+      {
+        "event_id": "37fd0b418a614a628fbc8f499443436f",
+        "finished_at": "2026-10-02T12:12:21.975653+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 6.070211091981037,
+        "started_at": "2026-10-02T12:12:15.905438+00:00"
+      },
+      {
+        "event_id": "df3cc7b012274c178289cde6a715943b",
+        "finished_at": "2026-10-02T12:12:24.639338+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 2.622071888996288,
+        "started_at": "2026-10-02T12:12:22.017263+00:00"
+      },
+      {
+        "event_id": "265fddbf295c40f3b2b8425446680a29",
+        "finished_at": "2026-10-02T12:12:27.129484+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 2.447763288015267,
+        "started_at": "2026-10-02T12:12:24.681715+00:00"
+      },
+      {
+        "event_id": "e16d7c19c60644d68dfdea459a86d36e",
+        "finished_at": "2026-10-02T12:12:38.366315+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 11.19507392399828,
+        "started_at": "2026-10-02T12:12:27.171234+00:00"
+      },
+      {
+        "event_id": "d0f13b9616da4d27ace398046295263c",
+        "finished_at": "2026-10-02T12:13:15.943275+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "ce7e284c-b481-465f-a294-9e5f7d4e74a6",
+        "seconds": 3.5935349479841534,
+        "started_at": "2026-10-02T12:13:12.349738+00:00"
+      },
+      {
+        "event_id": "01c3802a2b084f6798ff1c3e5089bcc8",
+        "finished_at": "2026-10-02T12:13:31.236076+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "ce7e284c-b481-465f-a294-9e5f7d4e74a6",
+        "seconds": 11.150630644988269,
+        "started_at": "2026-10-02T12:13:20.085444+00:00"
+      },
+      {
+        "event_id": "60c274bf24544a319824358f1070866e",
+        "finished_at": "2026-10-02T12:14:35.027182+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "review",
+        "reason": null,
+        "role": "richard",
+        "seconds": 255.60756043801666,
+        "started_at": "2026-10-02T12:10:19.419628+00:00"
+      },
+      {
+        "event_id": "e72645bd9f984c12b465f26ca2f425e9",
+        "finished_at": "2026-10-02T12:16:30.835085+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 2.503310878004413,
+        "started_at": "2026-10-02T12:16:28.331771+00:00"
+      },
+      {
+        "event_id": "018b5874536a4eeea5f2601819ec3fb2",
+        "finished_at": "2026-10-02T12:18:01.623188+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "review",
+        "reason": null,
+        "role": "richard",
+        "seconds": 462.20968857299886,
+        "started_at": "2026-10-02T12:10:19.413525+00:00"
+      },
+      {
+        "event_id": "3a181490ddd24f4c8b5069e167d3f9b1",
+        "finished_at": "2026-10-02T12:28:24.933891+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.22125100501580164,
+        "started_at": "2026-10-02T12:28:24.712638+00:00"
+      },
+      {
+        "event_id": "946ad73b22e94503a905a4846c7f9eaf",
+        "finished_at": "2026-10-02T12:28:37.512056+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "018a3ef4-87c6-4a9b-8e45-a999017c7784",
+        "seconds": 11.022777662001317,
+        "started_at": "2026-10-02T12:28:26.489276+00:00"
+      },
+      {
+        "event_id": "0a19534eb851419da268ff2d0b6ee745",
+        "finished_at": "2026-10-02T12:29:28.772867+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "implementation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 635.14370340202,
+        "started_at": "2026-10-02T12:18:53.629170+00:00"
+      },
+      {
+        "event_id": "3fe734e51256464ba684f34a8b795f71",
+        "finished_at": "2026-10-02T12:30:17.428148+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.11860648400033824,
+        "started_at": "2026-10-02T12:30:17.309544+00:00"
+      },
+      {
+        "event_id": "992b4a66c501427ca1040f76cb073857",
+        "finished_at": "2026-10-02T12:30:21.325088+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 3.8346137670159806,
+        "started_at": "2026-10-02T12:30:17.490473+00:00"
+      },
+      {
+        "event_id": "83f5c56fe16e41b9a583ecda7993714c",
+        "finished_at": "2026-10-02T12:30:32.987833+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.12645011499989778,
+        "started_at": "2026-10-02T12:30:32.861380+00:00"
+      },
+      {
+        "event_id": "605372506f5a44f9bece1feb6fa264ff",
+        "finished_at": "2026-10-02T12:32:59.419754+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.38071812299313024,
+        "started_at": "2026-10-02T12:32:59.039028+00:00"
+      },
+      {
+        "event_id": "581ba1248e664cbe8af32f545bc5a02b",
+        "finished_at": "2026-10-02T12:33:10.151744+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.16458050897927023,
+        "started_at": "2026-10-02T12:33:09.987163+00:00"
+      },
+      {
+        "event_id": "4f42d9a41a544a76b37d485094412bac",
+        "finished_at": "2026-10-02T12:33:24.778326+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 2.663475984998513,
+        "started_at": "2026-10-02T12:33:22.114844+00:00"
+      },
+      {
+        "event_id": "143426f6d6654b84931f695174b4d668",
+        "finished_at": "2026-10-02T12:33:27.290524+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 2.469016949995421,
+        "started_at": "2026-10-02T12:33:24.821506+00:00"
+      },
+      {
+        "event_id": "d0099014ac104fc081d1e393471100a5",
+        "finished_at": "2026-10-02T12:33:33.254488+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 5.924054828006774,
+        "started_at": "2026-10-02T12:33:27.330430+00:00"
+      },
+      {
+        "event_id": "26d68b3348bb48bb957f3b27047e1555",
+        "finished_at": "2026-10-02T12:33:44.265996+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 10.973688615020365,
+        "started_at": "2026-10-02T12:33:33.292305+00:00"
+      },
+      {
+        "event_id": "86c8833abc3d4a669a9301edfdd4d467",
+        "finished_at": "2026-10-02T12:35:10.607493+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "ce7e284c-b481-465f-a294-9e5f7d4e74a6",
+        "seconds": 3.4346209579962306,
+        "started_at": "2026-10-02T12:35:07.172868+00:00"
+      },
+      {
+        "event_id": "09092fe358584c0baac4ff032c8c5ada",
+        "finished_at": "2026-10-02T12:35:32.082827+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "ce7e284c-b481-465f-a294-9e5f7d4e74a6",
+        "seconds": 3.300253354012966,
+        "started_at": "2026-10-02T12:35:28.782572+00:00"
+      },
+      {
+        "event_id": "b13c49b1e57f4562ba2844d9afb7ebfa",
+        "finished_at": "2026-10-02T12:35:48.839897+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "ce7e284c-b481-465f-a294-9e5f7d4e74a6",
+        "seconds": 11.056957131979289,
+        "started_at": "2026-10-02T12:35:37.782937+00:00"
+      },
+      {
+        "event_id": "b286233aa03e475283f80a8d153af3bb",
+        "finished_at": "2026-10-02T12:37:06.184612+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "review",
+        "reason": null,
+        "role": "richard",
+        "seconds": 346.1458921500016,
+        "started_at": "2026-10-02T12:31:20.038724+00:00"
+      },
+      {
+        "event_id": "fdb4f9b7b78a443aa163bff283444a70",
+        "finished_at": "2026-10-02T12:37:10.959981+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 2.669095085002482,
+        "started_at": "2026-10-02T12:37:08.290883+00:00"
+      },
+      {
+        "event_id": "530b86b0e3074c83bf85b19c0b3b087b",
+        "finished_at": "2026-10-02T12:38:39.652561+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "review",
+        "reason": null,
+        "role": "richard",
+        "seconds": 439.6076875299914,
+        "started_at": "2026-10-02T12:31:20.044882+00:00"
+      },
+      {
+        "event_id": "852313b796e9436a9a03524ef45607ef",
+        "finished_at": "2026-10-02T12:48:23.126340+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.19387870200444013,
+        "started_at": "2026-10-02T12:48:22.932460+00:00"
+      },
+      {
+        "event_id": "2623895f998649dca30d85879d9ab446",
+        "finished_at": "2026-10-02T12:48:34.501846+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "018a3ef4-87c6-4a9b-8e45-a999017c7784",
+        "seconds": 11.135429018992,
+        "started_at": "2026-10-02T12:48:23.366417+00:00"
+      },
+      {
+        "event_id": "f0552b07f7c14c679956f4285cac7bd9",
+        "finished_at": "2026-10-02T12:49:27.470896+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "implementation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 618.2658442769898,
+        "started_at": "2026-10-02T12:39:09.205066+00:00"
+      },
+      {
+        "event_id": "1d4f974ec1fd429b829484684988a12e",
+        "finished_at": "2026-10-02T12:50:05.759624+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.1280605999927502,
+        "started_at": "2026-10-02T12:50:05.631559+00:00"
+      },
+      {
+        "event_id": "905d74890b934f8aa68b6d635eeca7fb",
+        "finished_at": "2026-10-02T12:50:09.809186+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 3.975877758988645,
+        "started_at": "2026-10-02T12:50:05.833305+00:00"
+      },
+      {
+        "event_id": "a9eaba209ec543d68136e90e70b8fcfc",
+        "finished_at": "2026-10-02T12:52:49.624520+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.40328209500876255,
+        "started_at": "2026-10-02T12:52:49.221233+00:00"
+      },
+      {
+        "event_id": "be109ffb50814778996220809f85f394",
+        "finished_at": "2026-10-02T12:53:33.100152+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.16966865400900133,
+        "started_at": "2026-10-02T12:53:32.930480+00:00"
+      },
+      {
+        "event_id": "07c3711c422442b3a194aba672231e09",
+        "finished_at": "2026-10-02T12:53:45.441168+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 2.6496028369874693,
+        "started_at": "2026-10-02T12:53:42.791562+00:00"
+      },
+      {
+        "event_id": "b11bff242386431a8485b45cbc43e491",
+        "finished_at": "2026-10-02T12:53:48.158303+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 2.677415893995203,
+        "started_at": "2026-10-02T12:53:45.480883+00:00"
+      },
+      {
+        "event_id": "c644ce65835a4ff9ae8df04d87004b88",
+        "finished_at": "2026-10-02T12:53:50.590665+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 2.3928550189884845,
+        "started_at": "2026-10-02T12:53:48.197806+00:00"
+      },
+      {
+        "event_id": "9b8df9d876254d3ca6f1ba4383c71586",
+        "finished_at": "2026-10-02T12:53:56.771162+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 6.140967746992828,
+        "started_at": "2026-10-02T12:53:50.630191+00:00"
+      },
+      {
+        "event_id": "6f3d2f42ce6047e6b56ac98afa8c188a",
+        "finished_at": "2026-10-02T12:54:08.468652+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 11.658331813989207,
+        "started_at": "2026-10-02T12:53:56.810319+00:00"
+      },
+      {
+        "event_id": "b29ec4cba8df4a999ee0f379ee19f4d2",
+        "finished_at": "2026-10-02T12:54:11.857377+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "ce7e284c-b481-465f-a294-9e5f7d4e74a6",
+        "seconds": 3.7701658649893943,
+        "started_at": "2026-10-02T12:54:08.087206+00:00"
+      },
+      {
+        "event_id": "1f757b1ef3724e9ead77425d07e79b28",
+        "finished_at": "2026-10-02T12:54:27.650961+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "ce7e284c-b481-465f-a294-9e5f7d4e74a6",
+        "seconds": 11.17709547400591,
+        "started_at": "2026-10-02T12:54:16.473864+00:00"
+      },
+      {
+        "event_id": "4967d457ecd84bc8b6bd99ff923fd830",
+        "finished_at": "2026-10-02T12:55:40.481013+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "review",
+        "reason": null,
+        "role": "richard",
+        "seconds": 274.1636931390094,
+        "started_at": "2026-10-02T12:51:06.317358+00:00"
+      },
+      {
+        "event_id": "8da6066d45ab44bb9df9802a413b04eb",
+        "finished_at": "2026-10-02T13:00:29.981925+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 4.244392427004641,
+        "started_at": "2026-10-02T13:00:25.737528+00:00"
+      },
+      {
+        "event_id": "8fe4a1ec0bc945f6ac8c7873c3d4f35b",
+        "finished_at": "2026-10-02T13:01:47.035314+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "review",
+        "reason": null,
+        "role": "richard",
+        "seconds": 640.3176216229913,
+        "started_at": "2026-10-02T12:51:06.717693+00:00"
+      },
+      {
+        "event_id": "d9ae5f9a3e26452794bbb1ce82bd0d69",
+        "finished_at": "2026-10-02T13:19:04.233873+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.2476914239814505,
+        "started_at": "2026-10-02T13:19:03.986180+00:00"
+      },
+      {
+        "event_id": "2911b757d75d4cc389efe6e4b2b0673c",
+        "finished_at": "2026-10-02T13:19:17.413462+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "018a3ef4-87c6-4a9b-8e45-a999017c7784",
+        "seconds": 12.883303691982292,
+        "started_at": "2026-10-02T13:19:04.530157+00:00"
+      },
+      {
+        "event_id": "87b9dc864126492c8cc13570b074dace",
+        "finished_at": "2026-10-02T13:20:14.044505+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "implementation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 1060.5441948200169,
+        "started_at": "2026-10-02T13:02:33.500319+00:00"
+      },
+      {
+        "event_id": "84489fc3db5240a2a9f3412f28a6cca2",
+        "finished_at": "2026-10-02T13:21:02.520072+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.13199890599935316,
+        "started_at": "2026-10-02T13:21:02.388073+00:00"
+      },
+      {
+        "event_id": "d1bf592fe7bb434c9761d74d039db10f",
+        "finished_at": "2026-10-02T13:21:06.900937+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 4.309000298002502,
+        "started_at": "2026-10-02T13:21:02.591931+00:00"
+      },
+      {
+        "event_id": "676da505c41b4995a2725a2f15f7cdca",
+        "finished_at": "2026-10-02T13:23:33.483381+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.18184218200622126,
+        "started_at": "2026-10-02T13:23:33.301537+00:00"
+      },
+      {
+        "event_id": "aa82a1e4898a4fb59d1c5415ac6b35b9",
+        "finished_at": "2026-10-02T13:23:41.513594+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.438319134991616,
+        "started_at": "2026-10-02T13:23:41.075266+00:00"
+      },
+      {
+        "event_id": "e7d3dae857494c42931c891010a4231b",
+        "finished_at": "2026-10-02T13:23:47.091414+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 5.2972901389875915,
+        "started_at": "2026-10-02T13:23:41.794123+00:00"
+      },
+      {
+        "event_id": "697f2c93f296441589b2b8cc992fe32b",
+        "finished_at": "2026-10-02T13:23:49.770239+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 2.6391495789866894,
+        "started_at": "2026-10-02T13:23:47.131087+00:00"
+      },
+      {
+        "event_id": "5405b00abc6c4f8987c57572c7ea8c4d",
+        "finished_at": "2026-10-02T13:23:52.636588+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 2.825682119000703,
+        "started_at": "2026-10-02T13:23:49.810874+00:00"
+      },
+      {
+        "event_id": "4e52523beb02402ebaabd31584c54f9d",
+        "finished_at": "2026-10-02T13:23:55.293044+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 2.6155169059929904,
+        "started_at": "2026-10-02T13:23:52.677525+00:00"
+      },
+      {
+        "event_id": "8a244c1df2ca40a19367e2ddea309075",
+        "finished_at": "2026-10-02T13:24:02.554048+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 7.217585836013313,
+        "started_at": "2026-10-02T13:23:55.336456+00:00"
+      },
+      {
+        "event_id": "42f2576ed0ce4dc8a359d0d1fc9e56b4",
+        "finished_at": "2026-10-02T13:24:15.997483+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 13.400608336000005,
+        "started_at": "2026-10-02T13:24:02.596873+00:00"
+      },
+      {
+        "event_id": "8e67f7e8e8cd45c8826180d18bfbd9e6",
+        "finished_at": "2026-10-02T13:25:29.039082+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "ce7e284c-b481-465f-a294-9e5f7d4e74a6",
+        "seconds": 4.680086617008783,
+        "started_at": "2026-10-02T13:25:24.358992+00:00"
+      },
+      {
+        "event_id": "96346ae8c3664c70b3992233509c2b32",
+        "finished_at": "2026-10-02T13:25:45.374448+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "ce7e284c-b481-465f-a294-9e5f7d4e74a6",
+        "seconds": 12.287132632016437,
+        "started_at": "2026-10-02T13:25:33.087311+00:00"
+      },
+      {
+        "event_id": "6bf73c8532084cf58ec98646cbafb896",
+        "finished_at": "2026-10-02T13:27:13.847122+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "review",
+        "reason": null,
+        "role": "richard",
+        "seconds": 292.7196415250073,
+        "started_at": "2026-10-02T13:22:21.127488+00:00"
+      },
+      {
+        "event_id": "75eefac1229d45f198528e2313934e06",
+        "finished_at": "2026-10-02T13:30:52.958503+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "9e7ef5a1-33b8-4e56-9f06-2abc1cf54065",
+        "seconds": 32.66528381299577,
+        "started_at": "2026-10-02T13:30:20.293214+00:00"
+      },
+      {
+        "event_id": "a6a2ce1262eb44618d26da5dffb657ad",
+        "finished_at": "2026-10-02T13:31:54.925146+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "review",
+        "reason": null,
+        "role": "richard",
+        "seconds": 573.7909276290156,
+        "started_at": "2026-10-02T13:22:21.134243+00:00"
+      },
+      {
+        "event_id": "5b26d6786d3342ac95207056414c9ac8",
+        "finished_at": "2026-10-02T13:39:43.079347+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 244.25775223199162,
+        "started_at": "2026-10-02T13:35:38.821587+00:00"
+      },
+      {
+        "event_id": "132d789aeb00471e8a7575047400d637",
+        "finished_at": "2026-10-02T13:40:49.659568+00:00",
+        "issue_id": "RUNOFF-009",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 2.3576914019940887,
+        "started_at": "2026-10-02T13:40:47.301880+00:00"
+      }
+    ],
+    "reported_usd": 313.8620401999999,
+    "schema_version": 2,
+    "span_seconds": 168281.28223896027,
+    "start": "2026-09-30T14:59:32.623569+00:00",
+    "unknown_cost_event_ids": [
+      "58df920733e142d8b9e37c5e081f6332"
+    ]
+  }
+}
