@@ -26,42 +26,6 @@ A closed dependency prompts reconsideration; it does not automatically unblock w
 <Hypothesis, bounded change/inquiry, independent oracle, tolerances and completion criteria>
 ```
 
-## UNRESOLVED: ESX dispatch adapter crashes on Claude Code permission_denied events
-
-**Date Identified**: 2026-09-29T22:05:00Z
-**Status**: Unresolved
-**UUID**: ESX-001
-**Anchors**: tools/esx/agent_runtime.py::_read_tool_events
-
-### Issue or research question
-`_read_tool_events` did `event.get("message", {}).get("content", [])`. Claude Code stream-json
-`{"type":"system","subtype":"permission_denied",…}` events carry `message` as a string, so
-the watchdog raised `AttributeError: 'str' object has no attribute 'get'`. The dispatcher
-exited mid-turn and the child session was left without a supervisor. That turn's evidence
-was saved only as a failure.
-
-### Evidence
-RUNOFF-001 Bob start, event `8154aebc7c6b4c0fbf05966e863adc0c` (2026-09-29): traceback in the
-dispatch output, and the offending event at line 8 of that turn's `stdout.jsonl`. Local fix:
-guard on `isinstance(message, dict)`. Replaying the same `stdout.jsonl` through the patched
-function parses cleanly (`devel-loop/loop_state/compatibility-RUNOFF-001.log`,
-sha256 77edaf31…1714).
-
-### Scientific or engineering impact
-Any denied tool call (a common event, see ESX-002) kills the dispatch and forces a
-runtime-transition assessment to resume.
-
-### Proposed action and acceptance
-Upstream the guard to ESX-Team, with a unit test that feeds a `permission_denied` event
-(string `message`) and a normal assistant event through `_read_tool_events`.
-Audit other `event.get(...).get(...)` chains in the adapter for the same assumption.
-Acceptance: the test passes upstream, and the local copy matches upstream after the next kit update.
-
-### Resolution evidence (2026-09-29)
-Fixed upstream in ESX-Team 1.5.1 (tolerant stream parser, recorded failed turn on dispatcher error, `permission_denials` in turn records). The local guard was reverted to 1.5.0 bytes before the upgrade. `agent_runtime.py recover` closed orphaned turn 8154aebc in Bob session a7e61b17. Awaiting formal closeout.
-
-Acceptance witness on ESX-Team 1.6.0 (2026-10-02): the 1.5.0 crash stream (turn 8154aebc, a string `message` on a permission_denied event) replays through the deployed `_read_tool_events` without error, and a live Bob turn (b8a28b11, e54e8aa9) with one denied command completed with the denial in `permission_denials` (verification record 5c001a7b…).
-
 ## UNRESOLVED: Python dense-to-sparse runoff converter
 
 **Date Identified**: 2026-09-29T21:30:00Z

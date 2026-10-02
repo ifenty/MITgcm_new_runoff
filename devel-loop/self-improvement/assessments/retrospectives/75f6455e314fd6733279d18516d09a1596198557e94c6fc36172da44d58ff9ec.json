@@ -1,0 +1,126 @@
+{
+  "retrospective": {
+    "schema_version": 3,
+    "id": "ESX-001",
+    "iteration": 1,
+    "closes_timestamp": "2026-10-02T16:08:16.931383+00:00",
+    "timestamp": "2026-10-02T16:09:43Z",
+    "accounting": {
+      "path": "devel-loop/loop_state/accounting/a421346b505d77bb59ca38da37dcd72f776e281e58dd05dc7d0a590cf55f7f8f.json",
+      "sha256": "a421346b505d77bb59ca38da37dcd72f776e281e58dd05dc7d0a590cf55f7f8f"
+    },
+    "measured": {
+      "span_minutes": 1,
+      "dispatches": {},
+      "rounds": {},
+      "cost_usd": {},
+      "unknown_cost_event_ids": [],
+      "coordinator_coverage": "recorded",
+      "billing_status": "provider_reported_not_invoice_reconciled",
+      "coordinator": {
+        "tool_measured_minutes": 0.1,
+        "self_reported_minutes": 10.0,
+        "self_reported_usd": null,
+        "provider_reported_usd": null
+      },
+      "cost_scope": "cost_usd and span-based figures describe dispatched agents; coordinator cost is recorded separately: Arch self-reported 10 min, cost unknown (coordinator.self_reported; not added to cost_usd)"
+    },
+    "problems": [],
+    "solutions": [],
+    "confirmations": [
+      {
+        "category": "arch_owned_closure",
+        "summary": "A fixed kit defect closed with an Arch-run replay witness and no role dispatch.",
+        "evidence": "verify.py focused command esx001_witness.py EXECUTED PASS (record 5c001a7b); zero agent spend; closeout doctor accepted on the first run with the 1.6.0 typed skeleton."
+      }
+    ],
+    "carry_forward": [],
+    "no_problem_reason": ""
+  },
+  "accounting": {
+    "billing_status": "provider_reported_not_invoice_reconciled",
+    "by_phase": {
+      "orientation": {
+        "effort_seconds": 0.09372091293334961,
+        "elapsed_seconds": 0.09372091293334961,
+        "events": 1
+      },
+      "verification": {
+        "effort_seconds": 6.738220930099487,
+        "elapsed_seconds": 6.738220930099487,
+        "events": 2
+      }
+    },
+    "by_role": {},
+    "child_elapsed_seconds": 0,
+    "components": [],
+    "coordinator": {
+      "coverage": "recorded",
+      "included_in_reported_usd": "no",
+      "provider_reported_usd": null,
+      "self_reported": {
+        "minutes": 10.0,
+        "records": [
+          {
+            "minutes": 10.0,
+            "phase": "coordination",
+            "record_id": "a8ecf15f28394d41ab3604bfa620dd32",
+            "recorded_at": "2026-10-02T16:09:43.124121+00:00",
+            "source": "Arch interactive session 8a3b12fb; wall-clock for the ESX-001 iteration; USD not observable (unknown)",
+            "usd": null
+          }
+        ],
+        "records_without_usd": 1,
+        "usd": null
+      },
+      "tool_measured": {
+        "basis": "wall time of gate commands run as arch; excludes interactive session time",
+        "effort_seconds": 6.831941843032837,
+        "elapsed_seconds": 6.831941843032837,
+        "events": 3
+      }
+    },
+    "coordinator_coverage": "recorded",
+    "end": "2026-10-02T16:09:14.557182+00:00",
+    "issue_id": "ESX-001",
+    "missing_timing_event_ids": [],
+    "outside_child_intervals_seconds": 57.62579917907715,
+    "phase_events": [
+      {
+        "event_id": "86805dfa859b40c081eadc58ed1019c0",
+        "finished_at": "2026-10-02T16:08:33.048645+00:00",
+        "issue_id": "ESX-001",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.09371763200033456,
+        "started_at": "2026-10-02T16:08:32.954924+00:00"
+      },
+      {
+        "event_id": "761917b747f940b5a7e61ae123b2b3ff",
+        "finished_at": "2026-10-02T16:08:35.164567+00:00",
+        "issue_id": "ESX-001",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 2.063425903994357,
+        "started_at": "2026-10-02T16:08:33.101138+00:00"
+      },
+      {
+        "event_id": "a8e8f7ac6cfd4cd49ed02f6e28879422",
+        "finished_at": "2026-10-02T16:09:01.326386+00:00",
+        "issue_id": "ESX-001",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 4.674789682001574,
+        "started_at": "2026-10-02T16:08:56.651594+00:00"
+      }
+    ],
+    "reported_usd": 0,
+    "schema_version": 2,
+    "span_seconds": 57.62579917907715,
+    "start": "2026-10-02T16:08:16.931383+00:00",
+    "unknown_cost_event_ids": []
+  }
+}
