@@ -87,9 +87,9 @@ def duration_text(seconds):
 def loop_status(root):
     """Facts for the owner's one-line status, or None when no loop is active.
 
-    The remaining-time estimate is the median working time of the issues this
-    project has closed, times the open actionable issues, less the time already
-    spent on the active one. It is 'unknown' without closed history.
+    The remaining-time estimate is the median wall-clock duration of the issues
+    this project has closed, times the open actionable issues, less the time
+    already spent on the active one. It is 'unknown' without closed history.
     """
     root = Path(root).resolve()
     current = session(root)
@@ -123,18 +123,16 @@ def loop_status(root):
     else:
         issue = None
         phase = 'retrospective' if ralph_stop.work_in_progress(root) else 'selecting the next issue'
-    # Prefer the coordinator's recorded working minutes: a closed issue's span runs
-    # from its first to its last turn and so includes every pause (a usage limit,
-    # an overnight stop), which says nothing about the work. The span is used only
-    # for an issue with no recorded working minutes.
+    # Prefer measured working time: a closed issue's wall-clock span includes
+    # pauses (a usage limit, an overnight stop) that say nothing about the work.
     spans = []
     for row in json_lines(local(root, f'{STATE}/retrospective_history.jsonl')):
         measured = row.get('measured') if isinstance(row.get('measured'), dict) else {}
         coordinator = measured.get('coordinator') if isinstance(measured.get('coordinator'), dict) else {}
-        minutes = [m for m in (coordinator.get('self_reported_minutes'), measured.get('span_minutes'))
+        minutes = [m for m in (measured.get('span_minutes'), coordinator.get('self_reported_minutes'))
                    if type(m) in (int, float) and m > 0]
         if minutes:
-            spans.append(minutes[0] * 60)
+            spans.append(max(minutes) * 60)
     if not spans:
         for row in history:
             try:

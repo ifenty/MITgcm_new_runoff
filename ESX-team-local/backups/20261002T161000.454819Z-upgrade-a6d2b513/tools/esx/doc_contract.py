@@ -803,21 +803,6 @@ def parse_receipt(value):
     return parse_ref(text)
 
 
-NAVIGATE_EXAMPLE = '''example:
-  doc_contract.py navigate --issue PROJECT-001 --role bob \\
-    --baseline '{"path": "devel-loop/loop_state/maintenance/<sha>.json", "sha256": "<sha>"}' \\
-    --map 'docs/code_map.md#verification-routes' \\
-    --target 'src/model.py::step' --target 'tests/test_model.py::<module>' \\
-    --doc docs/model_contract.md \\
-    --use 'Trace the update into its oracle before judging the change.'
-
---map takes the code map path and a heading slug (the heading text lower-cased, with
-spaces as hyphens). Give at least two --target entries, each path::symbol or
-path::<module>, and at least one --doc. --baseline may also be the path of a file
-holding the reference. To repeat an earlier orientation use --reuse-args RECEIPT.
-'''
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[2])
@@ -826,12 +811,11 @@ def main():
     capture.add_argument('--issue', required=True)
     capture.add_argument('--git-base', help='recover from a known commit; review every intervening change')
     capture.add_argument('--reason')
-    nav = sub.add_parser('navigate', help='display a bounded dependency slice and save role evidence',
-                         formatter_class=argparse.RawDescriptionHelpFormatter, epilog=NAVIGATE_EXAMPLE)
+    nav = sub.add_parser('navigate', help='display a bounded dependency slice and save role evidence')
     nav.add_argument('--issue', required=True)
     nav.add_argument('--baseline', type=parse_ref, help='required unless --reuse-args; must match when both are given')
     nav.add_argument('--role', choices=ROLES, help='required unless --reuse-args; must match when both are given')
-    nav.add_argument('--map', help='docs/code_map.md#heading-slug: the heading text lower-cased, spaces as hyphens')
+    nav.add_argument('--map')
     nav.add_argument('--target', action='append', help='path::qualified.symbol or path::<module>')
     nav.add_argument('--doc', action='append', help='path#heading or path::symbol')
     nav.add_argument('--reuse-args', type=parse_receipt, metavar='ORIENTATION_REF',
