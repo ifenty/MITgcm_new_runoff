@@ -71,3 +71,20 @@ Source citations drift with upstream MITgcm changes; cite routine names as well 
 
 ### Recommended action
 Before review, check each behavior claim against the live source and record the citation in the text or the disposition.
+
+## LESSON: Declare the grid kind; do not infer it from geometry [LL-004]
+
+**Date Identified**: 2026-10-02T00:00:00Z
+**Confidence**: strongly supported
+
+### Lesson and applicability
+The target-table builder first chose neighbour connectivity automatically from grid geometry. Each heuristic failed silently on some layout: cs32 with blank tiles hiding every mismatched seam (192 links lost), LLC-like stacked lat-lon facets (seam links lost), blank tiles at the wrap column, polar rows under corner matching. Geometry cannot distinguish an exch2 mosaic with blank tiles from a lat-lon block.
+
+### Evidence
+RUNOFF-009 Richard B (9e7ef5a1) must-fix lists, rounds 1-4, with verification records 2442fb8f, a543755b, 0682223540 and a21e7c51; diagnosis checkpoints diagnosis-RUNOFF-009-r2.json and -r4.json. After the design changed to a declared kind (latlon or exch2, default exch2 with data.exch2) with exact-or-refuse checks, round 5 was approved by both reviewers.
+
+### Limits and counterexamples
+Three documented non-detections remain for constructed grids (lone triangle, apex that is another cell's SW corner, polar cells wider than about 45 degrees). No LLC grid output was available for a direct test.
+
+### Recommended action
+RUNOFF-004 (the Fortran reader) must take tile placement from exch2/mdsio variables, never from geometry. Test any layout logic with blank tiles.
