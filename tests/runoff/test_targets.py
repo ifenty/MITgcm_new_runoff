@@ -19,7 +19,10 @@ zonal wrap when blank tiles touch the end columns; lat-lon facets stacked in
 the array, cs32 with every mismatched seam hidden by blank tiles, and a block
 rotated over the North Pole are exact under ``exch2`` and refused under
 ``latlon``; without a declaration the default is ``exch2`` only when the grid
-directory holds ``data.exch2``, otherwise an error.
+directory holds ``data.exch2``, otherwise an error. ``latlon`` needs one
+increasing map from column index to XG and from row index to YG, so facets
+separated by blank columns and rows are refused too; ``exch2`` refuses a wet
+lat-lon row that touches a pole (zero-length edges), where ``latlon`` is exact.
 """
 
 import math
@@ -910,6 +913,10 @@ STACKED_CASES = {
     "all_valid": [],
     "overlapping_columns": [(0, 10, 0, 4), (10, 20, 8, 12)],        # A 4-11, B 0-7
     "disjoint_columns": [(0, 10, 0, 6), (10, 20, 6, 12)],           # A 6-11, B 0-5
+    # A columns 8-11, rows 0-7; B columns 0-3, rows 2-9 of its block: blank columns
+    # 4-7 and blank rows 8-11 lie between the two valid parts
+    "separated_by_blank_columns_and_rows": [(0, 20, 4, 8), (0, 10, 0, 4), (10, 20, 8, 12),
+                                            (8, 12, 0, 12)],
 }
 
 
@@ -918,7 +925,8 @@ def test_stacked_latlon_facets_are_exact_under_exch2_and_refused_under_latlon(ca
     """Stacked lat-lon facets are an exch2 layout: declared ``exch2`` the graph has
     each facet's array neighbours plus the seam links; declared ``latlon`` it is
     refused, also when the valid cells of the two facets lie in disjoint array
-    columns, where XC depends only on i and only the shared-edge test fails."""
+    columns, where XC depends only on i and only the shared-edge test fails, and when
+    blank columns and rows separate them, where XG restarts across the blank columns."""
     grid, seam = stacked_facets()
     blank = _boxes((20, 12), STACKED_CASES[case])
     grid = _blanked(grid, np.ones((20, 12)), blank)
@@ -931,8 +939,96 @@ def test_stacked_latlon_facets_are_exact_under_exch2_and_refused_under_latlon(ca
     if case == "disjoint_columns":
         assert len(expect) == 218 and len(expect & seam) == 10
         assert T._latlon_problem(T._Geom(grid, R)).startswith("column i = 5 ends at 90")
+    if case == "separated_by_blank_columns_and_rows":
+        assert len(expect) == 110 and len(expect & seam) == 6
+        problem = T._latlon_problem(T._Geom(grid, R))
+        assert problem.startswith("column i = 3 ends at 80 degrees (2 XC - XG) and the next "
+                                  "column with valid cells, 8, starts at 40 (XG)")
+        assert "4 blank column(s)" in problem and "not one increasing function" in problem
     with pytest.raises(BuildError, match="not one regular lat-lon block"):
         T.wet_graph(grid, connectivity="latlon")
+
+
+def test_latlon_needs_one_increasing_map_from_index_to_edge():
+    """Blank bands inside a true lat-lon grid are accepted, and the graph is exact;
+    two blocks whose XG or YG restarts, or that leave no room for the blank columns
+    or rows between them, are refused."""
+    wet = np.ones((40, 90))
+    base = latlon_grid(np.arange(0, 364, 4.0), np.arange(-80, 84, 4.0), wet)
+    blank = _boxes((40, 90), [(0, 40, 30, 45), (16, 24, 0, 90)])     # a column band, a row band
+    g = T.wet_graph(_blanked(base, wet, blank), connectivity="latlon")
+    assert g.periodic and _edge_set(g) == _array_neighbours(~blank, closes=True)
+    blank = _boxes((40, 90), [(0, 40, 0, 6)])                        # the first 6 columns
+    g = T.wet_graph(_blanked(base, wet, blank), connectivity="latlon")
+    assert not g.periodic and _edge_set(g) == _array_neighbours(~blank)
+    # stretched latitudes (0.6 to 3 degrees) with the finest rows blank
+    lat_e = np.cumsum(np.r_[-78.0, 3.0 - 2.4 * np.exp(-((np.arange(60) - 30) / 9.0) ** 2)])
+    wet = np.ones((60, 20))
+    blank = _boxes((60, 20), [(20, 41, 0, 20)])
+    g = T.wet_graph(_blanked(latlon_grid(np.arange(0, 41, 2.0), lat_e, wet), wet, blank),
+                    connectivity="latlon")
+    assert _edge_set(g) == _array_neighbours(~blank)
+
+    def problem(lon_a, lat_a, lon_b, lat_b, stack):
+        """Two 4 x 4 blocks with 2 blank columns (or rows) between them in the array."""
+        a = latlon_grid(lon_a, lat_a, np.ones((4, 4)))
+        b = latlon_grid(lon_b, lat_b, np.ones((4, 4)))
+        zero = {k: np.zeros((4, 2) if stack == "x" else (2, 4)) for k in a}
+        join = np.hstack if stack == "x" else np.vstack
+        return T._latlon_problem(T._Geom({k: join([a[k], zero[k], b[k]]) for k in a}, R))
+
+    x, y = np.arange(5.0), 40.0 + np.arange(5.0)
+    assert problem(x, y, 6.0 + x, y, "x") is None                 # one grid, 2 blank columns
+    assert problem(x, y, x, 46.0 + np.arange(5.0), "y") is None    # one grid, 2 blank rows
+    assert "XG is not one increasing function" in problem(x, y, x - 10.0, y, "x")      # restart
+    assert "does not leave room for the 2 blank column(s)" in problem(x, y, 4.0 + x, y, "x")
+    assert "does not leave room for the 2 blank column(s)" in problem(x, y, 30.0 + x, y, "x")
+    assert "YG is not one increasing function" in problem(x, y, x, y, "y")             # restart
+    # a closed 360-degree span with blank columns at the array ends cannot be one grid
+    ring = latlon_grid(np.arange(0, 364, 4.0), np.arange(0, 9, 4.0), np.ones((2, 90)))
+    ends = {k: np.hstack([np.zeros((2, 2)), v]) for k, v in ring.items()}
+    assert "leaves no room for the 2 column(s)" in T._latlon_problem(T._Geom(ends, R))
+
+
+def test_exch2_refuses_latlon_rows_that_touch_a_pole(tmp_path):
+    """A wet row of a lat-lon grid touching a pole has zero-length edges, which the
+    corner method can't match: ``exch2`` stops, naming the cell and pointing to
+    ``latlon``, which is exact there. With the polar rows dry ``exch2`` is exact."""
+    p2p = latlon_grid(np.arange(0, 364, 4.0), np.arange(-90, 94, 4.0), np.ones((45, 90)))
+    with pytest.raises(BuildError) as e:
+        T.wet_graph(p2p, connectivity="exch2")
+    msg = str(e.value)
+    assert "cell 0 (i=0, j=0" in msg and "zero-length edge" in msg
+    assert "also the SW corner of its east array neighbour" in msg
+    assert "connectivity='latlon' (--connectivity latlon)" in msg and "data.exch2" in msg
+    north = {k: v.copy() for k, v in p2p.items()}
+    north["hFacC"][0:3] = 0.0                          # only the north polar row touches a pole
+    with pytest.raises(BuildError) as e:
+        T.wet_graph(north, connectivity="exch2")
+    assert "cell 3960 (i=0, j=44" in str(e.value) and "collapses onto the north pole" in str(e.value)
+    g = T.wet_graph(north, connectivity="latlon")
+    assert _edge_set(g) == _array_neighbours(north["hFacC"], closes=True) and len(_edge_set(g)) == 7470
+    dry = {k: v.copy() for k, v in p2p.items()}
+    dry["hFacC"][[0, -1]] = 0.0                        # both polar rows land
+    expect = _array_neighbours(dry["hFacC"], closes=True)
+    assert len(expect) == 7650
+    assert _edge_set(T.wet_graph(dry, connectivity="exch2")) == expect
+    assert _edge_set(T.wet_graph(dry, connectivity="latlon")) == expect
+    # regional 60N-90N, and the same through the data.exch2 default of a grid directory
+    wet = np.ones((15, 20))
+    cap = latlon_grid(np.arange(0, 41, 2.0), np.arange(60, 91, 2.0), wet)
+    with pytest.raises(BuildError, match=r"cell 280 \(i=0, j=14.*collapses onto the north pole"):
+        T.wet_graph(cap, connectivity="exch2")
+    g = T.wet_graph(cap, connectivity="latlon")
+    assert _edge_set(g) == _array_neighbours(wet) and len(_edge_set(g)) == 565
+    gd = make_grid_dir(tmp_path, cap)
+    write_text(os.path.join(gd, "data.exch2"), " &W2_EXCH2_PARM01\n &\n")
+    src = [{"source_id": "s", "lon": 19.0, "lat": 81.0}]          # a cell center
+    kw = dict(emission="spread", spread_type="gaussian", spread_scale="300km")
+    with pytest.raises(BuildError, match="zero-length edge.*connectivity='latlon'"):
+        build_targets(src, gd, **kw)
+    t = build_targets(src, gd, connectivity="latlon", **kw)
+    write_checked(tmp_path, t, cap, "cap.nc")
 
 
 def rotated_block(nx, ny, dlon, dlat, wet, lon0=30.0, lat0=88.3):

@@ -667,10 +667,18 @@ layout look like a lat-lon block.
     is 360° east of the west edge of its first cell, and exactly those rows get
     the wrap link. A blank tile at the first or last columns removes the wrap
     only in its own rows.
-  - *Check:* the builder verifies the declaration. Over the cells with `RAC` > 0,
-    `XC` and `XG` must depend only on $i$ and `YC` and `YG` only on $j$, and
-    consecutive columns and rows must share an edge. Otherwise it stops with an
-    error that names the violation.
+  - *Check:* the builder verifies the declaration over the cells with `RAC` > 0:
+    - `XC` and `XG` must depend only on $i$, and `YC` and `YG` only on $j$.
+    - `XG` must be one increasing function of $i$ over all columns that hold
+      such a cell, and `YG` of $j$ over all such rows. Neighbouring columns
+      share an edge, and columns separated by blank columns leave room for
+      them.
+    - Those columns, with any blank columns at the ends of the array, must
+      fit within 360°.
+
+    Otherwise it stops with an error that names the violation. Lat-lon facets
+    stacked in the array restart `XG` or `YG`, so they are refused, also when
+    blank columns or rows separate their valid parts.
 - **`exch2`**, for exch2 cubed-sphere and LLC layouts, whose array neighbours at
   face edges are not grid neighbours, and for any other grid that is not a
   regular lat-lon block. The builder finds each cell's four corners as grid
@@ -685,14 +693,19 @@ layout look like a lat-lon block.
   grid field 0 in the output) are neither wet nor vertices. A corner that such a
   tile would own is placed from the neighbouring cells' corners, also when
   blank tiles lie on two adjacent sides of a wet cell. The builder stops with an
-  error if the corners can't be matched consistently (an edge shared by more
-  than two cells).
+  error in two cases:
+  - the corners can't be matched consistently (an edge shared by more than two
+    cells);
+  - a wet cell has a zero-length edge, as in a row of a lat-lon grid that
+    touches a pole. The error names the cell and points to `latlon`, which is
+    exact there.
 
 If you don't declare the kind, the builder uses `exch2` when the grid directory
 contains MITgcm's `data.exch2` file. Otherwise it stops with an error that
-explains the two choices: there is no default for lat-lon grids. The neighbour
-graph, and so the declaration, is needed only when some source has spread
-emission.
+explains the two choices: there is no default for lat-lon grids. A lat-lon run
+that uses `pkg/exch2` also has a `data.exch2` file, so pass
+`--connectivity latlon` for it. The neighbour graph, and so the declaration, is
+needed only when some source has spread emission.
 
 The guarantee is therefore: the graph is exact for the declared kind on the
 grids tested below, `latlon` is refused on a grid that is not a regular lat-lon
@@ -708,7 +721,11 @@ block, and the builder never switches method on its own.
   cells.
 - **Stacked lat-lon facets:** two lat-lon facets stacked in the array, as in
   the LLC compact layout, get their seam links under `exch2` and are refused
-  under `latlon`.
+  under `latlon`, also when blank columns and rows lie between their valid
+  parts.
+- **Polar rows:** on pole-to-pole and 60°N–90°N lat-lon grids with a wet row
+  touching a pole, `latlon` is exact and `exch2` is refused. With the polar
+  rows dry, both give the same graph.
 - **Lat-lon grids:** under `latlon`, global (pole to pole, stretched in
   latitude), regional and single-row grids equal a brute-force array-neighbour
   oracle. A global grid with a blank tile at the first or last columns keeps
