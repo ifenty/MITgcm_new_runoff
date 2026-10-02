@@ -7,19 +7,19 @@ kernel formula written out here, independently of the module; a two-width
 channel checks the ``W * rA`` weighting; a peninsula between two fjords, with
 path lengths summed by hand, checks that distance runs through connected wet
 cells and that an enclosed lake gets nothing. The real cs32 grid proves the
-exch2 ("corners") neighbour graph topologically: with every cell treated as
+``exch2`` neighbour graph topologically: with every cell treated as
 wet, a closed cubed sphere of 6 x 32 x 32 quadrilaterals has exactly 12288
 edges, every cell has 4 neighbours, and 12 x 32 = 384 edges cross faces.
 That all-wet graph, restricted to the wet cells, is then the oracle for cs32
 with blank tiles (every grid field 0), including blank tiles on two adjacent
-sides of a wet cell; on open one-block grids the corner method must equal
-the index neighbours. The default ``auto`` rule is checked both ways: regular
-lat-lon blocks (pole to pole, regional, with a blank tile) get index
-neighbours; cs32 with every mismatched seam hidden by blank tiles, and a
-lat-lon block rotated over the North Pole (oracle: its array neighbours), get
-the corner method; a corner graph missing an array link is an error.
-Every file the builder writes is checked with the checker (tables-only, with
-the grid directory): no errors, no warnings, no R01-R03 findings.
+sides of a wet cell; on open one-block grids the ``exch2`` method must equal
+the lat-lon neighbours. The grid kind is declared, never inferred: ``latlon``
+grids are compared with a brute-force array-neighbour oracle, including the
+zonal wrap when blank tiles touch the end columns; lat-lon facets stacked in
+the array, cs32 with every mismatched seam hidden by blank tiles, and a block
+rotated over the North Pole are exact under ``exch2`` and refused under
+``latlon``; without a declaration the default is ``exch2`` only when the grid
+directory holds ``data.exch2``, otherwise an error.
 """
 
 import math
@@ -100,8 +100,10 @@ def assert_clean(path, grid_dir, tables_only=True):
 
 
 def build_checked(tmp_path, sources, grid, name="targets.nc", **kw):
-    """Build from grid files (read through rdmds), write, and check the output."""
+    """Build from grid files (read through rdmds), declared ``latlon`` unless
+    stated otherwise, write, and check the output."""
     gd = make_grid_dir(tmp_path, grid, "grid_" + name.replace(".", "_"))
+    kw.setdefault("connectivity", "latlon")          # the synthetic grids are lat-lon blocks
     t = build_targets(sources, gd, **kw)
     out = write_targets(str(tmp_path / name), t)
     assert_clean(out, gd)
@@ -202,7 +204,8 @@ def test_distance_starts_at_zero_at_the_snapped_cell(tmp_path):
     d0 = gc(src["lon"], 0.0, grid["XC"][1, CH_I0], 0.0)
     assert d0 == pytest.approx(0.3 * DELTA, rel=1e-9)
     x = 2.0 * DELTA
-    kw = dict(emission="spread", spread_type="gaussian", spread_scale=x, cutoff=5.5 * DELTA)
+    kw = dict(emission="spread", spread_type="gaussian", spread_scale=x, cutoff=5.5 * DELTA,
+              connectivity="latlon")
     t, _, _ = build_checked(tmp_path, [src], grid, **kw)
     cells, f, r = rows(t, "src")
     k = cells % CH_NX - CH_I0
@@ -331,8 +334,8 @@ def test_distance_runs_through_connected_wet_cells(tmp_path):
 
 def test_lake_is_a_separate_component(tmp_path):
     grid, src = fjords()
-    g = T.wet_graph(grid)
-    assert g.connectivity == "index" and not g.periodic
+    g = T.wet_graph(grid, connectivity="latlon")
+    assert g.connectivity == "latlon" and not g.periodic
     lake = {j * FJ_NX + i for i, j in LAKE}
     for k, c in enumerate(g.cells.tolist()):
         nb = {int(g.cells[m]) for m in g.neighbours[k] if m >= 0}
@@ -572,21 +575,21 @@ def test_tiny_scale_leaves_only_the_snapped_cell(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Neighbour graph: index method, zonal wrap, and agreement with the corner method
+# Neighbour graph: latlon method, zonal wrap, and agreement with the exch2 method
 
 
-def test_global_latlon_wraps_and_corner_method_agrees(tmp_path):
+def test_global_latlon_wraps_and_exch2_method_agrees(tmp_path):
     wet = np.ones((10, 36))
     wet[4:6, 10:14] = 0.0
     grid = latlon_grid(10.0 * np.arange(37), 10.0 * np.arange(-5, 6), wet)
-    gi = T.wet_graph(grid)
-    assert gi.connectivity == "index" and gi.periodic
-    gc_ = T.wet_graph(grid, connectivity="corners")
+    gi = T.wet_graph(grid, connectivity="latlon")
+    assert gi.connectivity == "latlon" and gi.periodic
+    gc_ = T.wet_graph(grid, connectivity="exch2")
     ea, eb = (set(zip(*[g.cells[e].tolist() for e in g.edges()])) for g in (gi, gc_))
     assert ea == eb
     assert (35, 0) in {(max(a, b) % 36, min(a, b) % 36) for a, b in ea}   # wrap edge
     regional = latlon_grid(10.0 * np.arange(10), 10.0 * np.arange(-5, 6), np.ones((10, 9)))
-    assert not T.wet_graph(regional).periodic
+    assert not T.wet_graph(regional, connectivity="latlon").periodic
     # a spread source at 355E feeds cells on both sides of 0/360
     src = {"source_id": "dateline", "lon": 355.0, "lat": 5.0}
     t, _, _ = build_checked(tmp_path, [src], grid, emission="spread",
@@ -620,12 +623,13 @@ def test_parse_distance():
 
 def test_fallback_without_scipy_gives_identical_tables(tmp_path, monkeypatch):
     grid, src = fjords()
-    kw = dict(emission="spread", spread_type="gaussian", spread_scale=3 * DELTA)
+    kw = dict(emission="spread", spread_type="gaussian", spread_scale=3 * DELTA,
+              connectivity="exch2")
     a = build_targets([src], grid, **kw)
-    ga = T.wet_graph(grid, connectivity="corners")
+    ga = T.wet_graph(grid, connectivity="exch2")
     monkeypatch.setattr(T, "USE_SCIPY", False)
     b = build_targets([src], grid, **kw)
-    gb = T.wet_graph(grid, connectivity="corners")
+    gb = T.wet_graph(grid, connectivity="exch2")
     for name in ("target_cell", "target_fraction", "target_distance"):
         np.testing.assert_array_equal(getattr(a, name), getattr(b, name))
     np.testing.assert_array_equal(ga.neighbours, gb.neighbours)
@@ -648,10 +652,10 @@ def test_cs32_corner_graph_is_the_closed_cube(monkeypatch):
     graphs = []
     for use_scipy in (True, False):
         monkeypatch.setattr(T, "USE_SCIPY", use_scipy)
-        graphs.append(T.wet_graph(allwet))
+        graphs.append(T.wet_graph(allwet, connectivity="exch2"))
     g = graphs[0]
     np.testing.assert_array_equal(g.neighbours, graphs[1].neighbours)
-    assert g.connectivity == "corners"
+    assert g.connectivity == "exch2"
     a, b = g.edges()
     ca, cb = g.cells[a], g.cells[b]
     assert a.size == 12288
@@ -675,8 +679,8 @@ def test_cs32_corner_graph_is_the_closed_cube(monkeypatch):
     assert 0.8 < min(ratio) and max(ratio) < 1.5
     assert g.diagnostics["synthesized_corners"] == 6     # 2 unstored cube corners x 3 cells
     assert g.diagnostics["unmatched_synthesized_edges"] == 0
-    with pytest.raises(BuildError, match="exch2"):
-        T.wet_graph(allwet, connectivity="index")
+    with pytest.raises(BuildError, match="not one regular lat-lon block: XC varies"):
+        T.wet_graph(allwet, connectivity="latlon")
 
 
 @needs_cs32
@@ -701,6 +705,26 @@ def _edge_set(g):
     return set(zip(g.cells[a].tolist(), g.cells[b].tolist()))
 
 
+def _array_neighbours(wet, closes=False):
+    """Brute-force oracle for one block: (i+1, j) and (i, j+1) pairs of wet cells and,
+    when the block closes in longitude, the two end cells of each row."""
+    ny, nx = wet.shape
+    w = np.asarray(wet).ravel() > 0
+    out = {(c, c + 1) for c in range(nx * ny) if c % nx < nx - 1 and w[c] and w[c + 1]}
+    out |= {(c, c + nx) for c in range(nx * (ny - 1)) if w[c] and w[c + nx]}
+    if closes and nx > 1:
+        out |= {(nx * j, nx * j + nx - 1) for j in range(ny) if w[nx * j] and w[nx * j + nx - 1]}
+    return out
+
+
+def _boxes(shape, boxes):
+    """Boolean mask of the union of boxes (j0, j1, i0, i1)."""
+    m = np.zeros(shape, dtype=bool)
+    for j0, j1, i0, i1 in boxes:
+        m[j0:j1, i0:i1] = True
+    return m
+
+
 #: Blank-tile cases on cs32: (focus cell (i, j) with two blank edge neighbours or
 #: None, land cell (i, j) or None, blank boxes (j0, j1, i0, i1)). 8 x 8 tiles.
 _NT, _ET, _NET = (8, 16, 0, 8), (0, 8, 8, 16), (8, 16, 8, 16)
@@ -722,7 +746,8 @@ BLANK_CASES = {
 def _cs32_oracle():
     """Edges of the all-wet cs32 graph (the closed cube proven above) and the grid."""
     grid = T.read_grid(str(CS32))
-    edges = _edge_set(T.wet_graph(dict(grid, hFacC=np.ones_like(grid["hFacC"]))))
+    edges = _edge_set(T.wet_graph(dict(grid, hFacC=np.ones_like(grid["hFacC"])),
+                                  connectivity="exch2"))
     assert len(edges) == 12288
     return grid, edges
 
@@ -760,9 +785,7 @@ def test_cs32_blank_tiles_give_the_exact_graph(case, monkeypatch):
         assert len(nb) == 4 and sum(blank.ravel()[n] for n in nb) == 2
     for use_scipy in (True, False):
         monkeypatch.setattr(T, "USE_SCIPY", use_scipy)
-        g = T.wet_graph(test)
-        assert g.connectivity == "corners"
-        got = _edge_set(g)
+        got = _edge_set(T.wet_graph(test, connectivity="exch2"))
         assert got == expect, (sorted(expect - got), sorted(got - expect))
 
 
@@ -779,14 +802,14 @@ def test_cs32_real_mask_with_all_land_tiles_blank():
     assert blank.sum() // 4 == 348
     wet = (real > 0).ravel()
     expect = {e for e in oracle if wet[e[0]] and wet[e[1]]}
-    assert _edge_set(T.wet_graph(_blanked(grid, real, blank))) == expect
-    assert expect == _edge_set(T.wet_graph(grid)) and len(expect) == 8438
+    assert _edge_set(T.wet_graph(_blanked(grid, real, blank), connectivity="exch2")) == expect
+    assert expect == _edge_set(T.wet_graph(grid, connectivity="exch2")) and len(expect) == 8438
 
 
 @pytest.mark.parametrize("dlon, dlat", [(1.0, 1.0), (2.0, 0.5), (0.25, 1.0)])
-def test_open_one_block_grid_corner_method_equals_index(dlon, dlat):
+def test_open_one_block_grid_exch2_method_equals_latlon(dlon, dlat):
     """An open (non-periodic) lat-lon grid at 55N-63N, with square and strongly
-    anisotropic cells: the corner method gives the index neighbours, including at
+    anisotropic cells: the exch2 method gives the lat-lon neighbours, including at
     the north-east corner cell, whose SE, NE and NW corners are no cell's SW corner."""
     nx, ny = 9, 8
     lon_e, lat_e = 10.0 + dlon * np.arange(nx + 1), 55.0 + dlat * np.arange(ny + 1)
@@ -797,51 +820,119 @@ def test_open_one_block_grid_corner_method_equals_index(dlon, dlat):
     masks["south_of_ne_corner_land"] = south_land
     for name, wet in masks.items():
         grid = latlon_grid(lon_e, lat_e, wet)
-        gi = T.wet_graph(grid)
-        assert gi.connectivity == "index" and not gi.periodic
-        assert _edge_set(T.wet_graph(grid, connectivity="corners")) == _edge_set(gi), name
+        gi = T.wet_graph(grid, connectivity="latlon")
+        assert gi.connectivity == "latlon" and not gi.periodic
+        assert _edge_set(gi) == _array_neighbours(wet)
+        assert _edge_set(T.wet_graph(grid, connectivity="exch2")) == _edge_set(gi), name
 
 
 @needs_cs32
-def test_cs32_auto_is_exact_when_blank_tiles_hide_every_mismatched_seam():
+def test_cs32_exch2_is_exact_when_blank_tiles_hide_every_mismatched_seam():
     """Eight blank 8 x 8 tiles hide every array-adjacent pair of cs32 that is not a
-    grid neighbour (the seams between faces 2|3 and 4|5). ``auto`` must still use the
-    corner method and be exact; index neighbours would lose 192 cross-face edges."""
+    grid neighbour (the seams between faces 2|3 and 4|5), so nothing in the geometry
+    shows that the array is a mosaic. Declared ``exch2`` the graph is exact; the array
+    neighbours alone miss 192 cross-face edges; declared ``latlon`` is refused."""
     grid, oracle = _cs32_oracle()
-    blank = np.zeros((32, 192), dtype=bool)
-    for row, col in [(0, 8), (0, 16), (1, 7), (1, 15), (2, 8), (2, 15), (3, 8), (3, 15)]:
-        blank[8 * row:8 * row + 8, 8 * col:8 * col + 8] = True
+    tiles = [(0, 8), (0, 16), (1, 7), (1, 15), (2, 8), (2, 15), (3, 8), (3, 15)]
+    blank = _boxes((32, 192), [(8 * r, 8 * r + 8, 8 * c, 8 * c + 8) for r, c in tiles])
     test = _blanked(grid, np.ones((32, 192)), blank)
-    geom = T._Geom(test, R)
-    assert not T._is_mosaic(geom)              # nothing looks mismatched any more
-    assert not T._is_latlon_block(geom)        # but it is no lat-lon block
     wet = (test["hFacC"] > 0).ravel()
     expect = {e for e in oracle if wet[e[0]] and wet[e[1]]}
-    g = T.wet_graph(test)
-    assert g.connectivity == "corners" and _edge_set(g) == expect
-    by_index = _edge_set(T.wet_graph(test, connectivity="index"))
-    assert by_index < expect and len(expect - by_index) == 192
+    assert _edge_set(T.wet_graph(test, connectivity="exch2")) == expect
+    by_array = _array_neighbours(test["hFacC"])
+    assert by_array < expect and len(expect - by_array) == 192
+    with pytest.raises(BuildError, match="not one regular lat-lon block"):
+        T.wet_graph(test, connectivity="latlon")
 
 
-def test_auto_uses_index_for_regular_latlon_blocks():
-    """Pole-to-pole periodic, regional, and blank-tile lat-lon grids are regular
-    blocks: index neighbours, with the zonal wrap and the polar rows."""
-    glob = latlon_grid(10.0 * np.arange(37), 10.0 * np.arange(-9, 10), np.ones((18, 36)))
-    g = T.wet_graph(glob)
-    assert g.connectivity == "index" and g.periodic
-    assert len(_edge_set(g)) == 18 * 36 + 17 * 36           # zonal (wrapped) + meridional
+def test_latlon_regular_grids_give_the_array_neighbours():
+    """Regular lat-lon blocks declared ``latlon``: pole to pole, stretched in
+    latitude, regional, and a single row, against the brute-force oracle."""
+    lat_e = np.cumsum(np.r_[-78.0, 3.0 - 2.4 * np.exp(-((np.arange(60) - 30) / 9.0) ** 2)])
+    assert lat_e.max() < 90
+    cases = [("pole to pole, 4 deg", np.arange(0, 364, 4.0), np.arange(-90, 94, 4.0), True),
+             ("stretched in y from 0.6 to 3 deg", np.arange(0, 362, 2.0), lat_e, True),
+             ("regional 20 x 16", 280 + 2.0 * np.arange(21), 46 + 2.0 * np.arange(17), False),
+             ("single row", np.arange(0, 41, 1.0), np.array([10.0, 11.0]), False),
+             ("359 of 360 degrees", np.arange(0, 360, 1.0), np.arange(-5, 6, 1.0), False)]
+    for name, lon_e, lat_e_, closes in cases:
+        wet = np.ones((len(lat_e_) - 1, len(lon_e) - 1))
+        g = T.wet_graph(latlon_grid(lon_e, lat_e_, wet), connectivity="latlon")
+        assert g.connectivity == "latlon" and g.periodic == closes, name
+        assert _edge_set(g) == _array_neighbours(wet, closes), name
+    # polar rows of a pole-to-pole grid: east, west (wrapped at the ends) and one meridional
+    g = T.wet_graph(latlon_grid(10.0 * np.arange(37), 10.0 * np.arange(-9, 10),
+                                np.ones((18, 36))), connectivity="latlon")
     deg = g.degree().reshape(18, 36)
-    assert (deg[[0, 17]] == 3).all() and (deg[1:17] == 4).all()      # polar rows
-    assert (17 * 36, 17 * 36 + 35) in _edge_set(g)                   # wrap in the top row
-    regional = latlon_grid(10.0 + np.arange(13), 40.0 + np.arange(9), np.ones((8, 12)))
-    g = T.wet_graph(regional)
-    assert g.connectivity == "index" and not g.periodic
-    assert len(_edge_set(g)) == 8 * 11 + 7 * 12
-    blank = np.zeros((8, 12), dtype=bool)
-    blank[:4, :4] = True                                    # a blank tile: every field 0
-    g = T.wet_graph(_blanked(regional, np.ones((8, 12)), blank))
-    assert g.connectivity == "index"
-    assert len(_edge_set(g)) == (8 * 11 + 7 * 12) - (4 * 4 + 4 * 4)   # links touching it
+    assert (deg[[0, 17]] == 3).all() and (deg[1:17] == 4).all()
+    assert len(_edge_set(g)) == 18 * 36 + 17 * 36
+    assert (17 * 36, 17 * 36 + 35) in _edge_set(g)
+
+
+#: Blank tiles (every field 0) on a global 90 x 40 lat-lon grid: (j0, j1, i0, i1).
+END_COLUMN_CASES = {
+    "interior_tile": (16, 24, 30, 45),
+    "whole_southern_tile_row": (0, 8, 0, 90),
+    "tile_at_the_first_columns": (0, 8, 0, 15),
+    "tile_at_the_last_columns": (32, 40, 75, 90),
+}
+
+
+@pytest.mark.parametrize("case", sorted(END_COLUMN_CASES))
+def test_latlon_wrap_survives_blank_tiles_at_the_end_columns(case):
+    """A blank tile touching the first or last column removes the zonal wrap only in
+    its own rows: the other 32 rows keep the link between their end cells."""
+    wet = np.ones((40, 90))
+    base = latlon_grid(np.arange(0, 364, 4.0), np.arange(-80, 84, 4.0), wet)
+    blank = _boxes((40, 90), [END_COLUMN_CASES[case]])
+    grid = _blanked(base, wet, blank)
+    expect = _array_neighbours(~blank, closes=True)
+    wrap = {e for e in expect if e[1] - e[0] == 89}
+    assert len(wrap) == (40 if case == "interior_tile" else 32)
+    g = T.wet_graph(grid, connectivity="latlon")
+    assert g.periodic and _edge_set(g) == expect
+    assert _edge_set(T.wet_graph(grid, connectivity="exch2")) == expect
+
+
+def stacked_facets():
+    """Two 12 x 10 lat-lon facets stacked in y as in the LLC compact layout:
+    A covers 0-60E (rows 0-9), B covers 60E-120E (rows 10-19); A's east edge is B's
+    west edge. Returns the grid and the seam pairs."""
+    lat_e = np.arange(-25, 26, 5.0)
+    a = latlon_grid(np.arange(0, 61, 5.0), lat_e, np.ones((10, 12)))
+    b = latlon_grid(np.arange(60, 121, 5.0), lat_e, np.ones((10, 12)))
+    seam = {(11 + 12 * j, 12 * (j + 10)) for j in range(10)}
+    return {k: np.vstack([a[k], b[k]]) for k in a}, seam
+
+
+#: Blank boxes on the stacked facets, and the valid columns they leave.
+STACKED_CASES = {
+    "all_valid": [],
+    "overlapping_columns": [(0, 10, 0, 4), (10, 20, 8, 12)],        # A 4-11, B 0-7
+    "disjoint_columns": [(0, 10, 0, 6), (10, 20, 6, 12)],           # A 6-11, B 0-5
+}
+
+
+@pytest.mark.parametrize("case", sorted(STACKED_CASES))
+def test_stacked_latlon_facets_are_exact_under_exch2_and_refused_under_latlon(case):
+    """Stacked lat-lon facets are an exch2 layout: declared ``exch2`` the graph has
+    each facet's array neighbours plus the seam links; declared ``latlon`` it is
+    refused, also when the valid cells of the two facets lie in disjoint array
+    columns, where XC depends only on i and only the shared-edge test fails."""
+    grid, seam = stacked_facets()
+    blank = _boxes((20, 12), STACKED_CASES[case])
+    grid = _blanked(grid, np.ones((20, 12)), blank)
+    valid = ~blank
+    none = np.zeros((10, 12), dtype=bool)
+    expect = (_array_neighbours(np.vstack([valid[:10], none]))
+              | _array_neighbours(np.vstack([none, valid[10:]]))
+              | {e for e in seam if valid.ravel()[e[0]] and valid.ravel()[e[1]]})
+    assert _edge_set(T.wet_graph(grid, connectivity="exch2")) == expect
+    if case == "disjoint_columns":
+        assert len(expect) == 218 and len(expect & seam) == 10
+        assert T._latlon_problem(T._Geom(grid, R)).startswith("column i = 5 ends at 90")
+    with pytest.raises(BuildError, match="not one regular lat-lon block"):
+        T.wet_graph(grid, connectivity="latlon")
 
 
 def rotated_block(nx, ny, dlon, dlat, wet, lon0=30.0, lat0=88.3):
@@ -859,59 +950,93 @@ def rotated_block(nx, ny, dlon, dlat, wet, lon0=30.0, lat0=88.3):
     return grid
 
 
-def _array_neighbours(wet):
-    """Analytic oracle for one block: (i+1, j) and (i, j+1) pairs of wet cells."""
-    ny, nx = wet.shape
-    w = wet.ravel() > 0
-    return ({(c, c + 1) for c in range(nx * ny) if c % nx < nx - 1 and w[c] and w[c + 1]}
-            | {(c, c + nx) for c in range(nx * (ny - 1)) if w[c] and w[c + nx]})
-
-
 @pytest.mark.parametrize("dlon, dlat", [(1.0, 1.0), (2.0, 0.5)])
-def test_rotated_block_auto_uses_corners_and_matches_array_neighbours(dlon, dlat):
-    """A rotated block over the North Pole is not a regular lat-lon grid, so ``auto``
-    uses the corner method; the result is the block's array neighbours."""
+def test_rotated_block_is_exact_under_exch2_and_refused_under_latlon(dlon, dlat):
+    """A block rotated over the North Pole is not a regular lat-lon grid: declared
+    ``exch2`` the graph is the block's array neighbours; declared ``latlon`` is an
+    error naming the field that varies."""
     nx, ny = 9, 8
     rng = np.random.default_rng(11)
     for wet in (np.ones((ny, nx)), (rng.random((ny, nx)) > 0.3) * 1.0):
         grid = rotated_block(nx, ny, dlon, dlat, wet)
-        geom = T._Geom(grid, R)
-        assert not T._is_latlon_block(geom) and not T._is_mosaic(geom)
         assert np.ptp(grid["YC"][0]) > 0.1 and grid["YC"].max() > 89.0      # spans the pole
-        g = T.wet_graph(grid)
-        assert g.connectivity == "corners" and not g.periodic
+        g = T.wet_graph(grid, connectivity="exch2")
+        assert g.connectivity == "exch2" and not g.periodic
         assert _edge_set(g) == _array_neighbours(wet)
-        assert _edge_set(T.wet_graph(grid, connectivity="index")) == _array_neighbours(wet)
+        with pytest.raises(BuildError, match="lat-lon block: XC varies from .* along column i"):
+            T.wet_graph(grid, connectivity="latlon")
 
 
-def test_auto_raises_rather_than_return_a_doubtful_corner_graph(monkeypatch):
-    """On a block that is not regular lat-lon, ``auto`` requires the corner graph to
-    contain every array-neighbour link, and explains a corner-method failure."""
-    grid = rotated_block(9, 8, 1.0, 1.0, np.ones((8, 9)))
-    real = T._corner_pairs
-    monkeypatch.setattr(T, "_corner_pairs", lambda geom: (real(geom)[0][1:], {}))
+def test_latlon_declared_on_an_irregular_grid_is_an_error():
+    """``latlon`` is checked, not trusted: a perturbed centre, two blocks side by side
+    with a gap in longitude, and a spread build on such a grid all stop with an error
+    that names the violation."""
+    wet = np.ones((6, 8))
+    grid = latlon_grid(10.0 + np.arange(9), 40.0 + np.arange(7), wet)
+    assert T._latlon_problem(T._Geom(grid, R)) is None
+    bent = {k: v.copy() for k, v in grid.items()}
+    bent["YC"][3, 5] += 0.01
+    with pytest.raises(BuildError, match="YC varies from 43.5 to 43.51 degrees along row j = 3"):
+        T.wet_graph(bent, connectivity="latlon")
+    east = latlon_grid(30.0 + np.arange(9), 40.0 + np.arange(7), wet)
+    gap = {k: np.hstack([grid[k], east[k]]) for k in grid}
     with pytest.raises(BuildError) as e:
-        T.wet_graph(grid)
+        build_targets([{"source_id": "s", "lon": 12.5, "lat": 42.5}], gap, emission="spread",
+                      spread_type="gaussian", spread_scale="200km", connectivity="latlon")
     msg = str(e.value)
-    assert "can't establish the neighbour graph" in msg and "1 pair(s)" in msg
-    assert "connectivity='index'" in msg and "connectivity='corners'" in msg
-    assert len(_edge_set(T.wet_graph(grid, connectivity="corners"))) == 8 * 8 + 7 * 9 - 1
-    assert _edge_set(T.wet_graph(grid, connectivity="index")) == _array_neighbours(np.ones((8, 9)))
+    assert "connectivity 'latlon' was declared" in msg and "connectivity='exch2'" in msg
+    assert "column i = 7 ends at 18 degrees (2 XC - XG), but column i = 8 starts at 30" in msg
+    # the same grid declared exch2: the two blocks are separate components
+    g = T.wet_graph(gap, connectivity="exch2")
+    assert _edge_set(g) == (_array_neighbours(np.hstack([wet, 0 * wet]))
+                            | _array_neighbours(np.hstack([0 * wet, wet])))
 
-    def fail(geom):
-        raise BuildError("grid: the edge is shared by more than two wet cells")
-    monkeypatch.setattr(T, "_corner_pairs", fail)
+
+def test_connectivity_is_declared_or_defaults_to_exch2_with_data_exch2(tmp_path):
+    """No inference from geometry: without ``connectivity`` a spread build stops with
+    an error explaining the two choices, unless the grid directory holds data.exch2,
+    which selects ``exch2``. Pointwise sources need no graph and no declaration."""
+    grid, src = channel()
+    kw = dict(emission="spread", spread_type="gaussian", spread_scale=2 * DELTA)
     with pytest.raises(BuildError) as e:
-        T.wet_graph(grid)
-    assert "more than two wet cells" in str(e.value) and "connectivity='index'" in str(e.value)
-    with pytest.raises(BuildError) as e:
-        T.wet_graph(grid, connectivity="corners")
-    assert str(e.value) == "grid: the edge is shared by more than two wet cells"
+        build_targets([src], grid, **kw)
+    msg = str(e.value)
+    assert "connectivity is not set and the grid was given as arrays" in msg
+    for word in ("connectivity='latlon'", "--connectivity latlon", "connectivity='exch2'",
+                 "--connectivity exch2", "data.exch2", "no default for lat-lon"):
+        assert word in msg
+    gd = make_grid_dir(tmp_path, grid)
+    for call in (lambda: build_targets([src], gd, **kw), lambda: T.wet_graph(gd)):
+        with pytest.raises(BuildError, match="has no data.exch2 file"):
+            call()
+    assert build_targets([src], gd).connectivity is None           # pointwise: no graph
+    with pytest.raises(BuildError, match="'auto' is not one of latlon, exch2"):
+        build_targets([src], gd, connectivity="auto", **kw)
+    write_text(os.path.join(gd, "data.exch2"), " &W2_EXCH2_PARM01\n &\n")
+    assert T.wet_graph(gd).connectivity == "exch2"
+    t = build_targets([src], gd, **kw)
+    assert t.connectivity == "exch2"
+    declared = build_targets([src], gd, connectivity="latlon", **kw)
+    assert declared.connectivity == "latlon"                      # a declaration wins
+    np.testing.assert_array_equal(t.target_cell, declared.target_cell)
+    np.testing.assert_array_equal(t.target_fraction, declared.target_fraction)
+    write_checked(tmp_path, t, grid, "default_exch2.nc")
+
+
+@needs_cs32
+def test_cs32_directory_with_data_exch2_defaults_to_exch2(tmp_path):
+    grid = T.read_grid(str(CS32))
+    gd = make_grid_dir(tmp_path, grid)
+    with pytest.raises(BuildError, match="connectivity is not set"):
+        T.wet_graph(gd)
+    write_text(os.path.join(gd, "data.exch2"), " &W2_EXCH2_PARM01\n &\n")
+    g = T.wet_graph(gd)
+    assert g.connectivity == "exch2" and len(_edge_set(g)) == 8438
 
 
 @needs_cs32
 def test_cs32_wet_graph():
-    g = T.wet_graph(str(CS32))
+    g = T.wet_graph(str(CS32), connectivity="exch2")
     nb = g.neighbours
     for k in range(len(nb)):
         for m in nb[k][nb[k] >= 0].tolist():
@@ -925,7 +1050,7 @@ def test_cs32_wet_graph():
 @needs_cs32
 def test_cs32_spread_sources_cross_faces(tmp_path):
     grid = T.read_grid(str(CS32))
-    g = T.wet_graph(grid)
+    g = T.wet_graph(grid, connectivity="exch2")
     a, b = g.edges()
     cross = np.nonzero(_face(g.cells[a]) != _face(g.cells[b]))[0]
     lon, lat = grid["XC"].ravel(), grid["YC"].ravel()
@@ -938,7 +1063,7 @@ def test_cs32_spread_sources_cross_faces(tmp_path):
     # 6062 km away along the water, so this source needs a cutoff (3X) beyond that.
     src.append({"source_id": "npole", "lon": 0.0, "lat": 88.0, "spread_scale": "2500km"})
     t = build_targets(src, str(CS32), emission="spread", spread_type="gaussian",
-                      max_snap_distance="400km")
+                      max_snap_distance="400km", connectivity="exch2")
     out = write_targets(str(tmp_path / "cs32.nc"), t)
     assert_clean(out, str(CS32))
     pos = {int(c): k for k, c in enumerate(g.cells.tolist())}
@@ -981,7 +1106,7 @@ def test_scale_1000x1000_2000_spread_sources(tmp_path):
             "lat": float(yc[jj[p]] + rng.uniform(-0.03, 0.03))} for k, p in enumerate(pick)]
     t0 = time.perf_counter()
     t = build_targets(src, grid, emission="spread", spread_type="gaussian",
-                      spread_scale="33km")
+                      spread_scale="33km", connectivity="latlon")
     elapsed = time.perf_counter() - t0
     print("\nscale test: 1000x1000 grid ({0} wet cells), 2000 spread sources, {1} targets: "
           "build_targets {2:.2f} s".format(int(wet.sum()), t.target_cell.size, elapsed))
@@ -1029,7 +1154,7 @@ def test_round_trip_and_write_into(tmp_path):
     src = [{"source_id": "a", "lon": 0.8, "lat": 0.0, "alt_names": "Alpha"},
            {"source_id": "b", "lon": 1.3, "lat": 0.4}]
     spread = build_targets(src, gd, emission="spread", spread_type="exponential",
-                           spread_scale="10km")
+                           spread_scale="10km", connectivity="latlon")
     out = write_targets(str(tmp_path / "runoff.nc"), spread, history="test build")
     assert_clean(out, gd)
     append_series(out)
@@ -1104,17 +1229,22 @@ def test_cli(tmp_path):
     r = subprocess.run([sys.executable, "-W", "error::RuntimeWarning", "-m",
                         "MITgcmutils.runoff.targets", csv_path, "--grid-dir", gd, "-o", out,
                         "--emission", "spread", "--spread-type", "gaussian",
-                        "--spread-scale", "8km", "--grid-name", "coast"],
+                        "--spread-scale", "8km", "--grid-name", "coast",
+                        "--connectivity", "latlon"],
                        env=_env(), capture_output=True, text=True, timeout=120)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "0 error(s), 0 warning(s)" in r.stdout and "S10" in r.stdout
-    assert "connectivity index" in r.stdout
+    assert "connectivity latlon" in r.stdout
     with netCDF4.Dataset(out) as ds:
         assert "-m MITgcmutils.runoff.targets" in ds.history and "--spread-scale 8km" in ds.history
         assert ds.mitgcm_grid_name == "coast"
     assert_clean(out, gd)
     assert T.main([csv_path, "--grid-dir", gd, "-o", out, "--max-snap-distance", "1m"]) == 1
     assert T.main([csv_path, "--grid-dir", gd]) == 2                     # no -o
+    # spread sources without --connectivity (and no data.exch2 in the grid directory)
+    assert T.main([csv_path, "--grid-dir", gd, "-o", out, "--emission", "spread",
+                   "--spread-type", "linear", "--spread-scale", "8km"]) == 1
+    assert T.main([csv_path, "--grid-dir", gd, "-o", out, "--connectivity", "auto"]) == 2
     assert T.main([csv_path, "--grid-dir", str(tmp_path / "nogrid"), "-o", out]) == 2
 
 

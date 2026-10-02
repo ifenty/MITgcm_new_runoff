@@ -653,16 +653,28 @@ Distances are in meters, or a number followed by `km` or `m`.
    Weighting by $W\,A$ makes the runoff per unit area, $W$ times a constant,
    independent of cell size.
 
-**Neighbours.** Two wet cells are neighbours when they share a cell edge. The
-builder has two methods:
+**Neighbours.** Two wet cells are neighbours when they share a cell edge. How
+they are found depends on the kind of grid, which you declare with
+`--connectivity` (`connectivity=` in Python). The builder never infers the kind
+from the grid geometry, because blank exch2 tiles can make a cubed-sphere or LLC
+layout look like a lat-lon block.
 
-- **Index neighbours** (`index`), for a grid stored as one logically
-  rectangular block: the neighbours of $(i, j)$ are $(i \pm 1, j)$ and
-  $(i, j \pm 1)$. The grid wraps from $i = n_x - 1$ to $i = 0$ when it is
-  zonally periodic.
-- **Corner neighbours** (`corners`), for every other grid, in particular exch2
-  cubed-sphere and LLC layouts, whose array neighbours at face edges are not
-  grid neighbours. The builder finds each cell's four corners as grid vertices:
+- **`latlon`**, for a single regular lat-lon block: the neighbours of $(i, j)$
+  are $(i \pm 1, j)$ and $(i, j \pm 1)$, plus the zonal wrap between
+  $i = n_x - 1$ and $i = 0$.
+  - *Wrap:* it is decided row by row, from the rows whose first and last cells
+    both have `RAC` > 0. Such a row closes when the east edge of its last cell
+    is 360° east of the west edge of its first cell, and exactly those rows get
+    the wrap link. A blank tile at the first or last columns removes the wrap
+    only in its own rows.
+  - *Check:* the builder verifies the declaration. Over the cells with `RAC` > 0,
+    `XC` and `XG` must depend only on $i$ and `YC` and `YG` only on $j$, and
+    consecutive columns and rows must share an edge. Otherwise it stops with an
+    error that names the violation.
+- **`exch2`**, for exch2 cubed-sphere and LLC layouts, whose array neighbours at
+  face edges are not grid neighbours, and for any other grid that is not a
+  regular lat-lon block. The builder finds each cell's four corners as grid
+  vertices:
   - its own `XG`/`YG` south-west corner;
   - the south-west corners of its array neighbours, where these form a
     quadrilateral centered on the cell;
@@ -672,35 +684,39 @@ builder has two methods:
   Cells that share two corners are neighbours. Cells of blank exch2 tiles (every
   grid field 0 in the output) are neither wet nor vertices. A corner that such a
   tile would own is placed from the neighbouring cells' corners, also when
-  blank tiles lie on two adjacent sides of a wet cell.
+  blank tiles lie on two adjacent sides of a wet cell. The builder stops with an
+  error if the corners can't be matched consistently (an edge shared by more
+  than two cells).
 
-By default (`--connectivity auto`) the builder uses index neighbours only when
-the grid is provably one regular lat-lon block. That means that, over the cells
-with `RAC` > 0, `XC` and `XG` depend only on $i$ and `YC` and `YG` only on $j$,
-and that no array neighbour is visibly out of place. Every other grid gets
-corner neighbours:
+If you don't declare the kind, the builder uses `exch2` when the grid directory
+contains MITgcm's `data.exch2` file. Otherwise it stops with an error that
+explains the two choices: there is no default for lat-lon grids. The neighbour
+graph, and so the declaration, is needed only when some source has spread
+emission.
 
-- A cubed-sphere or LLC layout never gets index neighbours, even when blank
-  tiles hide all of its mismatched face seams.
-- A rotated or curvilinear single block gets corner neighbours too.
+The guarantee is therefore: the graph is exact for the declared kind on the
+grids tested below, `latlon` is refused on a grid that is not a regular lat-lon
+block, and the builder never switches method on its own.
 
-When such a grid shows no mismatched array neighbour, every array-neighbour pair
-is a true neighbour, so the builder checks that the corner graph contains them
-all. If it does not, or if the corner method fails, the builder stops with an
-error that asks you to pass `--connectivity index` (the grid is one logically
-rectangular block) or `--connectivity corners` explicitly. It never falls back
-to index neighbours on its own.
+- **cs32, every cell wet:** on the `global_ocean.cs32x15` grid, `exch2` gives
+  every cell 4 neighbours: 12288 edges in total, 384 of them across faces. This
+  is exactly what a closed cube of 6 × 32 × 32 cells has.
+- **cs32 with blank tiles:** with blank tiles simulated on one side, two
+  adjacent sides and all four sides of a tile, across a cube corner, on every
+  all-land 2 × 2 tile of the real mask, and on eight tiles that hide every
+  mismatched array seam, the graph equals the full graph restricted to the wet
+  cells.
+- **Stacked lat-lon facets:** two lat-lon facets stacked in the array, as in
+  the LLC compact layout, get their seam links under `exch2` and are refused
+  under `latlon`.
+- **Lat-lon grids:** under `latlon`, global (pole to pole, stretched in
+  latitude), regional and single-row grids equal a brute-force array-neighbour
+  oracle. A global grid with a blank tile at the first or last columns keeps
+  the wrap in the other rows.
+- **Other blocks:** a lat-lon block rotated over the North Pole gives exactly
+  its array neighbours under `exch2`.
 
-On the `global_ocean.cs32x15` grid with every cell treated as wet, the corner
-method gives every cell 4 neighbours: 12288 edges in total, 384 of them across
-faces. This is exactly what a closed cube of 6 × 32 × 32 cells has. With blank
-tiles simulated on that grid (on one side, two adjacent sides and all four sides
-of a tile, across a cube corner, and on every all-land 2 × 2 tile of the real
-mask), the graph equals this full graph restricted to the wet cells. The same
-holds under the default when eight blank tiles hide every mismatched seam, where
-index neighbours would lose 192 cross-face edges. A lat-lon block rotated over
-the North Pole gives exactly its array neighbours. The method has not been
-tested on an LLC grid.
+The `exch2` method has not been tested on an LLC grid.
 
 **Output.** `write_targets` writes the tables of §3.2–3.4, sorted by source and
 then cell. `target_cell` is `int` (`int64` only when a cell index would exceed
@@ -731,18 +747,20 @@ content are copied unchanged.
 **Command line.** It exits 0 on success, 1 on invalid input or checker errors in
 the output, and 2 on a usage or I/O problem. It runs the checker on the output
 unless you pass `--no-check`. The other flags are `--cutoff`,
-`--max-snap-distance`, `--earth-radius`, `--connectivity {auto,index,corners}`
-(the neighbour method, described under Neighbours above) and `--grid-name`.
+`--max-snap-distance`, `--earth-radius`, `--connectivity {latlon,exch2}`
+(the grid kind, described under Neighbours above) and `--grid-name`.
 
 ```sh
 python -m MITgcmutils.runoff.targets sources.csv --grid-dir run/ -o targets.nc \
-    --spread-type gaussian
+    --spread-type gaussian --connectivity latlon
 python -m MITgcmutils.runoff.targets sources.csv --grid-dir run/ -o runoff.nc \
-    --into runoff.nc --emission spread --spread-type linear --spread-scale 20km
+    --into runoff.nc --emission spread --spread-type linear --spread-scale 20km \
+    --connectivity exch2
 ```
 
-With this `sources.csv`, the first command makes `amazon` pointwise (the
-default) and spreads `jakobshavn` with a gaussian of $X = 10$ km:
+With this `sources.csv`, the first command (for a lat-lon grid) makes `amazon`
+pointwise (the default) and spreads `jakobshavn` with a gaussian of $X = 10$ km.
+The second is for a cubed-sphere or LLC grid:
 
 ```text
 source_id,lon,lat,name,type,alt_names,emission,spread_scale
@@ -755,7 +773,8 @@ From Python:
 ```python
 from MITgcmutils.runoff import build_targets, check_files, write_targets
 
-tables = build_targets("sources.csv", "run/", spread_type="gaussian")
+tables = build_targets("sources.csv", "run/", spread_type="gaussian",
+                       connectivity="latlon")
 write_targets("targets.nc", tables)
 check_files("targets.nc", grid_dir="run/", tables_only=True)
 ```
