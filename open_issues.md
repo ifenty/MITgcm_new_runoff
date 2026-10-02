@@ -77,6 +77,8 @@ is denied a non-allowlisted one, and the probe fails on the current hook.
 ### Resolution evidence (2026-09-29)
 Fixed upstream in ESX-Team 1.5.1 (8c7ea7d) and 1.5.2 (c92ebe4), both deployed here with no conflicts. The hook now judges the original command with `permission_match` and explicitly allows only allowlisted commands. The live probe runs an allowed and a denied Bash witness, and passes here (`devel-loop/loop_state/probe-152.json`). A matcher witness on this project's rules allows ecco pytest, quoted multi-line `python3 -c` and `cd && python3`. Heredocs, file redirects and unlisted commands get no decision; deny wins through `&&` and `|`. Wrapper allow rule and `Bash(mkdir *)` removed. Awaiting formal closeout.
 
+Acceptance witness on ESX-Team 1.6.0 (2026-10-02): with the workaround rules removed, a retained Bob session (b8a28b11, event e54e8aa9) ran allowlisted commands (pwd, the pinned-python pytest, python3 -c, `ls | head`), was refused the unlisted `mkdir` with nothing created, and the turn recorded the denial without a dispatcher crash. The live probe passes (`devel-loop/loop_state/probe-160.json`).
+
 ## UNRESOLVED: ESX dispatch adapter crashes on Claude Code permission_denied events
 
 **Date Identified**: 2026-09-29T22:05:00Z

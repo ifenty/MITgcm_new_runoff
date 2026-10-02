@@ -102,12 +102,13 @@ Zero dispatch failures caused by the kit in the next iteration.
 ## 🔴 PROPOSED: Documentation disposition reasons drift across correction rounds
 
 **Date Identified**: 2026-09-30  04:50
-**Status**: Proposed
+**Status**: Implemented — awaiting publication/effectiveness evidence
 **UUID**: TEAM-DOC-DISPOSITION-DRIFT-001
 **Category**: documentation_disposition_drift
 **Severity**: Medium
 **Assessment**: devel-loop/self-improvement/assessments/2026-09-30-runoff-001/assessment.md
 **Anchors**: tools/esx/doc_contract.py; devel-loop/documentation_contract.md
+**Implementation-Reference**: ESX-Team 1.6.0 (branch esx-1.6.0 commits 61fcc38, 5858e28): draft --previous carries forward updated/removed code judgments bound to their file; implementer-owned plan in the brief rules; deployed in project commit b2718fb
 
 ### Issue
 When the documentation plan is redrafted each correction round, Arch fills it from reusable templates. The reasons then go stale as the change grows; for RUNOFF-001 they still said 44 rules when there were 46, and still said "round 1".
@@ -130,12 +131,13 @@ No stale-disposition findings per multi-round issue.
 ## 🔴 PROPOSED: Default 30-minute role turn limit cuts off large implementation turns
 
 **Date Identified**: 2026-09-30  15:30
-**Status**: Proposed
+**Status**: Implemented — awaiting publication/effectiveness evidence
 **UUID**: TEAM-TURN-TIMEOUT-001
 **Category**: role_turn_timeout
 **Severity**: Medium
 **Assessment**: devel-loop/self-improvement/assessments/2026-09-30-runoff-001/assessment.md
 **Anchors**: tools/esx/agent_runtime.py
+**Implementation-Reference**: ESX-Team 1.6.0 (commit 80f674b): per-role turn limit, 3600 s for bob, project-configurable, deadline in the assignment; deployed in project commit b2718fb
 
 ### Issue
 `agent_runtime.py start/followup` default to `--timeout 1800`. A large implementation brief (RUNOFF-009: a 1,500-line module plus tests) hit the limit and the process group was killed mid-work. The turn was recorded as failed and needed a resume turn; the in-flight tool call and the unfinished message were lost.
