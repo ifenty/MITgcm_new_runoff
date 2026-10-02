@@ -653,12 +653,15 @@ Distances are in meters, or a number followed by `km` or `m`.
    Weighting by $W\,A$ makes the runoff per unit area, $W$ times a constant,
    independent of cell size.
 
-**Neighbours.** Two wet cells are neighbours when they share a cell edge.
+**Neighbours.** Two wet cells are neighbours when they share a cell edge. The
+builder has two methods:
 
-- **One-block grids** (lat-lon, and curvilinear grids without exch2): the
-  neighbours of $(i, j)$ are $(i \pm 1, j)$ and $(i, j \pm 1)$. The grid wraps
-  from $i = n_x - 1$ to $i = 0$ when it is zonally periodic.
-- **exch2 cubed-sphere and LLC layouts:** array neighbours at face edges are not
+- **Index neighbours** (`index`), for a grid stored as one logically
+  rectangular block: the neighbours of $(i, j)$ are $(i \pm 1, j)$ and
+  $(i, j \pm 1)$. The grid wraps from $i = n_x - 1$ to $i = 0$ when it is
+  zonally periodic.
+- **Corner neighbours** (`corners`), for every other grid, in particular exch2
+  cubed-sphere and LLC layouts, whose array neighbours at face edges are not
   grid neighbours. The builder finds each cell's four corners as grid vertices:
   - its own `XG`/`YG` south-west corner;
   - the south-west corners of its array neighbours, where these form a
@@ -671,13 +674,33 @@ Distances are in meters, or a number followed by `km` or `m`.
   tile would own is placed from the neighbouring cells' corners, also when
   blank tiles lie on two adjacent sides of a wet cell.
 
-On the `global_ocean.cs32x15` grid with every cell treated as wet, this gives
-every cell 4 neighbours: 12288 edges in total, 384 of them across faces. This is
-exactly what a closed cube of 6 × 32 × 32 cells has. With blank tiles simulated
-on that grid (on one side, two adjacent sides and all four sides of a tile,
-across a cube corner, and on every all-land 2 × 2 tile of the real mask), the
-graph equals this full graph restricted to the wet cells. The method has not
-been tested on an LLC grid.
+By default (`--connectivity auto`) the builder uses index neighbours only when
+the grid is provably one regular lat-lon block. That means that, over the cells
+with `RAC` > 0, `XC` and `XG` depend only on $i$ and `YC` and `YG` only on $j$,
+and that no array neighbour is visibly out of place. Every other grid gets
+corner neighbours:
+
+- A cubed-sphere or LLC layout never gets index neighbours, even when blank
+  tiles hide all of its mismatched face seams.
+- A rotated or curvilinear single block gets corner neighbours too.
+
+When such a grid shows no mismatched array neighbour, every array-neighbour pair
+is a true neighbour, so the builder checks that the corner graph contains them
+all. If it does not, or if the corner method fails, the builder stops with an
+error that asks you to pass `--connectivity index` (the grid is one logically
+rectangular block) or `--connectivity corners` explicitly. It never falls back
+to index neighbours on its own.
+
+On the `global_ocean.cs32x15` grid with every cell treated as wet, the corner
+method gives every cell 4 neighbours: 12288 edges in total, 384 of them across
+faces. This is exactly what a closed cube of 6 × 32 × 32 cells has. With blank
+tiles simulated on that grid (on one side, two adjacent sides and all four sides
+of a tile, across a cube corner, and on every all-land 2 × 2 tile of the real
+mask), the graph equals this full graph restricted to the wet cells. The same
+holds under the default when eight blank tiles hide every mismatched seam, where
+index neighbours would lose 192 cross-face edges. A lat-lon block rotated over
+the North Pole gives exactly its array neighbours. The method has not been
+tested on an LLC grid.
 
 **Output.** `write_targets` writes the tables of §3.2–3.4, sorted by source and
 then cell. `target_cell` is `int` (`int64` only when a cell index would exceed
@@ -709,7 +732,7 @@ content are copied unchanged.
 the output, and 2 on a usage or I/O problem. It runs the checker on the output
 unless you pass `--no-check`. The other flags are `--cutoff`,
 `--max-snap-distance`, `--earth-radius`, `--connectivity {auto,index,corners}`
-(the neighbour method; `auto` chooses from the grid geometry) and `--grid-name`.
+(the neighbour method, described under Neighbours above) and `--grid-name`.
 
 ```sh
 python -m MITgcmutils.runoff.targets sources.csv --grid-dir run/ -o targets.nc \

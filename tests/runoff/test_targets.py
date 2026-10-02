@@ -13,7 +13,11 @@ edges, every cell has 4 neighbours, and 12 x 32 = 384 edges cross faces.
 That all-wet graph, restricted to the wet cells, is then the oracle for cs32
 with blank tiles (every grid field 0), including blank tiles on two adjacent
 sides of a wet cell; on open one-block grids the corner method must equal
-the index neighbours.
+the index neighbours. The default ``auto`` rule is checked both ways: regular
+lat-lon blocks (pole to pole, regional, with a blank tile) get index
+neighbours; cs32 with every mismatched seam hidden by blank tiles, and a
+lat-lon block rotated over the North Pole (oracle: its array neighbours), get
+the corner method; a corner graph missing an array link is an error.
 Every file the builder writes is checked with the checker (tables-only, with
 the grid directory): no errors, no warnings, no R01-R03 findings.
 """
@@ -796,6 +800,113 @@ def test_open_one_block_grid_corner_method_equals_index(dlon, dlat):
         gi = T.wet_graph(grid)
         assert gi.connectivity == "index" and not gi.periodic
         assert _edge_set(T.wet_graph(grid, connectivity="corners")) == _edge_set(gi), name
+
+
+@needs_cs32
+def test_cs32_auto_is_exact_when_blank_tiles_hide_every_mismatched_seam():
+    """Eight blank 8 x 8 tiles hide every array-adjacent pair of cs32 that is not a
+    grid neighbour (the seams between faces 2|3 and 4|5). ``auto`` must still use the
+    corner method and be exact; index neighbours would lose 192 cross-face edges."""
+    grid, oracle = _cs32_oracle()
+    blank = np.zeros((32, 192), dtype=bool)
+    for row, col in [(0, 8), (0, 16), (1, 7), (1, 15), (2, 8), (2, 15), (3, 8), (3, 15)]:
+        blank[8 * row:8 * row + 8, 8 * col:8 * col + 8] = True
+    test = _blanked(grid, np.ones((32, 192)), blank)
+    geom = T._Geom(test, R)
+    assert not T._is_mosaic(geom)              # nothing looks mismatched any more
+    assert not T._is_latlon_block(geom)        # but it is no lat-lon block
+    wet = (test["hFacC"] > 0).ravel()
+    expect = {e for e in oracle if wet[e[0]] and wet[e[1]]}
+    g = T.wet_graph(test)
+    assert g.connectivity == "corners" and _edge_set(g) == expect
+    by_index = _edge_set(T.wet_graph(test, connectivity="index"))
+    assert by_index < expect and len(expect - by_index) == 192
+
+
+def test_auto_uses_index_for_regular_latlon_blocks():
+    """Pole-to-pole periodic, regional, and blank-tile lat-lon grids are regular
+    blocks: index neighbours, with the zonal wrap and the polar rows."""
+    glob = latlon_grid(10.0 * np.arange(37), 10.0 * np.arange(-9, 10), np.ones((18, 36)))
+    g = T.wet_graph(glob)
+    assert g.connectivity == "index" and g.periodic
+    assert len(_edge_set(g)) == 18 * 36 + 17 * 36           # zonal (wrapped) + meridional
+    deg = g.degree().reshape(18, 36)
+    assert (deg[[0, 17]] == 3).all() and (deg[1:17] == 4).all()      # polar rows
+    assert (17 * 36, 17 * 36 + 35) in _edge_set(g)                   # wrap in the top row
+    regional = latlon_grid(10.0 + np.arange(13), 40.0 + np.arange(9), np.ones((8, 12)))
+    g = T.wet_graph(regional)
+    assert g.connectivity == "index" and not g.periodic
+    assert len(_edge_set(g)) == 8 * 11 + 7 * 12
+    blank = np.zeros((8, 12), dtype=bool)
+    blank[:4, :4] = True                                    # a blank tile: every field 0
+    g = T.wet_graph(_blanked(regional, np.ones((8, 12)), blank))
+    assert g.connectivity == "index"
+    assert len(_edge_set(g)) == (8 * 11 + 7 * 12) - (4 * 4 + 4 * 4)   # links touching it
+
+
+def rotated_block(nx, ny, dlon, dlat, wet, lon0=30.0, lat0=88.3):
+    """A lat-lon block centred on (0, 0), rotated so its centre is at (lon0, lat0):
+    one logically rectangular block whose XC and YC both vary with i and j."""
+    grid = latlon_grid(dlon * (np.arange(nx + 1) - nx / 2.0),
+                       dlat * (np.arange(ny + 1) - ny / 2.0), wet)
+    th, ph = math.radians(lat0), math.radians(lon0)
+    for xn, yn in (("XC", "YC"), ("XG", "YG")):
+        lo, la = np.radians(grid[xn]), np.radians(grid[yn])
+        x, y, z = np.cos(la) * np.cos(lo), np.cos(la) * np.sin(lo), np.sin(la)
+        x, z = x * math.cos(th) - z * math.sin(th), x * math.sin(th) + z * math.cos(th)
+        x, y = x * math.cos(ph) - y * math.sin(ph), x * math.sin(ph) + y * math.cos(ph)
+        grid[xn], grid[yn] = np.degrees(np.arctan2(y, x)), np.degrees(np.arcsin(z))
+    return grid
+
+
+def _array_neighbours(wet):
+    """Analytic oracle for one block: (i+1, j) and (i, j+1) pairs of wet cells."""
+    ny, nx = wet.shape
+    w = wet.ravel() > 0
+    return ({(c, c + 1) for c in range(nx * ny) if c % nx < nx - 1 and w[c] and w[c + 1]}
+            | {(c, c + nx) for c in range(nx * (ny - 1)) if w[c] and w[c + nx]})
+
+
+@pytest.mark.parametrize("dlon, dlat", [(1.0, 1.0), (2.0, 0.5)])
+def test_rotated_block_auto_uses_corners_and_matches_array_neighbours(dlon, dlat):
+    """A rotated block over the North Pole is not a regular lat-lon grid, so ``auto``
+    uses the corner method; the result is the block's array neighbours."""
+    nx, ny = 9, 8
+    rng = np.random.default_rng(11)
+    for wet in (np.ones((ny, nx)), (rng.random((ny, nx)) > 0.3) * 1.0):
+        grid = rotated_block(nx, ny, dlon, dlat, wet)
+        geom = T._Geom(grid, R)
+        assert not T._is_latlon_block(geom) and not T._is_mosaic(geom)
+        assert np.ptp(grid["YC"][0]) > 0.1 and grid["YC"].max() > 89.0      # spans the pole
+        g = T.wet_graph(grid)
+        assert g.connectivity == "corners" and not g.periodic
+        assert _edge_set(g) == _array_neighbours(wet)
+        assert _edge_set(T.wet_graph(grid, connectivity="index")) == _array_neighbours(wet)
+
+
+def test_auto_raises_rather_than_return_a_doubtful_corner_graph(monkeypatch):
+    """On a block that is not regular lat-lon, ``auto`` requires the corner graph to
+    contain every array-neighbour link, and explains a corner-method failure."""
+    grid = rotated_block(9, 8, 1.0, 1.0, np.ones((8, 9)))
+    real = T._corner_pairs
+    monkeypatch.setattr(T, "_corner_pairs", lambda geom: (real(geom)[0][1:], {}))
+    with pytest.raises(BuildError) as e:
+        T.wet_graph(grid)
+    msg = str(e.value)
+    assert "can't establish the neighbour graph" in msg and "1 pair(s)" in msg
+    assert "connectivity='index'" in msg and "connectivity='corners'" in msg
+    assert len(_edge_set(T.wet_graph(grid, connectivity="corners"))) == 8 * 8 + 7 * 9 - 1
+    assert _edge_set(T.wet_graph(grid, connectivity="index")) == _array_neighbours(np.ones((8, 9)))
+
+    def fail(geom):
+        raise BuildError("grid: the edge is shared by more than two wet cells")
+    monkeypatch.setattr(T, "_corner_pairs", fail)
+    with pytest.raises(BuildError) as e:
+        T.wet_graph(grid)
+    assert "more than two wet cells" in str(e.value) and "connectivity='index'" in str(e.value)
+    with pytest.raises(BuildError) as e:
+        T.wet_graph(grid, connectivity="corners")
+    assert str(e.value) == "grid: the edge is shared by more than two wet cells"
 
 
 @needs_cs32
