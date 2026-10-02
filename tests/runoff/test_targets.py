@@ -21,8 +21,11 @@ rotated over the North Pole are exact under ``exch2`` and refused under
 ``latlon``; without a declaration the default is ``exch2`` only when the grid
 directory holds ``data.exch2``, otherwise an error. ``latlon`` needs one
 increasing map from column index to XG and from row index to YG, so facets
-separated by blank columns and rows are refused too; ``exch2`` refuses a wet
-lat-lon row that touches a pole (zero-length edges), where ``latlon`` is exact.
+separated by blank columns and rows are refused too, and the zonal wrap follows
+the unwrapped span, so longitudes stored in [0, 360) still close. ``exch2``
+refuses a cell that is a triangle (a wet lat-lon row touching a pole, also on a
+rotated block), judged from the cell's geometry only: cs32 rotated to put a
+vertex at the pole, and a cube with perturbed centres, stay exact.
 """
 
 import math
@@ -991,23 +994,27 @@ def test_latlon_needs_one_increasing_map_from_index_to_edge():
 
 
 def test_exch2_refuses_latlon_rows_that_touch_a_pole(tmp_path):
-    """A wet row of a lat-lon grid touching a pole has zero-length edges, which the
-    corner method can't match: ``exch2`` stops, naming the cell and pointing to
-    ``latlon``, which is exact there. With the polar rows dry ``exch2`` is exact."""
+    """The cells of a wet lat-lon row touching a pole are triangles, which the corner
+    method can't match: ``exch2`` stops, naming the cell and pointing to ``latlon``,
+    which is exact there. With the polar rows dry ``exch2`` is exact."""
     p2p = latlon_grid(np.arange(0, 364, 4.0), np.arange(-90, 94, 4.0), np.ones((45, 90)))
     with pytest.raises(BuildError) as e:
         T.wet_graph(p2p, connectivity="exch2")
     msg = str(e.value)
-    assert "cell 0 (i=0, j=0" in msg and "zero-length edge" in msg
-    assert "also the SW corner of its east array neighbour" in msg
+    assert "is a triangle, not a quadrilateral" in msg
     assert "connectivity='latlon' (--connectivity latlon)" in msg and "data.exch2" in msg
     north = {k: v.copy() for k, v in p2p.items()}
     north["hFacC"][0:3] = 0.0                          # only the north polar row touches a pole
     with pytest.raises(BuildError) as e:
         T.wet_graph(north, connectivity="exch2")
-    assert "cell 3960 (i=0, j=44" in str(e.value) and "collapses onto the north pole" in str(e.value)
+    assert "cell 3960 (i=0, j=44" in str(e.value) and "apex beyond the center" in str(e.value)
     g = T.wet_graph(north, connectivity="latlon")
     assert _edge_set(g) == _array_neighbours(north["hFacC"], closes=True) and len(_edge_set(g)) == 7470
+    south = {k: v.copy() for k, v in p2p.items()}
+    south["hFacC"][1:] = 0.0                           # only the row with SW corners at the pole
+    with pytest.raises(BuildError) as e:
+        T.wet_graph(south, connectivity="exch2")
+    assert "cell 0 (i=0, j=0" in str(e.value) and "apex at the SW corner" in str(e.value)
     dry = {k: v.copy() for k, v in p2p.items()}
     dry["hFacC"][[0, -1]] = 0.0                        # both polar rows land
     expect = _array_neighbours(dry["hFacC"], closes=True)
@@ -1017,7 +1024,7 @@ def test_exch2_refuses_latlon_rows_that_touch_a_pole(tmp_path):
     # regional 60N-90N, and the same through the data.exch2 default of a grid directory
     wet = np.ones((15, 20))
     cap = latlon_grid(np.arange(0, 41, 2.0), np.arange(60, 91, 2.0), wet)
-    with pytest.raises(BuildError, match=r"cell 280 \(i=0, j=14.*collapses onto the north pole"):
+    with pytest.raises(BuildError, match=r"cell 280 \(i=0, j=14.*apex beyond the center"):
         T.wet_graph(cap, connectivity="exch2")
     g = T.wet_graph(cap, connectivity="latlon")
     assert _edge_set(g) == _array_neighbours(wet) and len(_edge_set(g)) == 565
@@ -1025,10 +1032,150 @@ def test_exch2_refuses_latlon_rows_that_touch_a_pole(tmp_path):
     write_text(os.path.join(gd, "data.exch2"), " &W2_EXCH2_PARM01\n &\n")
     src = [{"source_id": "s", "lon": 19.0, "lat": 81.0}]          # a cell center
     kw = dict(emission="spread", spread_type="gaussian", spread_scale="300km")
-    with pytest.raises(BuildError, match="zero-length edge.*connectivity='latlon'"):
+    with pytest.raises(BuildError, match="is a triangle.*connectivity='latlon'"):
         build_targets(src, gd, **kw)
     t = build_targets(src, gd, connectivity="latlon", **kw)
     write_checked(tmp_path, t, cap, "cap.nc")
+    # polar caps from 1-degree to 45-degree-wide cells are refused at either pole
+    for dlon, dlat in ((1.0, 1.0), (10.0, 2.0), (30.0, 5.0), (45.0, 10.0), (2.0, 20.0)):
+        lat_e = np.arange(90 - 4 * dlat, 90 + dlat / 2, dlat)
+        nlon = int(round(360 / dlon))
+        for lats in (lat_e, -lat_e[::-1]):
+            g = latlon_grid(dlon * np.arange(nlon + 1), lats, np.ones((4, nlon)))
+            with pytest.raises(BuildError, match="is a triangle"):
+                T.wet_graph(g, connectivity="exch2")
+
+
+def test_latlon_wrap_uses_the_unwrapped_span():
+    """A global 4-degree grid starting at 280E closes whether XG runs on to 636 or
+    is stored in [0, 360), where the values drop by 360 inside the array."""
+    wet = np.ones((40, 90))
+    grid = latlon_grid(280 + np.arange(0, 364, 4.0), np.arange(-80, 84, 4.0), wet)
+    expect = _array_neighbours(wet, closes=True)
+    assert len(expect) == 7110 and len({e for e in expect if e[1] - e[0] == 89}) == 40
+    stored = {k: v.copy() for k, v in grid.items()}
+    for k in ("XC", "XG"):
+        stored[k] = stored[k] % 360.0
+    assert stored["XG"][0, 19] == 356.0 and stored["XG"][0, 20] == 0.0
+    for g in (grid, stored):
+        assert T._latlon_check(T._Geom(g, R)) == (None, True)
+        lat_lon = T.wet_graph(g, connectivity="latlon")
+        assert lat_lon.periodic and _edge_set(lat_lon) == expect
+        assert _edge_set(T.wet_graph(g, connectivity="exch2")) == expect
+    # one column short of the globe: no wrap, in either storage
+    short = {k: v[:, :89].copy() for k, v in stored.items()}
+    g = T.wet_graph(short, connectivity="latlon")
+    assert not g.periodic and _edge_set(g) == _array_neighbours(wet[:, :89])
+
+
+def rotate_grid(grid, rot):
+    """The same grid after the rigid rotation ``rot`` (3 x 3) of the sphere."""
+    out = dict(grid)
+    for xn, yn in (("XC", "YC"), ("XG", "YG")):
+        lo, la = np.radians(grid[xn]), np.radians(grid[yn])
+        p = np.stack([np.cos(la) * np.cos(lo), np.cos(la) * np.sin(lo), np.sin(la)], -1) @ rot.T
+        out[xn] = np.degrees(np.arctan2(p[..., 1], p[..., 0]))
+        out[yn] = np.degrees(np.arcsin(np.clip(p[..., 2], -1.0, 1.0)))
+    return out
+
+
+def rotation_to_pole(t):
+    """Rotation that takes the unit vector ``t`` to the north pole."""
+    t = np.asarray(t, dtype=np.float64) / np.linalg.norm(t)
+    e1 = np.cross(t, [0.3, -0.5, 0.81])
+    e1 /= np.linalg.norm(e1)
+    return np.stack([e1, np.cross(t, e1), t])
+
+
+@needs_cs32
+def test_cs32_rotated_with_a_vertex_at_the_pole_is_exact():
+    """A rigid rotation changes no cell's shape: with a cell vertex (or a cell centre)
+    exactly at the geographic pole, every cell still has four distinct corners and the
+    graph is the closed cube's. No coordinate test may refuse it."""
+    grid, oracle = _cs32_oracle()
+    allwet = dict(grid, hFacC=np.ones_like(grid["hFacC"]))
+    vertices = T._unit(grid["XG"], grid["YG"]).reshape(-1, 3)
+    centres = T._unit(grid["XC"], grid["YC"]).reshape(-1, 3)
+    targets = [vertices[c] for c in (2644, 0, 31, 1000, 4000, 6143)] + [-vertices[2644],
+                                                                         centres[777]]
+    for t in targets:
+        rotated = rotate_grid(allwet, rotation_to_pole(t))
+        assert np.abs(rotated["YG"]).max() > 89.999999 or np.abs(rotated["YC"]).max() > 89.999999
+        assert _edge_set(T.wet_graph(rotated, connectivity="exch2")) == oracle
+
+
+def equiangular_cube(m):
+    """An equiangular cubed sphere of 6 faces of m x m cells, faces side by side in the
+    array (6m x m), with exact spherical cell areas. For even m the poles are the
+    centre vertices of two faces."""
+    frames = [((1, 0, 0), (0, 1, 0), (0, 0, 1)), ((0, 1, 0), (-1, 0, 0), (0, 0, 1)),
+              ((0, 0, 1), (-1, 0, 0), (0, -1, 0)), ((-1, 0, 0), (0, 0, -1), (0, -1, 0)),
+              ((0, -1, 0), (0, 0, -1), (1, 0, 0)), ((0, 0, -1), (0, 1, 0), (1, 0, 0))]
+    edge = -np.pi / 4 + (np.pi / 2) * np.arange(m + 1) / m
+    mid = 0.5 * (edge[:-1] + edge[1:])
+
+    def points(f, a, b):
+        normal, u, v = (np.array(x, dtype=np.float64) for x in frames[f])
+        p = normal[None, None, :] + np.tan(a)[None, :, None] * u + np.tan(b)[:, None, None] * v
+        return p / np.linalg.norm(p, axis=-1, keepdims=True)
+
+    def triangle(a, b, c):                       # spherical triangle area (unit sphere)
+        return 2 * np.arctan2(np.abs(np.sum(a * np.cross(b, c), -1)),
+                              1 + np.sum(a * b, -1) + np.sum(b * c, -1) + np.sum(c * a, -1))
+
+    def lonlat(p):
+        return (np.degrees(np.arctan2(p[..., 1], p[..., 0])),
+                np.degrees(np.arcsin(np.clip(p[..., 2], -1.0, 1.0))))
+
+    grid = {k: np.empty((m, 6 * m)) for k in ("XC", "YC", "XG", "YG", "RAC")}
+    for f in range(6):
+        vert, cen = points(f, edge, edge), points(f, mid, mid)
+        cols = slice(f * m, (f + 1) * m)
+        grid["XC"][:, cols], grid["YC"][:, cols] = lonlat(cen)
+        grid["XG"][:, cols], grid["YG"][:, cols] = lonlat(vert[:-1, :-1])
+        q = [vert[:-1, :-1], vert[:-1, 1:], vert[1:, 1:], vert[1:, :-1]]
+        grid["RAC"][:, cols] = RS ** 2 * (triangle(q[0], q[1], q[2]) + triangle(q[0], q[2], q[3]))
+    grid["hFacC"] = np.ones((m, 6 * m))
+    return grid
+
+
+def test_equiangular_cube_with_a_pole_vertex_and_perturbed_centres_is_accepted():
+    """An n = 128 cube whose poles are face-centre vertices is the closed cube
+    (12 n^2 edges), also after XC is perturbed by 1e-7 degrees (about 1 cm), which
+    changes no cell's corners."""
+    m = 128
+    cube = equiangular_cube(m)
+    assert np.abs(cube["YG"]).max() == 90.0
+    reference = _edge_set(T.wet_graph(cube, connectivity="exch2"))
+    assert len(reference) == 12 * m * m
+    noisy = dict(cube)
+    noisy["XC"] = cube["XC"] + 1e-7 * np.random.default_rng(9).standard_normal(cube["XC"].shape)
+    assert _edge_set(T.wet_graph(noisy, connectivity="exch2")) == reference
+
+
+def test_rotated_polar_block_is_refused():
+    """A 60N-90N lat-lon block rotated by 40 degrees has a wet row of triangles at its
+    own pole, away from the geographic pole. ``exch2`` refuses it from the cells'
+    geometry; ``latlon`` refuses it as not regular. The unrotated block is exact
+    under ``latlon``."""
+    wet = np.ones((15, 20))
+    block = latlon_grid(np.arange(0, 41, 2.0), np.arange(60, 91, 2.0), wet)
+    th = math.radians(40.0)
+    ax = np.array([1.0, 0.2, 0.0]) / math.hypot(1.0, 0.2)
+    k = np.array([[0, -ax[2], ax[1]], [ax[2], 0, -ax[0]], [-ax[1], ax[0], 0]])
+    rot = np.eye(3) + math.sin(th) * k + (1 - math.cos(th)) * k @ k
+    rotated = rotate_grid(block, rot)
+    assert rotated["YG"].max() < 80.0                       # its pole is not the geographic pole
+    with pytest.raises(BuildError) as e:
+        T.wet_graph(rotated, connectivity="exch2")
+    msg = str(e.value)
+    assert "is a triangle, not a quadrilateral" in msg and "apex beyond the center" in msg
+    assert "cell 280 (i=0, j=14" in msg and "a rotated grid with such a row is not supported" in msg
+    with pytest.raises(BuildError, match="not one regular lat-lon block"):
+        T.wet_graph(rotated, connectivity="latlon")
+    dry = dict(rotated, hFacC=np.where(np.arange(15)[:, None] < 14, 1.0, 0.0) * wet)
+    assert _edge_set(T.wet_graph(dry, connectivity="exch2")) == _array_neighbours(dry["hFacC"])
+    assert len(_edge_set(T.wet_graph(block, connectivity="latlon"))) == 565
 
 
 def rotated_block(nx, ny, dlon, dlat, wet, lon0=30.0, lat0=88.3):

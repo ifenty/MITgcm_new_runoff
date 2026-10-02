@@ -662,11 +662,12 @@ layout look like a lat-lon block.
 - **`latlon`**, for a single regular lat-lon block: the neighbours of $(i, j)$
   are $(i \pm 1, j)$ and $(i, j \pm 1)$, plus the zonal wrap between
   $i = n_x - 1$ and $i = 0$.
-  - *Wrap:* it is decided row by row, from the rows whose first and last cells
-    both have `RAC` > 0. Such a row closes when the east edge of its last cell
-    is 360° east of the west edge of its first cell, and exactly those rows get
-    the wrap link. A blank tile at the first or last columns removes the wrap
-    only in its own rows.
+  - *Wrap:* the block closes in longitude when its first and last columns both
+    hold cells with `RAC` > 0 and the span from the west edge of the first
+    column to the east edge of the last is 360°. The span is unwrapped, so
+    longitudes stored in [0°, 360°) close like any others. Every row whose two
+    end cells are wet then gets the wrap link. A blank tile at the first or
+    last columns removes the wrap only in its own rows.
   - *Check:* the builder verifies the declaration over the cells with `RAC` > 0:
     - `XC` and `XG` must depend only on $i$, and `YC` and `YG` only on $j$.
     - `XG` must be one increasing function of $i$ over all columns that hold
@@ -696,9 +697,27 @@ layout look like a lat-lon block.
   error in two cases:
   - the corners can't be matched consistently (an edge shared by more than two
     cells);
-  - a wet cell has a zero-length edge, as in a row of a lat-lon grid that
-    touches a pole. The error names the cell and points to `latlon`, which is
-    exact there.
+  - a wet cell is a triangle, as in a row of a lat-lon grid that touches a
+    pole. The error names the cell and points to `latlon`, which is exact
+    there.
+
+  The triangle test uses the cell's geometry only, never its coordinates, so it
+  doesn't depend on where the pole is. A cell is a triangle when:
+  - two of its resolved corners coincide (closer than 10⁻⁶ √`RAC`); or
+  - its area is that of a triangle rather than a quadrilateral. For a
+    neighbouring corner $v$, south-west corner $SW$ and center $C$, a triangle
+    with its apex beyond the center has `RAC` = $|(v - SW) \times (C - SW)|$,
+    where a quadrilateral has half of that. A triangle with its apex at the
+    south-west corner has the area of the triangle formed with its two other
+    corners.
+
+  Each area test is confirmed by the position of the implied apex, so that a
+  cell with four distinct corners is not refused. Three cases are not covered:
+  - a lone triangle with no cell of `RAC` > 0 beside it to supply the
+    neighbouring corners the test uses;
+  - a triangle with its apex beyond the center, when that apex is itself some
+    cell's south-west corner;
+  - polar cells more than about 45° of longitude wide.
 
 If you don't declare the kind, the builder uses `exch2` when the grid directory
 contains MITgcm's `data.exch2` file. Otherwise it stops with an error that
@@ -724,8 +743,16 @@ block, and the builder never switches method on its own.
   under `latlon`, also when blank columns and rows lie between their valid
   parts.
 - **Polar rows:** on pole-to-pole and 60°N–90°N lat-lon grids with a wet row
-  touching a pole, `latlon` is exact and `exch2` is refused. With the polar
-  rows dry, both give the same graph.
+  touching a pole, `latlon` is exact and `exch2` is refused. Polar caps with
+  cells from 1° to 45° wide are refused at either pole, and so is the 60°N–90°N
+  block rotated by 40°, which neither kind can handle. With the polar rows dry,
+  both give the same graph.
+- **Cells at the pole that are not triangles:** cs32 rotated so that a cell
+  vertex or a cell center lies exactly at a geographic pole, and an equiangular
+  cube of 128 × 128 faces with poles at vertices (also with `XC` perturbed by
+  10⁻⁷°), give the closed cube under `exch2`.
+- **Longitudes stored in [0°, 360°):** a global grid starting at 280°E gets its
+  wrap links whether `XG` runs on to 636° or drops by 360° inside the array.
 - **Lat-lon grids:** under `latlon`, global (pole to pole, stretched in
   latitude), regional and single-row grids equal a brute-force array-neighbour
   oracle. A global grid with a blank tile at the first or last columns keeps
