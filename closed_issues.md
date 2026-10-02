@@ -201,3 +201,27 @@ Acceptance witness on ESX-Team 1.6.0 (2026-10-02): the 1.5.0 crash stream (turn 
 ### Gate acceptance
 
 Accepted by `loop_gate.py --check-done` at 2026-10-02T16:09:14.557182+00:00 for iteration 2026-10-02T16:08:16.931383+00:00. ESX-001 closed: the dispatch adapter crash on Claude Code permission_denied events (a string message field) is fixed upstream since ESX-Team 1.5.1 and deployed through 1.6.0. The 1.5.0 crash stream replays through the deployed parser, and a live turn with a denied command completed with the denial recorded.
+
+## 🟢 RESOLVED: lab_sea dense-path runoff reference runs
+
+**Date Identified**: 2026-09-29T21:30:00Z
+**Date Resolved**: 2026-10-02T21:39:06.713663+00:00
+**Status**: Resolved
+**UUID**: RUNOFF-003
+**Anchors**: MITgcm/verification/lab_sea/input/data.exf::<module>; tests/mitgcm_oracle.sh::<module>
+
+### Issue or research question
+No lat-lon verification experiment uses exf runoff. Build `lab_sea/input.<X>` cases with generated dense runoff: constant, daily, calendar-monthly, monthly-repeating, and yearly `_YYYY` files. Sources come from coastal cells of `bathy.labsea1979`, and at least one spans a tile boundary and the MPI process boundary.
+
+### Evidence
+`lab_sea`: 20×16 lat-lon at 2°, 4 tiles of 10×8, `SIZE.h_mpi` 2 processes × 2 tiles; `input/data.exf` has `runoffFile = ' '`; the forward build uses the default `EXF_OPTIONS.h` (`ALLOW_RUNOFF` on, `ALLOW_RUNOFTEMP` off).
+
+### Scientific or engineering impact
+These are the lat-lon oracles for sparse = dense on all timing modes. Without them, only exch2 cs32 is covered.
+
+### Proposed action and acceptance
+Keep a generator script (`gendata.py`) in each input directory. Runs span ≥ 1 month, and cross Dec → Jan where needed. Save `results/output.<X>.txt`. Acceptance: each case runs to `Execution ended Normally` single-process and with `-mpi 2`, and the MPI output matches the single-process output to the digit threshold. Commit to the fork `new_runoff`.
+
+### Gate acceptance
+
+Accepted by `loop_gate.py --check-done` at 2026-10-02T21:39:06.713663+00:00 for iteration 2026-10-02T16:10:58.211518+00:00. Six lab_sea verification cases (input.rnof_const, rnof_daily, rnof_month, rnof_month1, rnof_clim, rnof_yearly) now exercise the existing dense exf runoffFile path on a lat-lon grid in every timing mode, with committed references, a generator, and a direct timing check that matches the applied runoff to the input records to 1e-12, including interpolated and year-wrap samples. Each case passes single-process and -mpi 2 to 16 digits; sources straddle the tile and MPI process boundaries. No Fortran changed; the scientific suite passes.

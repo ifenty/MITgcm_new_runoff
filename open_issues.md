@@ -49,25 +49,6 @@ Put the tool under `tools/runoff/`, with pytest tests under `tests/`. Acceptance
 
 Unblocked 2026-09-30: RUNOFF-001 closed; schema 1.0 is approved (docs/runoff_schema.md), and MITgcmutils.runoff.check validates files against it.
 
-## UNRESOLVED: lab_sea dense-path runoff reference runs
-
-**Date Identified**: 2026-09-29T21:30:00Z
-**Status**: Unresolved
-**UUID**: RUNOFF-003
-**Anchors**: MITgcm/verification/lab_sea/input/data.exf::<module>; tests/mitgcm_oracle.sh::<module>
-
-### Issue or research question
-No lat-lon verification experiment uses exf runoff. Build `lab_sea/input.<X>` cases with generated dense runoff: constant, daily, calendar-monthly, monthly-repeating, and yearly `_YYYY` files. Sources come from coastal cells of `bathy.labsea1979`, and at least one spans a tile boundary and the MPI process boundary.
-
-### Evidence
-`lab_sea`: 20×16 lat-lon at 2°, 4 tiles of 10×8, `SIZE.h_mpi` 2 processes × 2 tiles; `input/data.exf` has `runoffFile = ' '`; the forward build uses the default `EXF_OPTIONS.h` (`ALLOW_RUNOFF` on, `ALLOW_RUNOFTEMP` off).
-
-### Scientific or engineering impact
-These are the lat-lon oracles for sparse = dense on all timing modes. Without them, only exch2 cs32 is covered.
-
-### Proposed action and acceptance
-Keep a generator script (`gendata.py`) in each input directory. Runs span ≥ 1 month, and cross Dec → Jan where needed. Save `results/output.<X>.txt`. Acceptance: each case runs to `Execution ended Normally` single-process and with `-mpi 2`, and the MPI output matches the single-process output to the digit threshold. Commit to the fork `new_runoff`.
-
 ## UNRESOLVED: exf sparse runoff reader, per-tile lists and global fraction check
 
 **Date Identified**: 2026-09-29T21:30:00Z
