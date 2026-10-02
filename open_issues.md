@@ -60,6 +60,8 @@ Acceptance: the test passes upstream, and the local copy matches upstream after 
 ### Resolution evidence (2026-09-29)
 Fixed upstream in ESX-Team 1.5.1 (tolerant stream parser, recorded failed turn on dispatcher error, `permission_denials` in turn records). The local guard was reverted to 1.5.0 bytes before the upgrade. `agent_runtime.py recover` closed orphaned turn 8154aebc in Bob session a7e61b17. Awaiting formal closeout.
 
+Acceptance witness on ESX-Team 1.6.0 (2026-10-02): the 1.5.0 crash stream (turn 8154aebc, a string `message` on a permission_denied event) replays through the deployed `_read_tool_events` without error, and a live Bob turn (b8a28b11, e54e8aa9) with one denied command completed with the denial in `permission_denials` (verification record 5c001a7b…).
+
 ## UNRESOLVED: Python dense-to-sparse runoff converter
 
 **Date Identified**: 2026-09-29T21:30:00Z
