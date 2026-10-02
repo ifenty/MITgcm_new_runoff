@@ -66,9 +66,10 @@ def test_named_rules_parser():
 
 
 def test_audit_covers_every_rule_and_every_check_function():
-    """The parse is not vacuous: all 46 rules are emitted, all _check_* are audited."""
+    """The parse is not vacuous: every rule of ``schema.RULES`` (``len(schema.RULES)``
+    of them) is emitted, and all _check_* are audited."""
     emitted = set().union(*(emitted_rules(FUNCTIONS[n]) for n in AUDITED))
-    assert emitted == set(schema.RULES)
+    assert emitted == set(schema.RULES) and len(emitted) == len(schema.RULES)
     checks = {n for n in FUNCTIONS if n.startswith("_check_")}
     assert checks and checks <= set(AUDITED)
 

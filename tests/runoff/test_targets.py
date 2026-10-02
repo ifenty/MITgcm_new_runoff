@@ -10,6 +10,10 @@ cells and that an enclosed lake gets nothing. The real cs32 grid proves the
 exch2 ("corners") neighbour graph topologically: with every cell treated as
 wet, a closed cubed sphere of 6 x 32 x 32 quadrilaterals has exactly 12288
 edges, every cell has 4 neighbours, and 12 x 32 = 384 edges cross faces.
+That all-wet graph, restricted to the wet cells, is then the oracle for cs32
+with blank tiles (every grid field 0), including blank tiles on two adjacent
+sides of a wet cell; on open one-block grids the corner method must equal
+the index neighbours.
 Every file the builder writes is checked with the checker (tables-only, with
 the grid directory): no errors, no warnings, no R01-R03 findings.
 """
@@ -686,6 +690,112 @@ def test_cs32_geometric_corners_match_the_array_on_every_face():
     truth = np.stack([infc, infc + 1, infc + 193, infc + 192], axis=1)
     assert (ids[:, 0] == truth[:, 0]).all() and (ids[:, 2] == truth[:, 2]).all()
     assert (np.sort(ids[:, [1, 3]], axis=1) == np.sort(truth[:, [1, 3]], axis=1)).all()
+
+
+def _edge_set(g):
+    a, b = g.edges()
+    return set(zip(g.cells[a].tolist(), g.cells[b].tolist()))
+
+
+#: Blank-tile cases on cs32: (focus cell (i, j) with two blank edge neighbours or
+#: None, land cell (i, j) or None, blank boxes (j0, j1, i0, i1)). 8 x 8 tiles.
+_NT, _ET, _NET = (8, 16, 0, 8), (0, 8, 8, 16), (8, 16, 8, 16)
+BLANK_CASES = {
+    "north": (None, None, [_NT]),
+    "east": (None, None, [_ET]),
+    "north_and_east": ((7, 7), None, [_NT, _ET]),
+    "north_and_east_south_neighbour_land": ((7, 7), (7, 6), [_NT, _ET]),
+    "north_east_and_diagonal_sw_cell_land": ((7, 7), (6, 6), [_NT, _ET, _NET]),
+    "all_four_sides_of_a_tile": ((15, 15), None, [(16, 24, 8, 16), (8, 16, 16, 24),
+                                                  (0, 8, 8, 16), (8, 16, 0, 8)]),
+    # across the cube corner at the NE corner of face 1: tiles on faces 2 and 3
+    "across_a_cube_corner": ((31, 31), None, [(24, 32, 32, 40), (0, 8, 64, 72)]),
+    "across_a_cube_corner_south_neighbour_land": ((31, 31), (31, 30),
+                                                  [(24, 32, 32, 40), (0, 8, 64, 72)]),
+}
+
+
+def _cs32_oracle():
+    """Edges of the all-wet cs32 graph (the closed cube proven above) and the grid."""
+    grid = T.read_grid(str(CS32))
+    edges = _edge_set(T.wet_graph(dict(grid, hFacC=np.ones_like(grid["hFacC"]))))
+    assert len(edges) == 12288
+    return grid, edges
+
+
+def _blanked(grid, hfac, blank):
+    """Grid with ``hfac`` as wet mask and every field 0 on blank tiles, as rdmds
+    returns for tiles absent from MITgcm output."""
+    out = {k: v.copy() for k, v in grid.items()}
+    out["hFacC"] = hfac.copy()
+    for k in out:
+        out[k][blank] = 0.0
+    return out
+
+
+@needs_cs32
+@pytest.mark.parametrize("case", sorted(BLANK_CASES))
+def test_cs32_blank_tiles_give_the_exact_graph(case, monkeypatch):
+    """Blank tiles (every grid field 0) beside wet cells: the graph is the all-wet
+    graph restricted to the wet cells, also when a cell's SE and NW corners are both
+    owned by blank tiles (two adjacent blank sides)."""
+    focus, land, boxes = BLANK_CASES[case]
+    grid, oracle = _cs32_oracle()
+    blank = np.zeros((32, 192), dtype=bool)
+    for j0, j1, i0, i1 in boxes:
+        blank[j0:j1, i0:i1] = True
+    hfac = np.ones((32, 192))
+    if land is not None:
+        hfac[land[1], land[0]] = 0.0
+    test = _blanked(grid, hfac, blank)
+    wet = (test["hFacC"] > 0).ravel()
+    expect = {e for e in oracle if wet[e[0]] and wet[e[1]]}
+    if focus is not None:
+        c = focus[0] + 192 * focus[1]
+        nb = [b if a == c else a for a, b in oracle if c in (a, b)]
+        assert len(nb) == 4 and sum(blank.ravel()[n] for n in nb) == 2
+    for use_scipy in (True, False):
+        monkeypatch.setattr(T, "USE_SCIPY", use_scipy)
+        g = T.wet_graph(test)
+        assert g.connectivity == "corners"
+        got = _edge_set(g)
+        assert got == expect, (sorted(expect - got), sorted(got - expect))
+
+
+@needs_cs32
+def test_cs32_real_mask_with_all_land_tiles_blank():
+    """The real land mask with every all-land 2 x 2 tile blank (348 tiles)."""
+    grid, oracle = _cs32_oracle()
+    real = (grid["hFacC"] > 0).astype(np.float64)
+    blank = np.zeros((32, 192), dtype=bool)
+    for j0 in range(0, 32, 2):
+        for i0 in range(0, 192, 2):
+            if not real[j0:j0 + 2, i0:i0 + 2].any():
+                blank[j0:j0 + 2, i0:i0 + 2] = True
+    assert blank.sum() // 4 == 348
+    wet = (real > 0).ravel()
+    expect = {e for e in oracle if wet[e[0]] and wet[e[1]]}
+    assert _edge_set(T.wet_graph(_blanked(grid, real, blank))) == expect
+    assert expect == _edge_set(T.wet_graph(grid)) and len(expect) == 8438
+
+
+@pytest.mark.parametrize("dlon, dlat", [(1.0, 1.0), (2.0, 0.5), (0.25, 1.0)])
+def test_open_one_block_grid_corner_method_equals_index(dlon, dlat):
+    """An open (non-periodic) lat-lon grid at 55N-63N, with square and strongly
+    anisotropic cells: the corner method gives the index neighbours, including at
+    the north-east corner cell, whose SE, NE and NW corners are no cell's SW corner."""
+    nx, ny = 9, 8
+    lon_e, lat_e = 10.0 + dlon * np.arange(nx + 1), 55.0 + dlat * np.arange(ny + 1)
+    rng = np.random.default_rng(7)
+    masks = {"all_wet": np.ones((ny, nx)), "random_land": (rng.random((ny, nx)) > 0.3) * 1.0}
+    south_land = np.ones((ny, nx))
+    south_land[ny - 2, nx - 1] = 0.0                 # south neighbour of the NE corner cell
+    masks["south_of_ne_corner_land"] = south_land
+    for name, wet in masks.items():
+        grid = latlon_grid(lon_e, lat_e, wet)
+        gi = T.wet_graph(grid)
+        assert gi.connectivity == "index" and not gi.periodic
+        assert _edge_set(T.wet_graph(grid, connectivity="corners")) == _edge_set(gi), name
 
 
 @needs_cs32

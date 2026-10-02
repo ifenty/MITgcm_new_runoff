@@ -663,14 +663,21 @@ Distances are in meters, or a number followed by `km` or `m`.
   - its own `XG`/`YG` south-west corner;
   - the south-west corners of its array neighbours, where these form a
     quadrilateral centered on the cell;
-  - a geometric search from the cell center at face edges.
+  - a geometric search from the cell center at face edges, beside blank tiles
+    and at open boundaries.
 
-  Cells that share two corners are neighbours.
+  Cells that share two corners are neighbours. Cells of blank exch2 tiles (every
+  grid field 0 in the output) are neither wet nor vertices. A corner that such a
+  tile would own is placed from the neighbouring cells' corners, also when
+  blank tiles lie on two adjacent sides of a wet cell.
 
 On the `global_ocean.cs32x15` grid with every cell treated as wet, this gives
 every cell 4 neighbours: 12288 edges in total, 384 of them across faces. This is
-exactly what a closed cube of 6 × 32 × 32 cells has. The method has not been
-tested on an LLC grid.
+exactly what a closed cube of 6 × 32 × 32 cells has. With blank tiles simulated
+on that grid (on one side, two adjacent sides and all four sides of a tile,
+across a cube corner, and on every all-land 2 × 2 tile of the real mask), the
+graph equals this full graph restricted to the wet cells. The method has not
+been tested on an LLC grid.
 
 **Output.** `write_targets` writes the tables of §3.2–3.4, sorted by source and
 then cell. `target_cell` is `int` (`int64` only when a cell index would exceed
