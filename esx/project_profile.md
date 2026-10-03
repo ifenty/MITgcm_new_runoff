@@ -9,7 +9,8 @@ This is the scientific contract agents read. Executable paths and commands are i
 
 - Project name and identifier: MITgcm new runoff (`MITGCM-NEW-RUNOFF`).
 - Scientific question or engineering outcome: add a sparse, source-based way to
-  specify runoff forcing in MITgcm by extending `pkg/exf`. Runoff is a volumetric
+  specify runoff forcing in MITgcm, as a new package `pkg/rnf` that feeds exf's
+  `runoff` field (design: [package design](../docs/package_design.md), RUNOFF-010). Runoff is a volumetric
   water flux, optionally with temperature, salinity (default 0, i.e. freshwater) and
   any number of passive tracers. It is read from NetCDF organized by source.
   - **Current approach:** a dense `runoffFile` with one value per surface cell per
@@ -28,7 +29,7 @@ This is the scientific contract agents read. Executable paths and commands are i
   - Subsurface discharge (RUNOFF-025) is now in scope. Opening the upstream PR still requires explicit owner approval.
 - In-scope deliverables and explicit exclusions:
   - **Phase 1 deliverables:**
-    - 2D (surface) sparse runoff in exf
+    - 2D (surface) sparse runoff in the new package `pkg/rnf`, feeding exf
     - a Python dense→sparse NetCDF converter
     - lab_sea and cs32 oracle tests
     - exf documentation
@@ -53,7 +54,9 @@ This is the scientific contract agents read. Executable paths and commands are i
     apply unchanged to every cell it feeds.
   - Where several sources feed one cell, volumes add, and T, S and all tracers
     are flux-weighted means. This conserves heat, salt and tracer content.
-  - The downstream exf/model physics (`pkg/exf/exf_mapfields.F`) is unchanged.
+  - The volume goes through exf's `runoff` array, so the downstream exf/model
+    physics (`pkg/exf/exf_mapfields.F`) is unchanged. T, S and tracers enter as
+    tendency terms (shelfice/icefront pattern); see the package design.
 - Inputs/outputs, dimensions, units and coordinate/reference conventions: one
   NetCDF file with:
   - source ids (alphanumeric)
@@ -70,8 +73,10 @@ This is the scientific contract agents read. Executable paths and commands are i
     LLC, including exch2 blank tiles.
   - A global cell index is a cell's 0-based position in the flattened global 2D
     layout of a dense `runoffFile` on that grid.
-  - At init, each tile converts its indices to local `(i,j,k,bi,bj)`. `k` is
-    always 1 in phase 1.
+  - At init, each tile converts its indices to local `(i,j,bi,bj)`. In phase 1
+    every target is the column's surface cell (level 1 in z coordinates, `Nr` in
+    pressure coordinates, `kSurfC` under shelfice); targets under an ice shelf are
+    refused until the `addMass` path exists (RUNOFF-025).
   - Each tile stores only its own cells.
   - A target cell on land (surface `maskC` = 0) is a fatal error that names the
     source.
@@ -80,9 +85,9 @@ This is the scientific contract agents read. Executable paths and commands are i
     `calendar` attribute). Sampling is constant, repeating (climatology) or
     non-repeating, at hourly, daily, monthly (calendar months) or yearly intervals.
   - **Timing overrides:** runtime timing settings come from file attributes or
-    `data.exf`, and **`data.exf` overrides the file**.
+    `data.rnf`, and **`data.rnf` overrides the file**.
   - **Yearly files:** `_YYYY` files follow exf `useExfYearlyFields`.
-  - **Interpolation:** chosen in `data.exf`, either exf-style linear interpolation
+  - **Interpolation:** chosen in `data.rnf`, either exf-style linear interpolation
     or hold-exact.
   - **Missing temperature:** runoff enters at the surface water temperature, as
     exf does now.
@@ -91,14 +96,16 @@ This is the scientific contract agents read. Executable paths and commands are i
     source and time.
 - Conserved quantities, positivity, symmetry, monotonicity or other invariants:
   - Each source's fractions sum to 1 across the whole domain, within 1e-6. This is
-    checked with `GLOBAL_SUM` over all tiles and processes, which also catches
-    cells on land, on blank tiles or off the grid.
+    checked with `GLOBAL_SUM` over all tiles and processes. Land, open-boundary
+    and off-grid targets are caught by the init checks of the package design
+    (decisions 5 and 6: `maskC`, `maskInC`, index range); a target on a blank
+    tile is owned by no tile and shows up as a fraction deficit.
   - Total applied volume flux, `Σ runoff·rA`, equals `Σ_s flux_s(t)`.
   - Heat, salt and tracer input (`Σ F_c·X_c`) equals `Σ_s flux_s·X_s`.
   - Fractions are ≥ 0.
   - With the feature compiled in but not used, results are bit-for-bit unchanged.
 - Parameters, control variables, objectives and statistical estimands: new
-  `data.exf` namelist parameters (file name, interpolation mode, timing overrides).
+  `data.rnf` namelist parameters (file name, interpolation mode, timing overrides).
   Code stays TAF-friendly because exf runoff is a control variable in ECCO setups.
   There are no statistical estimands.
 - Acceptable error, oracle uncertainty and tolerance rationale:
@@ -108,7 +115,7 @@ This is the scientific contract agents read. Executable paths and commands are i
   - **Fraction sum:** within 1e-6.
   - **No-change experiments:** must be identical.
 - Invalid input, unsupported cases and required failure behavior: stop at init
-  with an `EXF`-prefixed error naming the file, variable or source id for any of
+  with an `RNF`-prefixed error naming the file, variable or source id for any of
   these:
   - fraction sum out of tolerance
   - target cell on land or off the grid
@@ -204,9 +211,11 @@ This is the scientific contract agents read. Executable paths and commands are i
 **MITgcm conventions:**
 
 - Include `*_OPTIONS.h` first. Use `_RL`/`_RS`, `myThid` and `bi,bj` tile loops.
-- Wrap new code in `#ifdef ALLOW_<FEATURE>` inside exf, and add a run-time switch.
-- Put new `data.exf` parameters in `exf_readparms.F`, and report them in
-  `exf_summary.F`.
+- New code lives in `pkg/rnf` under `#ifdef ALLOW_RNF` with run-time switch
+  `useRNF`; the only exf change is one guarded call in `exf_getffields.F`
+  (package design, decision 2).
+- Put new parameters in `data.rnf` (`RNF_PARM01`), read in `rnf_readparms.F` and
+  reported in the package summary.
 
 **MITgcm contribution rules** (`MITgcm/doc/contributing/contributing.rst`):
 
@@ -214,7 +223,7 @@ This is the scientific contract agents read. Executable paths and commands are i
   unmodified master, save it as `tr_out_master.txt`, repeat on the branch, and
   `diff` the two. Also run `testreport -mpi`, because the code uses `GLOBAL_SUM`.
 - **`tools/do_tst_2+2`** is required for algorithmic changes.
-- **Documentation:** update `doc/phys_pkgs/exf.rst`. The docs are built in CI.
+- **Documentation:** update `doc/phys_pkgs/exf.rst` and add a page for `pkg/rnf` (RUNOFF-026). The docs are built in CI.
 - **PR template:** suggest a `tag-index` entry in the template; don't edit
   `tag-index`.
 - **New verification experiment:** add one with `results/` reference output.

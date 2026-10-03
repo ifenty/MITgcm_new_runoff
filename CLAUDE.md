@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project goal
 
-Add a new, sparse way to specify runoff forcing in MITgcm, built by extending `pkg/exf`. Runoff is a volumetric water flux, optionally with temperature, salinity (default 0) and any number of passive tracers.
+Add a new, sparse way to specify runoff forcing in MITgcm, as a new package `pkg/rnf` that feeds `pkg/exf` ([docs/package_design.md](docs/package_design.md)). Runoff is a volumetric water flux, optionally with temperature, salinity (default 0) and any number of passive tracers.
 
 The input is a NetCDF file organized by source: an alphanumeric id, the ocean cells the source feeds, the fraction going into each cell (summing to 1.0), and time series on one shared time axis. This replaces dense per-grid-cell `runoffFile` binaries, which are wasteful at high resolution.
 

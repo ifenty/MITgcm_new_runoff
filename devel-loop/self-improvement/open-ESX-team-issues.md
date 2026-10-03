@@ -156,3 +156,31 @@ A large Bob brief completes in one turn without a timeout, or the turn ends with
 
 ### Expected Effect
 No implementation turns lost to the default timeout.
+
+## 🔴 PROPOSED: assess-transition rejects verify.py evidence references as returned
+
+**Date Identified**: 2026-10-02  21:30
+**Status**: Proposed
+**UUID**: TEAM-TRANSITION-EVIDENCE-001
+**Category**: runtime_recovery
+**Severity**: Low
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-02-runoff-010/assessment.md
+**Anchors**: tools/esx/runtime_recovery.py
+
+### Issue
+`verify.py` names its evidence file by a canonical-JSON digest and returns that digest as `sha256`. `runtime_recovery.validate_assessment` hashes the raw file bytes, so a judgment citing the `verify.py` evidence reference unchanged fails with "compatibility check evidence hash mismatch". The judgment file format (decision, assessor, reason of at least 40 characters, and a check with command, executed, exit and evidence) is documented only in the source.
+
+### Evidence
+RUNOFF-010, 2026-10-02: a one-sentence CLAUDE.md edit changed the runtime contract for retained Bob a6fef0e4; the first assessment citing verification/0a296302….json failed; re-hashing the raw file passed (runtime-transitions/a66ccb55….json).
+
+### Potential Impact
+A few minutes lost per runtime transition; coordinators may guess the format.
+
+### Proposed Fix
+Validate the check evidence with `verify.load_evidence`, as footer evidence is validated, and show the judgment format in `assess-transition --help`.
+
+### Acceptance Criteria
+A judgment citing a `verify.py` evidence reference exactly as returned is accepted; `--help` shows the required fields.
+
+### Expected Effect
+Transitions are recorded on the first attempt.

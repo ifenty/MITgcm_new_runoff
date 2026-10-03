@@ -133,7 +133,7 @@ Rows may appear in any order. Sorting by source and then cell is recommended.
 | `target_source` | `(target)` | int | R | yes | 0-based index into `source`. Attribute `instance_dimension = "source"`. |
 | `target_cell` | `(target)` | int (int32 recommended; int64 allowed) | R | yes | 0-based global cell index, `cell = i + mitgcm_grid_nx · j`. `(i, j)` are the 0-based positions in the global 2D array that MITgcm reads from a dense `runoffFile` on this grid, with `i` varying fastest (Fortran order). For exch2 cubed-sphere and LLC grids this is the exch2 global I/O map (`exch2_global_Nx` × `exch2_global_Ny`, the `Global Map (IO)` line, which exch2 writes to `w2_tile_topology.NNNN.log` when `W2_printMsg < 0` (the default, `-1`) and to STDOUT otherwise), not the `SIZE.h` Nx × Ny, and it depends on `W2_mapIO`: e.g. 192 × 32 for cs32 with `W2_mapIO = -1` and 90 × 1170 for LLC90 with `W2_mapIO = 1`. The index does not depend on the tile size or MPI layout. |
 | `target_fraction` | `(target)` | double (float allowed) | R | yes | Share of the source's flux sent to this cell, `units = "1"`. Each value is in `[0, 1]`. Each source's fractions sum to 1 within 1e-6. |
-| `target_level` | `(target)` | int | O | yes | Reserved for 3D runoff: the 1-based model level `k`. Schema 1.0 allows only 1. If absent, every target is level 1. |
+| `target_level` | `(target)` | int | O | yes | Reserved for 3D runoff. Schema 1.0 allows only 1, which means the surface cell of the column: level 1 in z coordinates, `Nr` in pressure coordinates, `kSurfC` under `pkg/shelfice` ([package design](package_design.md), decision 5). If absent, every target is level 1. |
 | `target_cell_area` | `(target)` | double (float allowed) | O | yes | Horizontal area `rA` of the cell on the grid the file was built for, in m². If present, the model compares it with its own `rA` (relative tolerance 1e-4) to catch a file built for a different grid. |
 | `target_lon` | `(target)` | float/double | O | no | Cell-center longitude, `degrees_east`. For people and plots. |
 | `target_lat` | `(target)` | float/double | O | no | Cell-center latitude, `degrees_north`. |
@@ -177,7 +177,7 @@ record is one contiguous hyperslab. Stored as float (32-bit) or double.
 | `mitgcm_time_period` | double | R if `fixed` | Record spacing in seconds, e.g. 3600 or 86400. |
 | `mitgcm_time_repeat` | string | O | `none` (default) or `annual`: the records are a climatology. A `monthly` climatology repeats every model calendar year; a `fixed`-period climatology repeats with a cycle equal to the span of its bounds (§7). |
 
-`data.exf` settings override every timing attribute above. Exact parameter names
+`data.rnf` settings override every timing attribute above. Exact parameter names
 are defined in RUNOFF-005.
 
 ### 4.2 Grid description (recommended, not read)
@@ -451,7 +451,7 @@ variables:
 		target_fraction:long_name = "share of the source flux sent to this cell" ;
 		target_fraction:units = "1" ;
 	int target_level(target) ;
-		target_level:long_name = "1-based model level k (schema 1.0: always 1)" ;
+		target_level:long_name = "target level (schema 1.0: always 1 = surface cell)" ;
 	double target_cell_area(target) ;
 		target_cell_area:long_name = "horizontal cell area rA" ;
 		target_cell_area:units = "m2" ;

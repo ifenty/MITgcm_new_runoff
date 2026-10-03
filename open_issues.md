@@ -26,25 +26,6 @@ A closed dependency prompts reconsideration; it does not automatically unblock w
 <Hypothesis, bounded change/inquiry, independent oracle, tolerances and completion criteria>
 ```
 
-## UNRESOLVED: Runoff package architecture and MITgcm integration design
-
-**Date Identified**: 2026-10-02T22:30:00Z
-**Status**: Unresolved
-**UUID**: RUNOFF-010
-**Anchors**: MITgcm/model/src/apply_forcing.F::<module>; MITgcm/pkg/icefront/icefront_tendency_apply.F::<module>; docs/model_contract.md::<module>
-
-### Issue or research question
-Decide how sparse runoff enters MITgcm as a package: package name and files; CPP option header and runtime switch; namelist file; where it plugs in (packages_boot/readparms/init_fixed/check, forcing load each step, and the T/S/tracer tendency hooks in apply_forcing.F next to SHELFICE_FORCING_T and ICEFRONT_TENDENCY_APPLY_T/S); how the volume flux relates to exf runoff (fill exf `runoff` vs own EmPmR contribution), real vs virtual freshwater flux; NetCDF dependency and build guards; diagnostics; TAF considerations.
-
-### Evidence
-Owner direction 2026-10-02 (owner away for several days): develop and test the new runoff program across many MITgcm configurations, with and without T, S and tracer contributions, in every time mode, as a robust, documented MITgcm package following MITgcm coding standards; T/S fluxes follow the shelfice/icefront tendency pattern. Sources: model/src/apply_forcing.F lines 705-713 and 937-945 call SHELFICE_FORCING_T/S and ICEFRONT_TENDENCY_APPLY_T/S; pkg/icefront/icefront_tendency_apply.F adds per-cell tendencies; current contract (docs/model_contract.md) assumed an exf extension that fills `runoff`.
-
-### Scientific or engineering impact
-Every implementation issue depends on this design; a wrong integration point would mean reworking all model code and tests.
-
-### Proposed action and acceptance
-Write docs/package_design.md (decisions with source citations, alternatives considered, integration diagram) and update docs/model_contract.md; review by two Richards (MITgcm integration correctness; physics of tendency-based T/S/tracer input vs surface flux). Acceptance: both approve; RUNOFF-004 and dependents re-anchored to the chosen design.
-
 ## UNRESOLVED: Survey MITgcm verification experiments as runoff testbeds and build the test matrix
 
 **Date Identified**: 2026-10-02T22:30:00Z
@@ -64,11 +45,10 @@ Defines which configurations prove the package works; without it testing stays a
 ### Proposed action and acceptance
 docs/verification_matrix.md gains a testbed table (experiment, grid, features, oracle available, cost) and a prioritized list of new input.<X> cases each tied to an issue. Acceptance: Richard confirms the feature classifications against the experiments' data files.
 
-## BLOCKED: Runoff package skeleton, registration and no-change regression
+## UNRESOLVED: Runoff package skeleton, registration and no-change regression
 
 **Date Identified**: 2026-10-02T22:30:00Z
-**Status**: Blocked
-**Blocked-By**: RUNOFF-010 — the package name, files and hooks come from the architecture design
+**Status**: Unresolved
 **UUID**: RUNOFF-012
 **Anchors**: MITgcm/model/src/packages_boot.F::<module>; MITgcm/model/src/packages_readparms.F::<module>
 
@@ -83,6 +63,8 @@ Base for all model code; must not change any existing result.
 
 ### Proposed action and acceptance
 Acceptance: all configured no-change experiments pass unchanged with the package compiled in and switched off and with it compiled out; testreport subset clean; Richard reviews standards conformance.
+
+Unblocked 2026-10-03: RUNOFF-010 closed. The package identity, file set and registration table are decision 1 of docs/package_design.md; the refusals that guard the static read belong in `RNF_READPARMS` or `RNF_INIT_FIXED` (`PACKAGES_INIT_FIXED` runs before `PACKAGES_CHECK`).
 
 ## BLOCKED: Temperature and salinity runoff contributions via tendency terms
 
@@ -102,7 +84,7 @@ Owner direction 2026-10-02 (owner away for several days): develop and test the n
 Core physics deliverable; wrong signs or double counting break heat/salt conservation.
 
 ### Proposed action and acceptance
-Acceptance: analytic single-cell tests (heat and salt budgets to 1e-12 relative), equivalence with exf runoftemp where both apply (cs32 input.seaice oracle), and budget closure in RUNOFF-016.
+Design (RUNOFF-010, docs/package_design.md): decision 3 gives the term `[(mT) − m_T·T_ref]·mass2rUnit/(drF·hFacC)` (and the S analogue) in `APPLY_FORCING_T/S` after the ICEFRONT calls, with `T_ref`/`S_ref` from the freshwater formulation table, the same-step `PmEpR` time level, and the `rhoConstFresh/rhoConst` mass convention. Acceptance: analytic single-cell tests for every row of the decision 3 tables (heat and salt budgets to 1e-12 relative); cell-by-cell agreement with the exf `runoftemp` term in ice-free cells (dense EXFroff/EXFroft/THETA vs package diagnostic); budget closure in RUNOFF-016.
 
 ## BLOCKED: Real versus virtual freshwater flux and free-surface options
 
@@ -164,6 +146,8 @@ The strongest independent oracle for the tendency-based contributions where no d
 ### Proposed action and acceptance
 Acceptance: checks pass to 1e-12 relative on lab_sea and cs32 sparse cases, single and MPI; deliberately broken fractions fail them.
 
+Adams-Bashforth note (RUNOFF-010 review, 2026-10-03): with forcing inside Adams-Bashforth (`temp_integrate.F:367-372`, `tracForcingOutAB ≠ 1`) the package term is extrapolated like the model's own forcing, so close heat, salt and tracer budgets in the sum over time, or run the check with `tracForcingOutAB=1` or a non-AB scheme.
+
 ## BLOCKED: Refusal and negative tests for invalid runoff input
 
 **Date Identified**: 2026-10-02T22:30:00Z
@@ -183,6 +167,8 @@ Silent acceptance of bad input is the highest-risk failure mode (dropped mass).
 
 ### Proposed action and acceptance
 Acceptance: one negative case per refusal, each stopping with the exact expected message; run by a script in tests/.
+
+Refusals added by the RUNOFF-010 design (docs/package_design.md, decisions 2, 3, 5, 6), each needing its own negative case: `target_cell` outside `0 ≤ g < nx·ny`, including a negative index (and `target_source` out of range); a target with `maskInC = 0` beyond an open boundary; a target under an ice shelf (`kTopC ≠ 0`); `useRNF` with `SHI_update_kTopC`; `exf_outscal_sflux ≠ 1`; a dense `runoftempfile`; `runoffconst ≠ 0`; `useRNF` without `useEXF` or without `ALLOW_RUNOFF`; a blank `RNF_file`; a build without NetCDF; a restart in synchronous nonlinear-free-surface mode whose time minus one step precedes the first record.
 
 ## BLOCKED: global_ocean.90x40x15 and global_oce_latlon sparse runoff testbeds
 
@@ -224,6 +210,10 @@ Regional models are a main use case; boundary handling must not interact badly w
 ### Proposed action and acceptance
 Acceptance: sparse=dense (or budget-checked) cases single and MPI.
 
+Open-boundary rule (RUNOFF-010 design, decision 5): a target with `maskInC = 0` is refused at init, naming the source, because `EmPmR` is multiplied by `maskInC` with `useRealFreshWaterFlux` (`external_forcing_surf.F:149-156`). Test a source in the first interior cell and the refusal beyond the boundary, and establish from `pkg/obcs/obcs_init_fixed.F` whether the boundary row itself has `maskInC = 0`.
+
+Carry forward from RUNOFF-010 review A: the loops that zero `maskInC` start at the open-boundary index itself (`obcs_init_fixed.F:79-87`, `296-301`), so a target on the boundary row is refused at init.
+
 ## BLOCKED: Runoff on grids with ice-shelf cavities (top wet level below k=1)
 
 **Date Identified**: 2026-10-02T22:30:00Z
@@ -233,7 +223,7 @@ Acceptance: sparse=dense (or budget-checked) cases single and MPI.
 **Anchors**: MITgcm/verification/isomip/input.icefront/data::<module>; MITgcm/pkg/shelfice/shelfice_init_depths.F::<module>
 
 ### Issue or research question
-Under ice shelves the top wet cell is kSurfC > 1; surface runoff must go to the top wet level, and icefront/shelfice and runoff must not double count. Use isomip (input.icefront, input) as testbed.
+Under ice shelves the top wet cell is kSurfC > 1. Design (RUNOFF-010, docs/package_design.md): decision 5: `SHELFICE_FORCING_SURF` zeroes `EmPmR` where `kTopC ≠ 0` (`shelfice_forcing_surf.F:57-69`), so phase 1 refuses under-shelf targets and serves sources at the ice front in open water through the surface path; under-shelf targets wait for the `addMass` path (RUNOFF-025). isomip does not compile exf and needs an exf test variant. Icefront/shelfice and runoff must not double count.
 
 ### Evidence
 Owner direction 2026-10-02 (owner away for several days): develop and test the new runoff program across many MITgcm configurations, with and without T, S and tracer contributions, in every time mode, as a robust, documented MITgcm package following MITgcm coding standards; T/S fluxes follow the shelfice/icefront tendency pattern.
@@ -243,6 +233,8 @@ Glacier runoff near ice fronts is a core use case; a k=1 assumption would put wa
 
 ### Proposed action and acceptance
 Acceptance: cases with sources at the ice front and in open water; budgets closed; land/dry-target refusal checked.
+
+Moving shelf edge (RUNOFF-010 design, decision 5): with `SHI_update_kTopC` (`ALLOW_SHELFICE_REMESHING` and `SHELFICEMassStepping`) `kTopC` is reset every step (`shelfice_thermodynamics.F:239-256`), so a target open at init can come under the shelf. `RNF_CHECK` refuses `useRNF` with `SHI_update_kTopC` until the `addMass` path exists (RUNOFF-025); test that refusal here.
 
 ## UNRESOLVED: LLC grid coverage
 
@@ -283,6 +275,8 @@ Production runs always restart; record state must be re-derived correctly.
 ### Proposed action and acceptance
 Acceptance: continuous vs restarted runs identical to the digit threshold for daily, monthly and yearly modes.
 
+Synchronous restart case (RUNOFF-010 review, 2026-10-03): add a restart without `staggerTimeStep` in nonlinear-free-surface, real-freshwater mode across a record boundary, with temperature present; the first step after the restart needs the package fields at `myTime − deltaT` (docs/package_design.md, decision 3, time level).
+
 ## BLOCKED: Thread, MPI and tile-layout independence (do_tst_2+2)
 
 **Date Identified**: 2026-10-02T22:30:00Z
@@ -322,6 +316,10 @@ Arctic and Greenland runoff enters ice-covered seas.
 
 ### Proposed action and acceptance
 Acceptance: lab_sea and cs32 seaice cases with budget checks; Richard confirms the seaice coupling path.
+
+Inherited residual (RUNOFF-010 review, 2026-10-03): under ice fraction `a` with `temp_EvPrRn` set, the exf cancellation of the model's `temp_EvPrRn` term is scaled by the open-water fraction, so the heat total is `(mT)μ + a·m(temp_EvPrRn − θ)μ`. The dense path has the same residual; record it in the budget check and consider an `RNF_CHECK` warning.
+
+Carry forward from RUNOFF-010 review B: the under-ice residual `a·m(temp_EvPrRn − θ)μ` was derived for `pkg/seaice` with `SEAICE_EXTERNAL_FLUXES` only; under `pkg/thsice` the ice-covered share comes from thsice itself, so the residual may be absent. Measure both packages.
 
 ## BLOCKED: Subsurface discharge at depth (target_level > 1, schema 1.1)
 
@@ -383,6 +381,8 @@ Required for an upstream PR.
 ### Proposed action and acceptance
 Acceptance: a scripted lint of new files passes; reviewer checklist complete.
 
+Carry forward from RUNOFF-010 review B: the previous-step field set of the time-level rule is state carried between steps. It needs store directives like the exf record fields, or must be recomputed from model time each step. Review A: once surface levels differ between columns (RUNOFF-025), 2D state-dependent diagnostics need one fill per step.
+
 ## BLOCKED: Upstream readiness: full testreport master vs branch, MPI and 2+2
 
 **Date Identified**: 2026-10-02T22:30:00Z
@@ -423,6 +423,44 @@ Mismatched record selection between flux and T/S would mix the wrong properties.
 ### Proposed action and acceptance
 Acceptance: lab_sea cases per mode with T/S/tracers; direct timing checks extended to all series.
 
+## UNRESOLVED: exf range check stops point-source runoff above 1e-6 m/s
+
+**Date Identified**: 2026-10-03T04:30:00Z
+**Status**: Unresolved
+**UUID**: RUNOFF-030
+**Anchors**: MITgcm/pkg/exf/exf_check_range.F::<module>; docs/package_design.md::<module>
+
+### Issue or research question
+`EXF_CHECK_RANGE` stops the run if `runoff` exceeds 1e-6 m/s on a wet cell, and `useExfCheckRange` defaults to true. A 1000 m³/s river into one 2 km cell is 2.5e-4 m/s. Decide between documenting `useExfCheckRange=.FALSE.`, skipping the runoff upper bound when `useRNF` is true (one more guarded exf line), or a package-specific bound.
+
+### Evidence
+RUNOFF-010 design, decision 2: `exf_check_range.F:175-191`, `211-216`; default `exf_readparms.F:307`.
+
+### Scientific or engineering impact
+Without a decision every realistic point-source configuration on a fine grid stops at the first step, or users disable all exf range checks.
+
+### Proposed action and acceptance
+Recommend skipping only the runoff upper bound when `useRNF` (other exf checks stay), with a package-side sanity bound reported in the summary. Acceptance: a lab_sea case with a point source above 1e-6 m/s runs with default `useExfCheckRange`; the dense path behaviour is unchanged.
+
+## UNRESOLVED: KPP and surface diagnostics do not see tendency-based runoff heat and salt
+
+**Date Identified**: 2026-10-03T04:30:00Z
+**Status**: Unresolved
+**UUID**: RUNOFF-031
+**Anchors**: MITgcm/pkg/kpp/kpp_calc.F::<module>; MITgcm/model/src/diags_oceanic_surf_flux.F::<module>
+
+### Issue or research question
+The package T/S terms go to `gT`/`gS`, not `surfaceForcingT/S`, so the KPP surface buoyancy flux and non-local transport and the `TFLUX`/`SFLUX` diagnostics omit them (the freshwater buoyancy of the volume still reaches KPP through `EmPmR`). Quantify the effect and decide whether surface targets should also feed `surfaceForcingT/S` (an `EXTERNAL_FORCING_SURF`-end hook, as `SHELFICE_FORCING_SURF` does) instead of, or as well as, the tendency term.
+
+### Evidence
+RUNOFF-010 design, decision 3, comparison point 2-3: `kpp_calc.F:419-421`, `kpp_transport_t.F:79`, `diags_oceanic_surf_flux.F:116-152`.
+
+### Scientific or engineering impact
+Mixed-layer response to warm or cold river water could differ from the dense exf path; users comparing TFLUX budgets would see unexplained residuals.
+
+### Proposed action and acceptance
+Run a KPP configuration (e.g. lab_sea or cs32 with KPP) with a strongly warm/cold source both ways; report the difference in mixed-layer depth and surface T. Acceptance: a documented decision with the measured effect, reviewed by Richard; the package design updated.
+
 ## UNRESOLVED: Python dense-to-sparse runoff converter
 
 **Date Identified**: 2026-09-29T21:30:00Z
@@ -446,16 +484,15 @@ Put the tool under `tools/runoff/`, with pytest tests under `tests/`. Acceptance
 
 Unblocked 2026-09-30: RUNOFF-001 closed; schema 1.0 is approved (docs/runoff_schema.md), and MITgcmutils.runoff.check validates files against it.
 
-## BLOCKED: exf sparse runoff reader, per-tile lists and global fraction check
+## UNRESOLVED: pkg/rnf sparse runoff reader, per-tile lists and global fraction check
 
 **Date Identified**: 2026-09-29T21:30:00Z
-**Status**: Blocked
-**Blocked-By**: RUNOFF-010 — the reader is implemented in the package chosen by the architecture design
+**Status**: Unresolved
 **UUID**: RUNOFF-004
-**Anchors**: MITgcm/pkg/exf/exf_readparms.F::<module>; MITgcm/pkg/profiles/profiles_init_fixed.F::<module>
+**Anchors**: MITgcm/pkg/exf/exf_getffields.F::<module>; MITgcm/pkg/profiles/profiles_init_fixed.F::<module>
 
 ### Issue or research question
-Implement init: new `data.exf` parameters, a master-thread NetCDF read of the static arrays, the global index → local `(i,j,k,bi,bj)` mapping on every grid (including exch2/LLC and blank tiles), per-tile source lists, a `GLOBAL_SUM` fraction check (1e-6), and refusal of a land cell, an unknown tracer, or sparse + dense both set. Then fill `runoff` = Σ flux·frac/rA.
+Implement init in the new package `pkg/rnf` (decisions 1, 2, 6, 10 of docs/package_design.md): `data.rnf` parameters (`RNF_PARM01`), the `HAVE_NETCDF` guard, a master-thread NetCDF read of the static arrays, the global index → local `(i,j,k,bi,bj)` mapping on every grid (including exch2/LLC and blank tiles), per-tile source lists, a `GLOBAL_SUM` fraction check (1e-6), and refusal of a land cell, an unknown tracer, or sparse + dense both set. Then assign exf `runoff` = Σ flux·frac/rA each step from the one guarded `RNF_EXF_RUNOFF` call in `exf_getffields.F`, and refuse a non-blank `runofffile`/`runoftempfile`, non-zero `runoffconst`, missing `useEXF`/`ALLOW_RUNOFF`, and targets under an ice shelf (`kTopC ≠ 0`).
 
 ### Evidence
 Design decisions from the project owner, recorded in `esx/project_profile.md` and `docs/model_contract.md` (2026-09-29). No code exists yet.
@@ -464,6 +501,8 @@ Design requirement (2026-09-30): map `target_cell` to owned points with the same
 
 Precision note from RUNOFF-003 review (Richard, 2026-10-02): the oracle pass criterion is 10 matching digits on `cg2d_init_res`, and a float32-level (6e-8) change in applied runoff moves it by about 6e-10. Sparse files for the oracle tests must therefore reproduce the dense m/s values to better than 1e-9 relative: store `runoff_flux` as float64 (flux = dense·rA computed in float64), not float32.
 
+Design (RUNOFF-010, docs/package_design.md): mapping uses the `mdsio_read_field.F:399-430` placement arithmetic; the package skeleton (RUNOFF-012) is the first step of this work.
+
 ### Scientific or engineering impact
 This is the core feature. Mapping errors silently lose mass.
 
@@ -471,6 +510,8 @@ This is the core feature. Mapping errors silently lose mass.
 Acceptance: the lab_sea constant case, sparse = dense, single-process and MPI; the negative tests stop with the expected messages; all no-change experiments pass.
 
 Unblocked 2026-09-30: RUNOFF-001 closed; schema 1.0 is approved (docs/runoff_schema.md), and MITgcmutils.runoff.check validates files against it.
+
+Unblocked 2026-10-03: RUNOFF-010 closed (docs/package_design.md). Do RUNOFF-012 (package skeleton) first. Carry forward from review A: `RNF_CHECK` must test `useShelfIce .AND. SHI_update_kTopC` under `ALLOW_SHELFICE`, because `SHELFICE_READPARMS` returns before setting the default when shelfice is unused (`shelfice_readparms.F:79-87`, `103-107`). Carry forward from review B: the contract bullet "a source without a temperature contributes at the surface water temperature" needs the qualifier "except in a build without `ALLOW_ATM_TEMP` that sets `temp_EvPrRn`, where it enters at `temp_EvPrRn`". Also label the time-level row "start at iteration 0" rather than "cold start". Review A also noted that the time-level table assumes `exactConserv`, which always holds with a nonlinear free surface (`config_check.F:725`).
 
 ## BLOCKED: Sparse runoff time handling: interpolation, hold-exact, repeat cycles, yearly files
 
@@ -494,7 +535,7 @@ Time off-by-one errors at month or year boundaries are a main scientific risk.
 ### Proposed action and acceptance
 Acceptance: the lab_sea daily, monthly, monthly-repeating and yearly cases match their dense references (single-process and MPI), and the hold-exact direct check passes.
 
-## BLOCKED: cs32 sparse-runoff oracle (exch2, runoff temperature)
+## BLOCKED: cs32 sparse-runoff oracle (exch2 volume path; runoff temperature cell-by-cell)
 
 **Date Identified**: 2026-09-29T21:30:00Z
 **Status**: Blocked
@@ -512,7 +553,7 @@ Convert `core_rnof_1_cs32.bin` and `runoff_temperature.bin`, and add cs32 `input
 Checks exch2 index mapping, sources spanning faces, tiles and processes, and runoff temperature.
 
 ### Proposed action and acceptance
-Acceptance: matches `results/output.icedyn.txt` / `output.seaice.txt` to the digit threshold, single-process and `-mpi 4`.
+Design (RUNOFF-010, docs/package_design.md): runoff temperature enters as a tendency term, not through exf `runoftemp`, and differs from the exf term under sea ice (exf scales it by open-water fraction, `seaice_growth.F:956-957`). The volume oracle stays: `input.icedyn` and a variant of `input.seaice` without runoff temperature must match the dense references. Runoff temperature is checked cell by cell (dense `EXFroff`, `EXFroft`, `THETA` vs the package heat diagnostic) in ice-free cells. Acceptance: volume-only cases match their dense references to the digit threshold, single-process and `-mpi 4`.
 
 ## BLOCKED: Per-record parallel I/O strategy at 2 km scale
 
@@ -534,22 +575,23 @@ Sets production feasibility. Phase 1 correctness doesn't depend on it.
 ### Proposed action and acceptance
 Phase 1 default: every process reads the full record. Owner to decide whether a scatter design is needed before the upstream PR.
 
-## BLOCKED: Runoff salinity and passive-tracer plumbing
+## BLOCKED: Passive-tracer runoff contributions (ptracers tendency term)
 
 **Date Identified**: 2026-09-29T21:30:00Z
 **Status**: Blocked
-**Blocked-By**: OWNER-DECISION — approve the salinity/tracer design
+**Blocked-By**: RUNOFF-013 — the tracer term reuses the T/S tendency routine and its tests
 **UUID**: RUNOFF-008
-**Anchors**: MITgcm/pkg/exf/exf_mapfields.F::<module>; docs/model_contract.md#each-time-step
+**Anchors**: MITgcm/pkg/ptracers/ptracers_apply_forcing.F::<module>; docs/package_design.md::<module>
 
 ### Issue or research question
-exf has no runoff salinity or runoff tracer fields. Per-source S (default 0) and tracer concentrations, matched to ptracers by name, need a path into the salt flux and the `pkg/ptracers` surface forcing.
+Apply per-source tracer concentrations (matched exactly to `PTRACERS_names` at init) as a tendency term in `PTRACERS_APPLY_FORCING`, beside `GCHEM_ADD_TENDENCY`, with the reference value the ptracers freshwater treatment already gives the water (decision 4 of docs/package_design.md).
 
 ### Evidence
-Design decisions from the project owner, recorded in `esx/project_profile.md` and `docs/model_contract.md` (2026-09-29). No code exists yet.
+The owner decision this issue waited on was given 2026-10-02: T, S and tracer input follows the shelfice/icefront tendency pattern (esx/project_profile.md). Salinity moved to RUNOFF-013. Hook: `ptracers_apply_forcing.F:71-78`.
 
 ### Scientific or engineering impact
-Required for glacier or brackish sources and for tracer studies. Wrong plumbing breaks salt and tracer budgets.
+Required for tracer studies (dye, nutrients, isotopes). Wrong reference values break tracer budgets.
 
 ### Proposed action and acceptance
-Proposal: fill new 2D exf fields (runoff salinity, runoff tracers) with per-cell flux-weighted means (the combination rule was decided 2026-09-29), and add their contribution where exf and ptracers apply freshwater. Owner to confirm where these hook into the salt and ptracers forcing. Acceptance: a budget check (Σ S·flux) and no-change runs unchanged.
+Acceptance: analytic single-cell tracer budget to 1e-12 relative; a missing tracer in the file adds nothing; an unknown tracer name is refused at init; budget closure (RUNOFF-016) with at least two tracers; no-change runs unchanged.
+

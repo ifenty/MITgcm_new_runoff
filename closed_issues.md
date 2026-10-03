@@ -225,3 +225,40 @@ Keep a generator script (`gendata.py`) in each input directory. Runs span ≥ 1 
 ### Gate acceptance
 
 Accepted by `loop_gate.py --check-done` at 2026-10-02T21:39:06.713663+00:00 for iteration 2026-10-02T16:10:58.211518+00:00. Six lab_sea verification cases (input.rnof_const, rnof_daily, rnof_month, rnof_month1, rnof_clim, rnof_yearly) now exercise the existing dense exf runoffFile path on a lat-lon grid in every timing mode, with committed references, a generator, and a direct timing check that matches the applied runoff to the input records to 1e-12, including interpolated and year-wrap samples. Each case passes single-process and -mpi 2 to 16 digits; sources straddle the tile and MPI process boundaries. No Fortran changed; the scientific suite passes.
+
+## RESOLVED: Runoff package architecture and MITgcm integration design
+
+**Date Identified**: 2026-10-02T22:30:00Z
+**Status**: Resolved
+**UUID**: RUNOFF-010
+**Anchors**: MITgcm/model/src/apply_forcing.F::<module>; MITgcm/pkg/icefront/icefront_tendency_apply.F::<module>; docs/model_contract.md::<module>
+
+### Issue or research question
+Decide how sparse runoff enters MITgcm as a package: package name and files; CPP option header and runtime switch; namelist file; where it plugs in (packages_boot/readparms/init_fixed/check, forcing load each step, and the T/S/tracer tendency hooks in apply_forcing.F next to SHELFICE_FORCING_T and ICEFRONT_TENDENCY_APPLY_T/S); how the volume flux relates to exf runoff (fill exf `runoff` vs own EmPmR contribution), real vs virtual freshwater flux; NetCDF dependency and build guards; diagnostics; TAF considerations.
+
+### Evidence
+Owner direction 2026-10-02 (owner away for several days): develop and test the new runoff program across many MITgcm configurations, with and without T, S and tracer contributions, in every time mode, as a robust, documented MITgcm package following MITgcm coding standards; T/S fluxes follow the shelfice/icefront tendency pattern. Sources: model/src/apply_forcing.F lines 705-713 and 937-945 call SHELFICE_FORCING_T/S and ICEFRONT_TENDENCY_APPLY_T/S; pkg/icefront/icefront_tendency_apply.F adds per-cell tendencies; current contract (docs/model_contract.md) assumed an exf extension that fills `runoff`.
+
+### Scientific or engineering impact
+Every implementation issue depends on this design; a wrong integration point would mean reworking all model code and tests.
+
+### Proposed action and acceptance
+Write docs/package_design.md (decisions with source citations, alternatives considered, integration diagram) and update docs/model_contract.md; review by two Richards (MITgcm integration correctness; physics of tendency-based T/S/tracer input vs surface flux). Acceptance: both approve; RUNOFF-004 and dependents re-anchored to the chosen design.
+
+### Resolution (2026-10-03)
+docs/package_design.md records the architecture of the new package `pkg/rnf`: ten decisions with alternatives, reasons and MITgcm source citations.
+- **Volume:** goes through the exf `runoff` array, from one guarded call in `exf_getffields.F`.
+- **T, S and tracers:** enter as tendency terms in `APPLY_FORCING_T/S` and `PTRACERS_APPLY_FORCING`. The reference-value algebra is given for every freshwater formulation, with the time-level rule.
+- **Refusals:**
+  - a target cell out of range;
+  - a land, `maskInC = 0` or under-shelf target;
+  - `SHI_update_kTopC`;
+  - `exf_outscal_sflux ≠ 1`;
+  - a dense runoff file or runoff constant set.
+- **Reading and records:** `HAVE_NETCDF` guards, mdsio placement arithmetic, exf record routines reused, no pickup, fixed-size TAF arrays, `data.rnf`.
+
+Two independent Richard reviews (A: MITgcm integration; B: physics and algebra) rejected round 0 with nine must-fix items. Both approved round 1 with no must-fix items. Their witnesses:
+- A: placement on 109 layouts and 2.7 M cells, with the off-grid defect reproduced and then fixed;
+- B: exact-arithmetic budget for 108 formulation cases, a negative control, and a cold-start/restart time-level witness.
+
+Design only; no model code changed. Follow-ups: RUNOFF-030 (exf range check) and RUNOFF-031 (KPP visibility).
