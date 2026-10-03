@@ -1,6 +1,7 @@
 # Runoff package design: architecture and MITgcm integration
 
-> **Status: proposed design, not yet implemented and not yet reviewed.** This is
+> **Status: reviewed design (RUNOFF-010, two independent reviews, approved
+> 2026-10-03); implementation in progress (skeleton: RUNOFF-012).** This is
 > the decision record for RUNOFF-010. Every statement about existing MITgcm
 > behavior was read from the live source in `MITgcm/` (branch `new_runoff`) and
 > carries a `file:line` citation. Nothing here was established by running the
@@ -603,7 +604,7 @@ RunOff" (`pkg/ptracers/PTRACERS_PARAMS.h:17`) and defaults to unset
 **Alternatives.** Add to `surfaceForcingPTr` in `PTRACERS_FORCING_SURF`; or add a
 tendency in `PTRACERS_APPLY_FORCING`.
 
-**Choice.** `CALL RNF_TENDENCY_APPLY_PTR( gPtracer, k, bi, bj, iTracer, … )` in
+**Choice.** `CALL RNF_TENDENCY_APPLY_PTR( gPtracer, iMin, iMax, jMin, jMax, k, bi, bj, iTracer, … )` in
 `PTRACERS_APPLY_FORCING`, beside the `GCHEM` call, under `ALLOW_RNF` and
 `useRNF`. For a tracer `n` that has a file variable:
 

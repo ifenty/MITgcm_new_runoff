@@ -45,26 +45,10 @@ Defines which configurations prove the package works; without it testing stays a
 ### Proposed action and acceptance
 docs/verification_matrix.md gains a testbed table (experiment, grid, features, oracle available, cost) and a prioritized list of new input.<X> cases each tied to an issue. Acceptance: Richard confirms the feature classifications against the experiments' data files.
 
-## UNRESOLVED: Runoff package skeleton, registration and no-change regression
-
-**Date Identified**: 2026-10-02T22:30:00Z
-**Status**: Unresolved
-**UUID**: RUNOFF-012
-**Anchors**: MITgcm/model/src/packages_boot.F::<module>; MITgcm/model/src/packages_readparms.F::<module>
-
-### Issue or research question
-Create the package (options header, common block header, readparms, init_fixed, check, summary output, diagnostics_init) and register it in model/src package hooks and the package dependency files, with a runtime on/off switch; the package does nothing yet.
-
-### Evidence
-Owner direction 2026-10-02 (owner away for several days): develop and test the new runoff program across many MITgcm configurations, with and without T, S and tracer contributions, in every time mode, as a robust, documented MITgcm package following MITgcm coding standards; T/S fluxes follow the shelfice/icefront tendency pattern.
-
-### Scientific or engineering impact
-Base for all model code; must not change any existing result.
-
-### Proposed action and acceptance
-Acceptance: all configured no-change experiments pass unchanged with the package compiled in and switched off and with it compiled out; testreport subset clean; Richard reviews standards conformance.
-
-Unblocked 2026-10-03: RUNOFF-010 closed. The package identity, file set and registration table are decision 1 of docs/package_design.md; the refusals that guard the static read belong in `RNF_READPARMS` or `RNF_INIT_FIXED` (`PACKAGES_INIT_FIXED` runs before `PACKAGES_CHECK`).
+Carry forward from RUNOFF-012:
+- Five verification experiments compile their own `code/` copy of a routine this package hooks, and so will not get the hooks: `tutorial_global_oce_latlon` (ptracers_apply_forcing.F) and four with a local apply_forcing.F, listed in docs/verification_matrix.md. Exclude them as testbeds, or patch their copies in a test variant.
+- cs32 `input.in_p` already runs dense exf runoff and runoff temperature in pressure coordinates, with a reference.
+- `obcs_ctrl` has only adjoint inputs.
 
 ## BLOCKED: Temperature and salinity runoff contributions via tendency terms
 
@@ -126,6 +110,8 @@ Needed for every verification check and for users.
 ### Proposed action and acceptance
 Acceptance: diagnostics listed in available_diagnostics, filled each step, values equal the applied fields (direct check).
 
+Scope decision from RUNOFF-012: the skeleton has no `rnf_diagnostics_init.F`. Decision 1 has `RNF_INIT_FIXED` call it, so RUNOFF-015 adds both the routine and the call.
+
 ## BLOCKED: Volume, heat, salt and tracer budget closure checks
 
 **Date Identified**: 2026-10-02T22:30:00Z
@@ -169,6 +155,10 @@ Silent acceptance of bad input is the highest-risk failure mode (dropped mass).
 Acceptance: one negative case per refusal, each stopping with the exact expected message; run by a script in tests/.
 
 Refusals added by the RUNOFF-010 design (docs/package_design.md, decisions 2, 3, 5, 6), each needing its own negative case: `target_cell` outside `0 ≤ g < nx·ny`, including a negative index (and `target_source` out of range); a target with `maskInC = 0` beyond an open boundary; a target under an ice shelf (`kTopC ≠ 0`); `useRNF` with `SHI_update_kTopC`; `exf_outscal_sflux ≠ 1`; a dense `runoftempfile`; `runoffconst ≠ 0`; `useRNF` without `useEXF` or without `ALLOW_RUNOFF`; a blank `RNF_file`; a build without NetCDF; a restart in synchronous nonlinear-free-surface mode whose time minus one step precedes the first record.
+
+Carry forward from RUNOFF-012:
+- Configure the cs32 case (`useRNF=.TRUE.` in input.seaice) that triggers both the `runofffile` and `runoftempfile` refusals, giving "2 fatal error(s)". lab_sea cannot test `runoftempfile` because `EXF_CHECK` stops first without `ALLOW_RUNOFTEMP`.
+- Refusal branches compiled but never executed: `ALLOW_RUNOFF` undefined, `HAVE_NETCDF` undefined, `useShelfIce` with `SHI_update_kTopC`, and `USE_OLD_EXTERNAL_FORCING`.
 
 ## BLOCKED: global_ocean.90x40x15 and global_oce_latlon sparse runoff testbeds
 
@@ -383,6 +373,10 @@ Acceptance: a scripted lint of new files passes; reviewer checklist complete.
 
 Carry forward from RUNOFF-010 review B: the previous-step field set of the time-level rule is state carried between steps. It needs store directives like the exf record fields, or must be recomputed from model time each step. Review A: once surface levels differ between columns (RUNOFF-025), 2D state-dependent diagnostics need one fill per step.
 
+Carry forward from RUNOFF-012:
+- The lint must grep for `RUNOFF-[0-9]` and the development-repo URL. Stub comments, one run-time message and README.md carry them and must be swept as the stubs are filled.
+- The TAF list files (`rnf_ad_diff.list`, `rnf_ad.flow`) were deferred here because they need a TAF build.
+
 ## BLOCKED: Upstream readiness: full testreport master vs branch, MPI and 2+2
 
 **Date Identified**: 2026-10-02T22:30:00Z
@@ -512,6 +506,11 @@ Acceptance: the lab_sea constant case, sparse = dense, single-process and MPI; t
 Unblocked 2026-09-30: RUNOFF-001 closed; schema 1.0 is approved (docs/runoff_schema.md), and MITgcmutils.runoff.check validates files against it.
 
 Unblocked 2026-10-03: RUNOFF-010 closed (docs/package_design.md). Do RUNOFF-012 (package skeleton) first. Carry forward from review A: `RNF_CHECK` must test `useShelfIce .AND. SHI_update_kTopC` under `ALLOW_SHELFICE`, because `SHELFICE_READPARMS` returns before setting the default when shelfice is unused (`shelfice_readparms.F:79-87`, `103-107`). Carry forward from review B: the contract bullet "a source without a temperature contributes at the surface water temperature" needs the qualifier "except in a build without `ALLOW_ATM_TEMP` that sets `temp_EvPrRn`, where it enters at `temp_EvPrRn`". Also label the time-level row "start at iteration 0" rather than "cold start". Review A also noted that the time-level table assumes `exactConserv`, which always holds with a nonlinear free surface (`config_check.F:725`).
+
+Carry forward from RUNOFF-012:
+- Remove the skeleton "reader not implemented" stop at the end of `RNF_CHECK`.
+- A refusal detected on one tile only (land, maskInC, under-shelf) must reach every rank before the stop. Count it, `GLOBAL_SUM` the count, then stop on all ranks; otherwise `ALL_PROC_DIE` hangs the other ranks (review B).
+- `RNF_SIZE.h` holds five placeholder bounds from decision 9, to be set here.
 
 ## BLOCKED: Sparse runoff time handling: interpolation, hold-exact, repeat cycles, yearly files
 

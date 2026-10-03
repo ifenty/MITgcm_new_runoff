@@ -88,3 +88,26 @@ Three documented non-detections remain for constructed grids (lone triangle, ape
 
 ### Recommended action
 RUNOFF-004 (the Fortran reader) must take tile placement from exch2/mdsio variables, never from geometry. Test any layout logic with blank tiles.
+
+## LESSON: Check build link targets before claiming coverage; serialize oracle runs per experiment [LL-005]
+
+**Date Identified**: 2026-10-03T07:00:00Z
+**Confidence**: supported
+
+### Lesson and applicability
+A verification experiment can carry its own copy of a model or package routine in `code/`. genmake2 then links that copy into the build, and the edited routine in `model/src` or `pkg/` is never compiled there. Coverage claims must rest on the build's link target, not on the package being "compiled and used". Separately, all input variants of one experiment share its build directory, so concurrent oracle runs of the same experiment overwrite each other's build.
+
+### Evidence
+RUNOFF-012:
+- **The false claim:** Richard B (round 0) proposed `tutorial_global_oce_latlon` as compiled-out ptracers coverage. Bob found that `build_esx/ptracers_apply_forcing.F` links to `../code/ptracers_apply_forcing.F`. Both reviewers confirmed this in round 1, and `tutorial_advection_in_gyre` (linked to `pkg/ptracers`) replaced it.
+- **Scope of the trap:** a search of every `verification/*/code*` directory found five experiments with local copies of hooked routines.
+- **The build collision:** Richard A (round 0) discarded his first evidence after running the focused suite and `lab_sea input -mpi 2` at the same time.
+
+### Limits and counterexamples
+A local copy that contains the same hook would be covered. The check is per routine and per experiment.
+
+### Recommended action
+- Cite coverage with the link target: `ls -l build/<file>.F`.
+- Keep a list of experiments with local copies in docs/verification_matrix.md.
+- Run oracle commands for a given experiment sequentially.
+

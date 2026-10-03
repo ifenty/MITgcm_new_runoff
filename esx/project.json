@@ -1,10 +1,20 @@
 {
   "version": 1,
   "project_id": "MITGCM-NEW-RUNOFF",
-  "project_name": "MITgcm new runoff: sparse source-based runoff forcing in pkg/exf",
-  "mission": "Add a sparse, source-based NetCDF runoff input (volume flux in m3/s, optional temperature, salinity and passive tracers, split among ocean cells by fractions) to MITgcm pkg/exf, working on all grids with per-tile storage, reproducing dense-runoffFile results, for an eventual upstream PR.",
+  "project_name": "MITgcm new runoff: sparse source-based runoff forcing in pkg/rnf (feeding pkg/exf)",
+  "mission": "Add a sparse, source-based NetCDF runoff input (volume flux in m3/s, optional temperature, salinity and passive tracers, split among ocean cells by fractions) to MITgcm as the new package pkg/rnf feeding pkg/exf, working on all grids with per-tile storage, reproducing dense-runoffFile results, for an eventual upstream PR.",
   "source_paths": [
     "MITgcm/pkg/exf",
+    "MITgcm/model/inc/PARAMS.h",
+    "MITgcm/model/src/apply_forcing.F",
+    "MITgcm/model/src/load_fields_driver.F",
+    "MITgcm/model/src/packages_boot.F",
+    "MITgcm/model/src/packages_check.F",
+    "MITgcm/model/src/packages_init_fixed.F",
+    "MITgcm/model/src/packages_init_variables.F",
+    "MITgcm/model/src/packages_readparms.F",
+    "MITgcm/pkg/pkg_depend",
+    "MITgcm/pkg/ptracers/ptracers_apply_forcing.F",
     "MITgcm/utils/python/MITgcmutils/MITgcmutils/runoff",
     "MITgcm/utils/python/MITgcmutils/setup.py"
   ],
@@ -12,6 +22,7 @@
     "tests"
   ],
   "configuration_paths": [
+    "MITgcm/pkg/rnf",
     "MITgcm/verification/global_ocean.cs32x15/code",
     "MITgcm/verification/global_ocean.cs32x15/input.icedyn",
     "MITgcm/verification/global_ocean.cs32x15/input.seaice",
@@ -32,6 +43,8 @@
     "MITgcm/verification/global_ocean.cs32x15/output_esx_input.icedyn",
     "MITgcm/verification/global_ocean.cs32x15/output_esx_input.seaice",
     "MITgcm/verification/global_ocean.cs32x15/output_esx_input.seaice_mpi4",
+    "MITgcm/verification/isomip/build_esx",
+    "MITgcm/verification/isomip/output_esx_input",
     "MITgcm/verification/lab_sea/build_esx",
     "MITgcm/verification/lab_sea/build_esx_mpi2",
     "MITgcm/verification/lab_sea/output_esx_input",
@@ -53,7 +66,9 @@
     "MITgcm/verification/seaice_itd/build_esx",
     "MITgcm/verification/seaice_itd/output_esx_input",
     "MITgcm/verification/seaice_obcs/build_esx",
-    "MITgcm/verification/seaice_obcs/output_esx_input"
+    "MITgcm/verification/seaice_obcs/output_esx_input",
+    "MITgcm/verification/tutorial_advection_in_gyre/build_esx",
+    "MITgcm/verification/tutorial_advection_in_gyre/output_esx_input"
   ],
   "external_inputs": [],
   "mirrored_paths": [],
@@ -115,6 +130,10 @@
         "input"
       ],
       [
+        "{python}",
+        "tests/rnf/refusal_check.py"
+      ],
+      [
         "tests/mitgcm_oracle.sh",
         "global_ocean.cs32x15",
         "input.seaice"
@@ -151,10 +170,20 @@
         "input"
       ],
       [
+        "{python}",
+        "tests/rnf/refusal_check.py"
+      ],
+      [
         "tests/mitgcm_oracle.sh",
         "lab_sea",
         "input",
         "-mpi",
+        "2"
+      ],
+      [
+        "{python}",
+        "tests/rnf/refusal_check.py",
+        "--mpi",
         "2"
       ],
       [
@@ -257,6 +286,16 @@
       [
         "tests/mitgcm_oracle.sh",
         "seaice_itd",
+        "input"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "isomip",
+        "input"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "tutorial_advection_in_gyre",
         "input"
       ]
     ]

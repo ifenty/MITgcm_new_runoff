@@ -262,3 +262,41 @@ Two independent Richard reviews (A: MITgcm integration; B: physics and algebra) 
 - B: exact-arithmetic budget for 108 formulation cases, a negative control, and a cold-start/restart time-level witness.
 
 Design only; no model code changed. Follow-ups: RUNOFF-030 (exf range check) and RUNOFF-031 (KPP visibility).
+
+## RESOLVED: Runoff package skeleton, registration and no-change regression
+
+**Date Identified**: 2026-10-02T22:30:00Z
+**Status**: Resolved
+**UUID**: RUNOFF-012
+**Anchors**: MITgcm/model/src/packages_boot.F::<module>; MITgcm/model/src/packages_readparms.F::<module>
+
+### Issue or research question
+Create the package (options header, common block header, readparms, init_fixed, check, summary output, diagnostics_init) and register it in model/src package hooks and the package dependency files, with a runtime on/off switch; the package does nothing yet.
+
+### Evidence
+Owner direction 2026-10-02 (owner away for several days): develop and test the new runoff program across many MITgcm configurations, with and without T, S and tracer contributions, in every time mode, as a robust, documented MITgcm package following MITgcm coding standards; T/S fluxes follow the shelfice/icefront tendency pattern.
+
+### Scientific or engineering impact
+Base for all model code; must not change any existing result.
+
+### Proposed action and acceptance
+Acceptance: all configured no-change experiments pass unchanged with the package compiled in and switched off and with it compiled out; testreport subset clean; Richard reviews standards conformance.
+
+Unblocked 2026-10-03: RUNOFF-010 closed. The package identity, file set and registration table are decision 1 of docs/package_design.md; the refusals that guard the static read belong in `RNF_READPARMS` or `RNF_INIT_FIXED` (`PACKAGES_INIT_FIXED` runs before `PACKAGES_CHECK`).
+
+### Resolution (2026-10-03)
+`MITgcm/pkg/rnf` exists as a skeleton:
+- **Files:** `RNF_OPTIONS.h`, `RNF_SIZE.h` and `RNF.h`; `rnf_readparms`, `rnf_check` and `rnf_summary`; init stubs; forcing and tendency stubs with final argument lists; a README.
+- **Registration:** PARAMS.h, the packages_* routines, guarded hooks in load_fields_driver.F, exf_getffields.F, apply_forcing.F and ptracers_apply_forcing.F, and pkg_depend `rnf +exf`.
+- **Namelist:** `data.rnf` / `RNF_PARM01`.
+- **Refusals:** every refusal that needs no runoff file, plus a "reader not implemented" stop for RUNOFF-004 to remove.
+
+rnf is compiled into lab_sea and cs32.
+
+**No-change evidence:**
+- Compiled in and switched off: lab_sea (±MPI), cs32 input.seaice (±MPI), input.icedyn and input.in_p, and dense lab_sea cases all PASS. A same-platform A/B on cs32 input.in_p is byte-identical on all 48 output files.
+- Compiled out: isomip, 1D_ocean_ice_column, seaice_obcs, offline_exf_seaice, seaice_itd, global_oce_latlon input.yearly, global_ocean.90x40x15 and tutorial_advection_in_gyre (ptracers) all PASS.
+- A 2-thread OpenMP run passes.
+- tests/rnf/refusal_check.py: 7 of 7, single and 2 processes. It judges each process on its own files and was mutation-tested by both reviewers.
+
+**Reviews:** Richard A approved; Richard B rejected round 0 on one record (ptracers compiled-out coverage), and both approved round 1. NetCDF is available in the Docker build (HAVE_NETCDF, -lnetcdff).

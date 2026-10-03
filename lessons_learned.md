@@ -15,3 +15,6 @@ Keep each entry short and independently useful; load detailed evidence when its 
   Trigger: writing or reviewing schema/contract text that describes model behavior.
 - [LL-004] Do not infer an MITgcm grid's kind (single lat-lon block vs exch2 cubed-sphere/LLC) from array geometry; blank tiles and LLC lat-lon-like facets defeat every heuristic. Have the user declare it, or read it from run metadata such as data.exch2, and test with blank-tile layouts. Strongly supported (RUNOFF-009 rounds 1-4).
   Trigger: any tool or reader that needs neighbour or layout information from grid output.
+- [LL-005] Before claiming that a verification experiment exercises an edited MITgcm routine, check the build link target: experiments with their own `code/` copy compile that copy, not the edited file. Run oracle commands for one experiment one at a time, because every input variant shares its build directory. Supported (RUNOFF-012).
+  Trigger: citing an experiment as coverage of edited model or package code, or running oracle tests in parallel.
+
