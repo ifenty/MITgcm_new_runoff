@@ -25,6 +25,7 @@
     "MITgcm/pkg/rnf",
     "MITgcm/verification/global_ocean.cs32x15/code",
     "MITgcm/verification/global_ocean.cs32x15/input.icedyn",
+    "MITgcm/verification/global_ocean.cs32x15/input.rnof_sp_icedyn",
     "MITgcm/verification/global_ocean.cs32x15/input.seaice",
     "MITgcm/verification/lab_sea/code",
     "MITgcm/verification/lab_sea/input",
@@ -33,6 +34,7 @@
     "MITgcm/verification/lab_sea/input.rnof_daily",
     "MITgcm/verification/lab_sea/input.rnof_month",
     "MITgcm/verification/lab_sea/input.rnof_month1",
+    "MITgcm/verification/lab_sea/input.rnof_sp_const",
     "MITgcm/verification/lab_sea/input.rnof_yearly"
   ],
   "output_paths": [
@@ -41,6 +43,8 @@
     "MITgcm/verification/global_ocean.cs32x15/build_esx",
     "MITgcm/verification/global_ocean.cs32x15/build_esx_mpi4",
     "MITgcm/verification/global_ocean.cs32x15/output_esx_input.icedyn",
+    "MITgcm/verification/global_ocean.cs32x15/output_esx_input.rnof_sp_icedyn",
+    "MITgcm/verification/global_ocean.cs32x15/output_esx_input.rnof_sp_icedyn_mpi4",
     "MITgcm/verification/global_ocean.cs32x15/output_esx_input.seaice",
     "MITgcm/verification/global_ocean.cs32x15/output_esx_input.seaice_mpi4",
     "MITgcm/verification/isomip/build_esx",
@@ -58,6 +62,8 @@
     "MITgcm/verification/lab_sea/output_esx_input.rnof_month1",
     "MITgcm/verification/lab_sea/output_esx_input.rnof_month1_mpi2",
     "MITgcm/verification/lab_sea/output_esx_input.rnof_month_mpi2",
+    "MITgcm/verification/lab_sea/output_esx_input.rnof_sp_const",
+    "MITgcm/verification/lab_sea/output_esx_input.rnof_sp_const_mpi2",
     "MITgcm/verification/lab_sea/output_esx_input.rnof_yearly",
     "MITgcm/verification/lab_sea/output_esx_input.rnof_yearly_mpi2",
     "MITgcm/verification/lab_sea/output_esx_input_mpi2",
@@ -135,8 +141,18 @@
       ],
       [
         "tests/mitgcm_oracle.sh",
+        "lab_sea",
+        "input.rnof_sp_const"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
         "global_ocean.cs32x15",
         "input.seaice"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "global_ocean.cs32x15",
+        "input.rnof_sp_icedyn"
       ]
     ],
     "scientific": [
@@ -160,9 +176,25 @@
       [
         "tests/mitgcm_oracle.sh",
         "global_ocean.cs32x15",
+        "input.rnof_sp_icedyn"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "global_ocean.cs32x15",
         "input.seaice",
         "-mpi",
         "4"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "global_ocean.cs32x15",
+        "input.rnof_sp_icedyn",
+        "-mpi",
+        "4"
+      ],
+      [
+        "{python}",
+        "tests/rnf/placement_probe.py"
       ],
       [
         "tests/mitgcm_oracle.sh",
@@ -195,6 +227,18 @@
         "tests/mitgcm_oracle.sh",
         "lab_sea",
         "input.rnof_const",
+        "-mpi",
+        "2"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "lab_sea",
+        "input.rnof_sp_const"
+      ],
+      [
+        "tests/mitgcm_oracle.sh",
+        "lab_sea",
+        "input.rnof_sp_const",
         "-mpi",
         "2"
       ],

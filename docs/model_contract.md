@@ -1,12 +1,20 @@
 # Sparse runoff forcing: model contract
 
-> **Status: design contract, not yet implemented.** It describes the intended
+> **Status: design contract, partly implemented.** It describes the intended
 > behavior of sparse runoff, delivered by a new package `pkg/rnf` that feeds
 > `pkg/exf`. The integration choices and their source citations are in
-> [the package design](package_design.md), which is proposed and awaits review.
-> Open design points are tracked as issues in
-> [open_issues.md](../open_issues.md) (`RUNOFF-*`). Once code lands, update each
-> section to describe the implemented behavior, and link the source and tests.
+> [the package design](package_design.md). Open design points are tracked as
+> issues in [open_issues.md](../open_issues.md) (`RUNOFF-*`).
+>
+> **Implemented (RUNOFF-004):** the initialization of "Model behavior" below
+> (items 1 to 8, in `pkg/rnf/rnf_init_fixed.F`, `rnf_readparms.F` and
+> `rnf_check.F`) and the volume flux of "Each time step" for a file with one
+> constant record (`rnf_init_varia.F`, `rnf_fields_load.F`,
+> `rnf_exf_runoff.F`). A file with any other time sampling is refused. Not
+> implemented: time records and interpolation, temperature, salinity,
+> tracers, and the yearly files. The source routines and their tests are
+> listed in [the code map](code_map.md), the tests and their limits in
+> [the qualification matrix](verification_matrix.md).
 
 Paths below are relative to `MITgcm/`, a clone of the fork `ifenty/MITgcm` on the
 branch `new_runoff`.
@@ -81,7 +89,9 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
   per chunk along time, with deflate compression. A measured read benchmark at
   high resolution settles the final chunk shape and compression (RUNOFF-007).
 - A missing or fill value in the flux stops the run with an error naming the
-  source and time (owner decision, 2026-09-29).
+  source and time (owner decision, 2026-09-29). A `_FillValue` or
+  `missing_value` attribute of the flux that cannot be read as one number
+  (text, for instance) also stops the run: it is not treated as absent.
 - Read the static index and fraction arrays (~10⁶ entries) once at init.
 
 ## Model behavior
@@ -97,8 +107,10 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
 2. Index ranges are checked in the model before any placement:
    `0 ≤ target_cell < nx·ny` of the model's global layout, and
    `0 ≤ target_source < n_source`. A value outside is a fatal error that names
-   the source id. The fraction sum of item 4 does not catch a negative index,
-   because integer division would place it on a tile.
+   the source id; a `target_source` outside has no source to name, and its
+   error gives the index of the table entry. The fraction sum of item 4 does
+   not catch a negative index, because integer division would place it on a
+   tile.
 3. Each tile maps the global indices that fall on it to local `(i,j,k,bi,bj)` and
    stores, for each source present on the tile, its local cells and fractions.
    The placement uses the arithmetic `pkg/mdsio` uses for a global file, never
@@ -106,9 +118,11 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
    only the surface.
 4. Each source's fractions are summed over all tiles and processes with
    `GLOBAL_SUM_*`. If any source differs from 1.0 by more than 1e-6, the run stops.
-   This also catches a target on a blank exch2 tile, which no tile owns, so the
-   sum comes up short. Land targets and off-grid indices are caught by items 5
-   and 2.
+   This also catches a target that no tile owns, when its fraction is more
+   than that tolerance, because the sum comes up short: one on a blank exch2
+   tile, or one whose index is in range but on a cell of the global layout
+   that no facet uses. Land targets and off-grid
+   indices are caught by items 5 and 2.
 5. A target cell with surface `maskC = 0` is a fatal error that names the source
    id.
 6. A target with `maskInC = 0`, beyond an open boundary, is a fatal error that
@@ -142,7 +156,10 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
   - Temperature, salinity and every tracer are **flux-weighted means**:
     `X_c = Σ_s flux_s·frac_{s,c}·X_s / F_c`. This conserves heat content, salt
     and tracer mass.
-  - A source without a temperature contributes at the surface water temperature.
+  - A source without a temperature contributes at the surface water
+    temperature, except in a build without exf `ALLOW_ATM_TEMP` that sets
+    `temp_EvPrRn`, where it enters at `temp_EvPrRn`
+    ([package design](package_design.md), decision 3, "Missing temperature").
   - A source without a salinity contributes S = 0.
   - Where `F_c = 0`, `X_c` is unused.
 - **Temperature, salinity and tracers enter as tendency terms** at the target
@@ -190,6 +207,10 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
     not reach back that far, the run stops with an error that names the time.
   - Every other case, including all runs with `staggerTimeStep`: the fields at
     the current time.
+  - This rule assumes `exactConserv`: the model sets its lagged flux `PmEpR`
+    only in the `exactConserv` branch of `model/src/integr_continuity.F`. A
+    nonlinear free surface always has it, because the model stops otherwise
+    (`model/src/config_check.F`, the `nonlinFreeSurf` test).
 - **Known differences from exf `runoftemp`:** the tendency term is not scaled by
   the open-water fraction under sea ice, is not part of the surface flux that
   KPP reads, and is not included in the `TFLUX`/`SFLUX` diagnostics. In a build

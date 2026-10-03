@@ -1,11 +1,15 @@
 # Runoff package design: architecture and MITgcm integration
 
 > **Status: reviewed design (RUNOFF-010, two independent reviews, approved
-> 2026-10-03); implementation in progress (skeleton: RUNOFF-012).** This is
+> 2026-10-03); implementation in progress (skeleton: RUNOFF-012; static read,
+> placement, file checks and the volume flux of a constant record:
+> RUNOFF-004).** This is
 > the decision record for RUNOFF-010. Every statement about existing MITgcm
 > behavior was read from the live source in `MITgcm/` (branch `new_runoff`) and
 > carries a `file:line` citation. Nothing here was established by running the
 > model; statements about the planned package are design, not measurement.
+> Where the implementation differs from a decision, the section
+> [Implementation notes](#implementation-notes) says how and why.
 > The file format is [the runoff schema](runoff_schema.md), and the behavior the
 > package must deliver is [the model contract](model_contract.md).
 
@@ -514,19 +518,24 @@ tracer terms. The rule below also applies to decision 4. `deltaT` is
 |---|---|---|
 | Branches L and U | `EmPmR` of the current step (`external_forcing_surf.F:296-349`) | at `myTime` |
 | Branch N with `staggerTimeStep` | `PmEpR = −EmPmR` of the current step (`external_forcing_surf.F:158-166`) | at `myTime` |
-| Branch N without `staggerTimeStep`, first step of a cold start (`myIter = nIter0 = 0`) | `PmEpR = 0` (`ini_nlfs_vars.F:59`; `integr_continuity.F:163-171`, called from `initialise_varia.F:334`) | none: the term is zero |
+| Branch N without `staggerTimeStep`, first step of a run that starts at iteration 0 (`myIter = nIter0 = 0`) | `PmEpR = 0` (`ini_nlfs_vars.F:59`; `integr_continuity.F:163-171`, called from `initialise_varia.F:334`) | none: the term is zero |
 | Branch N without `staggerTimeStep`, first step after a restart (`myIter = nIter0 ≠ 0`) | `PmEpR` rebuilt from the pickup, which is the flux of the step before it (`integr_continuity.F:141-162`) | at `myTime − deltaT`, evaluated from the records |
 | Branch N without `staggerTimeStep`, later steps | `PmEpR = −EmPmR` of the previous step (`integr_continuity.F:172-179`) | at `myTime − deltaT`, kept from the previous step |
 
+- *Premise.* The branch-N rows without `staggerTimeStep` assume
+  `exactConserv`: the model sets `PmEpR` only in the `exactConserv` branch of
+  `INTEGR_CONTINUITY` (`model/src/integr_continuity.F:90`, `141-179`). A
+  nonlinear free surface always has it, because the model stops otherwise
+  (`model/src/config_check.F:725-732`).
 - *Why.* With current-step fields in the last two rows, the heat budget of
   each step would be off by `(m_previous − m_current)μθ`. With a term at the
   cold-start step, one step of `[(mT) − m_T·θ]μ` would be added with no volume
   to carry it.
 - *How.* `RNF_FIELDS_LOAD` copies the dense fields to a previous-step set
   before it loads the new ones. At the first step it sets that set to zero for
-  a cold start, or evaluates it at `myTime − deltaT` for a restart. The fields
+  a start at iteration 0, or evaluates it at `myTime − deltaT` for a restart. The fields
   depend on model time only, so a restart reproduces them without a pickup.
-- *Time before the first record.* A cold start never needs a time earlier than
+- *Time before the first record.* A start at iteration 0 never needs a time earlier than
   the start: the first lagged use, at the second step, is the start time
   itself. A restart in the fourth row needs `myTime − deltaT`. If a
   non-repeating series does not reach back that far, the run stops with an
@@ -797,7 +806,9 @@ the phase-1 default recorded in RUNOFF-007.
    `i = mod(g,sNx)+1 ≤ 0`, is counted in the fraction sum of step 6, and puts
    its flux outside the tile interior that `RNF_EXF_RUNOFF` copies. The schema
    rule for this range exists only in the Python checker. Every process reads
-   the whole table, so every process stops on the same entry.
+   the whole table, so every process stops on the same entry. A
+   `target_source` out of range has no source to name: its message gives the
+   value and the index of the entry in the table.
 4. Place each target on a tile with the arithmetic `pkg/mdsio` uses to read a
    global file, as RUNOFF-004 requires
    (`pkg/mdsio/mdsio_read_field.F:399-430`; the write side is
@@ -819,7 +830,10 @@ the phase-1 default recorded in RUNOFF-007.
 6. Sum each source's fractions over tiles and processes with
    `GLOBAL_SUM_VECTOR_RL` (`eesupp/src/global_sum_vector.F:165-196`), one chunk
    of sources at a time, and stop if a sum differs from 1 by more than 10⁻⁶. A
-   target on a blank exch2 tile is owned by no tile and shows up here. A land
+   target on a blank exch2 tile is owned by no tile and shows up here, when
+   its fraction is more than that tolerance. So does a target whose index is
+   in range but on a cell of the global layout that no facet uses: facets of
+   unequal size laid side by side (`W2_mapIO = −1`) leave such cells. A land
    target is owned by its tile and is caught in step 7; an index off the grid
    is caught in step 3.
 7. Check each owned target, and stop with the source id on a failure
@@ -1006,6 +1020,59 @@ is no second switch.
 RUNOFF-005 uses the timing overrides. RUNOFF-026 documents the table.
 RUNOFF-017 covers the blank-file refusal.
 
+## Implementation notes
+
+What RUNOFF-004 built, where it differs from the decisions above. The routines
+are listed in [the code map](code_map.md).
+
+1. **The volume flux is kept in m/s as its own field (decision 2).**
+   `RNF_FIELDS_LOAD` builds `RNF_vflx` = Σ (flux·frac)/rA and
+   `RNF_mflx` = `rhoConstFresh`·`RNF_vflx`, and `RNF_EXF_RUNOFF` copies
+   `RNF_vflx`. Computing `runoff = m / rhoConstFresh` would multiply and
+   divide by `rhoConstFresh`, which does not give back the same number when
+   `rhoConstFresh` is not a power of two (999.8 in `lab_sea`). Each target
+   adds `(flux·frac)/rA` in real*8, the order of `sparse_to_dense` in the
+   converter. For a cell fed by one target the result is within one unit in
+   the last place of the dense value, because `(d·rA)/rA` is not always `d`.
+2. **The checks of step 7 are made when an entry is placed (decision 6).**
+   The master thread has the file open and the target in hand at that point,
+   so the cell area needs no per-target storage. The errors are counted and
+   reported after step 6 with those of the fraction sums. The index ranges of
+   step 3 are tested entry by entry before each entry is placed, not in a
+   pass of their own.
+3. **More is checked in step 3 than the index ranges.** `target_level` must be
+   1 (schema §12) and `target_fraction` must lie in [0, 1] (profile invariant
+   "fractions are ≥ 0"; schema rule T04). A negative fraction can hide in a
+   sum that is still 1.
+4. **Errors that one tile sees stop every process (decisions 5, 6, 9).** A
+   refused target and an array bound that is too small are counted on the
+   process that owns the tile, the count is summed with `GLOBAL_SUM_INT`, and
+   every process then stops. `ALL_PROC_DIE` ends MPI on the calling process
+   only (`eesupp/src/all_proc_die.F:15-17`). The number of sources reported
+   as needed is exact for a file sorted by source and an upper bound
+   otherwise. A process prints at most `RNF_maxErrMsg` (20) messages per error
+   counter; the checks of a table entry share one counter and the refused
+   targets another.
+5. **A missing flux stops the run where the record is read** (model contract,
+   "Scale requirement"): not a number, above 1e30 in absolute value, or equal
+   to `_FillValue` or `missing_value`. The two attributes are read by
+   `RNF_NC_ATT_REAL`, for which only "no such attribute" means absent. One
+   that exists and is not one number (text, or a list) stops the run. Treating
+   it as absent would apply a flux equal to the marker as runoff: review B of
+   RUNOFF-004 showed 9999 m³/s applied that way before this was corrected.
+   The same routine reads `mitgcm_grid_nx` and `mitgcm_grid_ny`.
+6. **The file is opened and closed by each routine that reads it**
+   (`RNF_INIT_FIXED`, `RNF_NC_READ_FLUX`), so that `RNF_INIT_VARIA` can be
+   called more than once. RUNOFF-005 decides how the file stays open for
+   time records.
+7. **Source ids are read from the file when a message needs one**, so no
+   array has the length of the source dimension and none stores ids per tile.
+8. **Time handling asked for in `data.rnf` is refused for now.**
+   `RNF_useYearlyFiles` and an `RNF_period` other than 0 stop the run with a
+   message that names RUNOFF-005, as does a file that is not `constant`.
+9. **Defaults of `RNF_SIZE.h` (decision 9):** `RNF_nSrcTile` 2000,
+   `RNF_nTgtTile` 10000, `RNF_nBuf` 1000.
+
 ## Points that differ from earlier project records
 
 1. The profile and the model contract place the feature inside `pkg/exf` with
@@ -1055,7 +1122,7 @@ this document was written and should be re-resolved from live source.
 | `model/src/external_forcing_surf.F` | 98-109, 149-156, 158-166, 188-197, 225-231, 261-288, 296-320, 322-349, 394-400 | balance; `maskInC` on `EmPmR`; `PmEpR`; ptracers; `Qnet`; branches N, L, U; shelfice |
 | `model/src/apply_forcing.F` | 448-462, 466-474, 504-531, 607-613, 617-636, 703-709, 711-716, 874-901, 903-922, 935-941, 943-948 | old forcing; `kSurface`; `addMass`; diagnostics fill; surface forcing; hooks |
 | `model/src/initialise_fixed.F` | 133, 211, 267 | readparms, init-fixed and check order |
-| `model/src/initialise_varia.F`, `model/src/ini_nlfs_vars.F` | 334; 59 | `PmEpR = 0` at a cold start |
+| `model/src/initialise_varia.F`, `model/src/ini_nlfs_vars.F` | 334; 59 | `PmEpR = 0` at a start at iteration 0 |
 | `model/src/temp_integrate.F` | 367-372 | forcing inside Adams-Bashforth |
 | `model/src/packages_init_fixed.F` | 223 | `OBCS_INIT_FIXED` before the package slot |
 | `pkg/obcs/obcs_init_fixed.F`, `model/inc/GRID.h` | 375-379; 359 | `maskInC` zero beyond an open boundary |
@@ -1063,7 +1130,7 @@ this document was written and should be re-resolved from live source.
 | `verification/lab_sea/input/data.pkg` | 4 | `useKPP` |
 | `model/src/external_forcing.F` | 569-574, 773-778 | legacy hooks |
 | `model/src/solve_for_pressure.F` | 142-150 | `EmPmR` in `cg2d_b` |
-| `model/src/integr_continuity.F` | 92-93, 129-131, 141-162, 163-171, 172-187 | `facEmP`; `addMass`; `PmEpR` at a restart, at a cold start and at later steps; `dEtaHdt` |
+| `model/src/integr_continuity.F` | 90, 92-93, 129-131, 141-162, 163-171, 172-187 | the `exactConserv` branch; `facEmP`; `addMass`; `PmEpR` at a restart, at a start at iteration 0 and at later steps; `dEtaHdt` |
 | `model/src/calc_div_ghat.F` | 126-134 | `addMass` in `cg2d_b` |
 | `model/src/set_defaults.F` | 264-265 | `EvPrRn` defaults |
 | `model/src/ini_parms.F` | 648-651, 1570-1574, 1577-1580 | `convertFW2Salt`; `mass2rUnit`; `addMass` defaults |

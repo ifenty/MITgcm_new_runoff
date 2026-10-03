@@ -20,7 +20,10 @@ Oracles:
   compares with the model's own monitor output.
 
 The cs32 tests read the cubed-sphere grid output of a model run and are
-skipped when no run directory exists.
+skipped when no run directory exists. They cover both committed cs32 files:
+the 12-record file with temperature (``input.rnof_sparse``) and the
+one-record constant file that the sparse = dense oracle reads
+(``input.rnof_sp_icedyn``).
 """
 
 import datetime as dt
@@ -289,6 +292,45 @@ def test_cs32_time_axis(cs32_file):
     assert d["attrs"]["mitgcm_time_sampling"] == "fixed"
     assert d["attrs"]["mitgcm_time_period"] == 2592000.0
     assert d["attrs"]["mitgcm_time_repeat"] == "annual"
+
+
+@needs_cs32
+def test_cs32_constant_file_passes_the_checker_and_matches_the_committed_file(tmp_path):
+    """The one-record file that the cs32 sparse = dense oracle reads.
+
+    ``input.rnof_sp_icedyn/runoff_sparse_const.nc`` is record 1 of the dense
+    runoff converted with ``runoffperiod = 0`` (``gen_sparse.py cs32const``).
+    Regenerated here, it must pass the checker with the grid checks, equal
+    the committed file in every variable, hold one ``constant`` float64
+    record without temperature, and give back record 1 of the dense file.
+    """
+    with pytest.warns(UserWarning, match="exf uses 1 of the 12 records"):
+        path = gen.cs32_const(out_dir=str(tmp_path))[0]
+    assert_clean(check_files(path, grid_dir=cs32_grid))
+    new = read(path)
+    old = read(CS32 / "input.rnof_sp_icedyn" / "runoff_sparse_const.nc")
+    assert sorted(new) == sorted(old)
+    for key in new:
+        if key not in ("attrs", "dtypes"):
+            assert np.array_equal(new[key], old[key]), key
+    assert new["attrs"]["mitgcm_time_sampling"] == "constant"
+    assert new["attrs"]["mitgcm_grid_nx"] == 192 and new["attrs"]["mitgcm_grid_ny"] == 32
+    assert new["runoff_flux"].shape == (1, 1189)
+    assert new["dtypes"]["runoff_flux"] == np.float64
+    assert "runoff_temperature" not in new
+    assert len(new["ids"]) == 1189 and np.all(new["target_fraction"] == 1.0)
+    # Record 1 of the dense file: exact at float32, one unit in the last
+    # place at float64, the same total flux.
+    ref = np.fromfile(str(CS32 / "input.icedyn" / "core_rnof_1_cs32.bin"),
+                      ">f8").reshape(12, 32, 192)[0].astype("f8")
+    back = sparse_to_dense(path)
+    assert back.shape == (1, 32, 192)
+    native = back[0].astype("f8")
+    assert np.array_equal(native.astype(">f4"), ref.astype(">f4"))
+    assert np.all(np.abs(native - ref) <= np.spacing(ref))
+    assert np.array_equal(native == 0.0, ref == 0.0)
+    rac = convert._grid(cs32_grid, None, None, None, None)[0]
+    assert abs(new["runoff_flux"].sum() / (ref * rac).sum() - 1.0) < 1e-12
 
 
 # ---------------------------------------------------------------------------

@@ -984,6 +984,10 @@ writes the sparse form of every dense runoff test case:
   differently in time, so each is its own source.
 - `global_ocean.cs32x15/input.rnof_sparse/runoff_sparse.nc`: runoff and runoff
   temperature, 1189 sources.
+- `global_ocean.cs32x15/input.rnof_sp_icedyn/runoff_sparse_const.nc` (case
+  `cs32const`): record 1 of the same runoff as one `constant` record, without
+  temperature. It is the input of the sparse run that is compared with the
+  dense run of `input.icedyn`.
 
 lab_sea writes its grid with `pkg/mnc`, so the script computes the lab_sea
 cell areas as the model does (`ini_spherical_polar_grid.F`, 187–188) and takes
