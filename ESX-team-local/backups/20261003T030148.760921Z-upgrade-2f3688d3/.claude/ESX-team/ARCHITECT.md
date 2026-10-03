@@ -193,18 +193,13 @@ loop is alive.
   This status goes to the screen only, never to the chat channel.
 - The chat channel gets one short heartbeat per `communication.heartbeat_minutes`
   (queued by the outbox like any other event) in place of a post per iteration.
-- Usage limits pause the loop by themselves. When a turn of yours ends on the
-  provider's usage-limit record, or a role's turn is refused for one, the loop
-  pauses (source `provider_limit`) and nothing counts or ends while it waits, for
-  hours if the limit is weekly. The first later turn that does real work lifts that
-  pause and the loop carries on; a refused retained turn with a known reset time
-  also lifts its hold at that time. You still deliver the queued `loop_paused` and
-  `loop_resumed` notices. A turn refused for a usage limit did no work: resume the
-  same role session afterwards; do not correct or replace it.
-- Before the hard limit the host may warn that only a short allowance remains. Finish
-  the step in hand, run `python3 tools/esx/loop_control.py pause --reason "provider
-  usage limit"`, report what is done and what is left, and end the turn. A pause you
-  set yourself is lifted by `/esx-loop` (or `loop_control.py resume`), never by work.
+- When you cannot work, pause the loop instead of fighting the Stop hook. The usual
+  case is a usage limit: the host tells you to stop, or `--next` prints `LIMIT:`
+  because the provider refused a role's turn. Run `python3 tools/esx/loop_control.py
+  pause --reason "provider usage limit"` (add `--until <reset time>` when you know
+  it), report what is done and what is left, and end the turn. A paused loop
+  advances nothing and ends nothing. A turn refused for a usage limit did no work:
+  resume the same role session afterwards; do not correct or replace it.
 - `/esx-loop cancel` stops the next iteration from starting. It never stops the
   iteration in progress: keep the dispatched agents running and finish the issue
   through its retrospective. Only `abort` abandons work.

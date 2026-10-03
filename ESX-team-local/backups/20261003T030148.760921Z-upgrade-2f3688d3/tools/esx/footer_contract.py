@@ -75,7 +75,6 @@ def validate(root, role, footer, issue, correction_round, start=None, agent_id=N
             import doc_contract as docs
             docs.validate_orientation(Path(root), footer.get('orientation'), issue,
                                       start['maintenance']['baseline'], role)
-
             if role == 'richard':
                 if footer.get('verdict') not in ('APPROVE', 'APPROVE_WITH_FIXES', 'REJECT'):
                     raise ValueError('verdict must be APPROVE, APPROVE_WITH_FIXES, or REJECT')
@@ -105,45 +104,6 @@ def validate(root, role, footer, issue, correction_round, start=None, agent_id=N
                     docs.validate_report(Path(root), report, issue, start['maintenance']['baseline'])
         except (ValueError, OSError, KeyError, TypeError) as exc:
             errors.append(str(exc))
-    return errors
-
-
-def reference_errors(root, role, footer, start, agent_id=None):
-    """The mechanical part of the contract: every reference the footer cites resolves.
-
-    Applied when a native agent stops, where the full shape contract is not
-    enforced. A reference is checked only when the footer gives one: the
-    orientation receipt, the independent check's evidence (which must also be
-    owned by the reporting agent) and the documentation report under review.
-    """
-    if not isinstance(footer, dict) or not isinstance(start, dict) or start.get('state_version', 1) < 2:
-        return []
-    import doc_contract as docs
-    import verify
-    errors = []
-    issue = footer.get('issue_id')
-    orientation = footer.get('orientation')
-    if isinstance(orientation, dict) and (orientation.get('path') or orientation.get('sha256')):
-        try:
-            docs.validate_orientation(Path(root), orientation, issue, start['maintenance']['baseline'], role,
-                                      fresh=False)
-        except (ValueError, OSError, KeyError, TypeError) as exc:
-            errors.append('orientation: ' + str(exc))
-    cited = (footer.get('independent_check') or {}).get('evidence')
-    if isinstance(cited, dict) and (cited.get('path') or cited.get('sha256')):
-        try:
-            evidence = verify.load_evidence(Path(root), cited)
-            if agent_id and evidence.get('owner') != agent_id:
-                errors.append(f'independent_check.evidence is owned by {evidence.get("owner")}, not by the '
-                              f'reporting agent {agent_id}')
-        except (ValueError, OSError, KeyError, TypeError) as exc:
-            errors.append('independent_check.evidence: ' + str(exc))
-    report = (footer.get('documentation_review') or {}).get('report')
-    if isinstance(report, dict) and (report.get('path') or report.get('sha256')):
-        try:
-            docs.load(Path(root), report, 'documentation', issue)
-        except (ValueError, OSError, KeyError, TypeError) as exc:
-            errors.append('documentation_review.report: ' + str(exc))
     return errors
 
 

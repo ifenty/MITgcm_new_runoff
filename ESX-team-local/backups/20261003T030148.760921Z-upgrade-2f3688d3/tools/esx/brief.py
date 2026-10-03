@@ -217,8 +217,6 @@ def build(root, role, issue, design, question=None, packet=None, correction_roun
         WORKING_RULES[role == 'richard'],
         '# Evidence\nUse tools/esx/project.py signature for candidate_signature. Execute independent checks through '
         'tools/esx/verify.py --suite focused --owner YOUR_RUNTIME_AGENT_ID --fresh and cite its returned evidence. '
-        'After your last edit also run ' + shlex.join([sys.executable, 'tools/esx/audit.py']) + ' and report its '
-        'result verbatim: a candidate that fails the audit cannot be reviewed. '
         'Your runtime agent id is the agent_id in your dispatcher assignment (retained session) or the id stated '
         'in your session-start context (native subagent); `' + shlex.join([sys.executable, 'tools/esx/hooks.py',
         'whoami', '--role', role]) + '` prints it. Evidence sealed under any other owner is refused at closeout. '

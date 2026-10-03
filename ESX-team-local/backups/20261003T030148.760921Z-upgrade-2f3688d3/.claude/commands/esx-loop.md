@@ -27,8 +27,7 @@ documented interpreter.
 - `status`: run `python3 tools/esx/loop_control.py status` and report; do not start.
 - `pause`: run `python3 tools/esx/loop_control.py pause --reason 'Owner paused through /esx-loop'`. The loop
   stays alive and spends none of its budget: turns end normally and nothing advances. Tell the owner what is
-  in progress, then end the turn. Dispatched agents keep running. (A usage limit pauses the loop by itself
-  and lifts that pause when work resumes; an owner's pause lasts until `resume`.)
+  in progress, then end the turn. Dispatched agents keep running.
 - `resume`: run `python3 tools/esx/loop_control.py resume`, then `loop_gate.py --next` and continue. Starting
   `/esx-loop` with no argument also resumes a paused loop. A cancel requested earlier stays pending.
 - `cancel`: run `python3 tools/esx/loop_control.py cancel --reason 'Owner requested cancellation through /esx-loop'`.

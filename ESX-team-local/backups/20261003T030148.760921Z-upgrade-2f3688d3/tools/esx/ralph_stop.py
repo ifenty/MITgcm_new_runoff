@@ -200,97 +200,6 @@ def pause_request(parsed):
     return reason, until
 
 
-def pause_source(parsed):
-    """Who paused the loop: 'provider_limit' when this hook paused it, else 'owner'."""
-    return parsed['header_fields'].get('pause_source') or 'owner'
-
-
-def set_pause(root, state, parsed, reason, until, source):
-    """Write (reason given) or clear (reason None) the pause; return the re-read state and bytes."""
-    from project import atomic_bytes
-    header = parsed['header']
-    for key in ('paused', 'pause_reason', 'paused_until', 'pause_source'):
-        header = set_field(header, key, None)
-    if reason is not None:
-        header = set_field(header, 'paused', 'true')
-        header = set_field(header, 'pause_reason', json.dumps(reason))
-        if until is not None:
-            header = set_field(header, 'paused_until', f'{until:.0f}')
-        if source:
-            header = set_field(header, 'pause_source', source)
-    data = ('---\n' + header + '\n---\n' + parsed['prompt']).encode()
-    atomic_bytes(state, data)
-    return parse_state(data.decode()), data
-
-
-def queue_loop_event(root, kind, text):
-    """Queue a loop_paused / loop_resumed notice; delivery waits for a working turn."""
-    if not (Path(root) / 'esx/project.json').exists():
-        return
-    try:
-        import notifications
-        notifications.loop_event(root, kind, text)
-    except (ValueError, OSError, KeyError, TypeError) as exc:
-        log(root, 'NOTIFICATION_ERROR', '?', str(exc))
-
-
-def synthetic_limit(record):
-    """True for the record the CLI writes when the provider refuses a request for a usage limit.
-
-    All of: an assistant record, error "rate_limit", the API-error flag (camelCase in
-    session transcripts, snake_case in stream output) and the CLI's synthetic model.
-    The human text, which names the reset time, is never parsed.
-    """
-    if not isinstance(record, dict) or record.get('type') != 'assistant' or record.get('error') != 'rate_limit':
-        return False
-    if not (record.get('isApiErrorMessage') is True or record.get('is_api_error_message') is True):
-        return False
-    message = record.get('message')
-    return isinstance(message, dict) and message.get('model') == '<synthetic>'
-
-
-def provider_turn(path):
-    """How the current turn of a transcript ended: 'limited', 'working' or None.
-
-    'limited' when its last assistant record is a provider usage-limit refusal;
-    'working' when it has real assistant output and did not end refused; None
-    when that cannot be read. Only the transcript's last 2 MB are read.
-    """
-    if not path:
-        return None
-    try:
-        with Path(path).open('rb') as handle:
-            size = handle.seek(0, 2)
-            handle.seek(max(0, size - 2 * 1024 * 1024))
-            if size > 2 * 1024 * 1024:
-                handle.readline()
-            lines = handle.read().decode('utf-8', errors='replace').splitlines()
-    except OSError:
-        return None
-    last, real = None, False
-    for line in lines:
-        try:
-            record = json.loads(line)
-        except ValueError:
-            continue
-        if not isinstance(record, dict):
-            continue
-        message = record.get('message') if isinstance(record.get('message'), dict) else {}
-        if record.get('type') == 'user' or message.get('role') == 'user':
-            content = message.get('content')
-            if isinstance(content, list) and content and all(
-                    isinstance(c, dict) and c.get('type') == 'tool_result' for c in content):
-                continue
-            last, real = None, False  # a new turn begins
-        elif record.get('type') == 'assistant':
-            last = record
-            if not synthetic_limit(record):
-                real = True
-    if last is None:
-        return None
-    return 'limited' if synthetic_limit(last) else ('working' if real else None)
-
-
 def cancel_request(parsed):
     """The owner's pending cancellation reason, or None (TEAM-LOOP-CANCEL-DRAIN-001)."""
     fields = parsed['header_fields']
@@ -460,26 +369,7 @@ def _step_locked(root, hook_input):
         # must never advance, end or announce the owner's loop (TEAM-LOOP-FOREIGN-STOP-001).
         log(root, 'FOREIGN_STOP', n, f'ignored Stop from session {caller}; loop owned by {owner}')
         return {}
-    turn = provider_turn(hook_input.get('transcript_path'))
     paused = pause_request(parsed)
-    if turn == 'limited':
-        # The provider refused this turn for a usage limit. Pause by ourselves so
-        # stopping costs nothing; the pause lifts when a later turn does real work.
-        if paused is None:
-            parsed, original = set_pause(root, state, parsed, 'provider usage limit', None, 'provider_limit')
-            log(root, 'AUTO_PAUSE', n, 'turn ended on a provider usage-limit record; loop paused')
-            queue_loop_event(root, 'loop_paused', f'Loop paused at iteration {n}/{limit}: the provider usage limit '
-                             'was reached. It resumes by itself when work is possible again.')
-        paused = pause_request(parsed) or ('provider usage limit', None)
-    elif paused is not None and turn == 'working' and pause_source(parsed) == 'provider_limit':
-        # A turn did real work after an automatic pause: the limit has reset. Lift
-        # only this kind of pause, then treat the Stop normally. A pause the owner
-        # set is never lifted here.
-        parsed, original = set_pause(root, state, parsed, None, None, None)
-        log(root, 'AUTO_RESUME', n, 'a turn did real work after a provider-limit pause; pause lifted')
-        queue_loop_event(root, 'loop_resumed', f'Loop resumed at iteration {n}/{limit} after the provider '
-                         'usage limit reset.')
-        paused = None
     if paused is not None:
         # The coordinator cannot work (typically a provider usage limit). Let the
         # turn end and touch nothing: no iteration, no wait count, no heartbeat,
@@ -568,7 +458,7 @@ def _step_locked(root, hook_input):
     header = re.sub(r'(?m)^[ \t]*iteration[ \t]*:[ \t]*[^\r\n]*$',
                     'iteration: ' + str(n + 1), parsed['header'])
     header = set_field(header, 'dispatch_waits', None)
-    for key in ('paused', 'pause_reason', 'paused_until', 'pause_source'):
+    for key in ('paused', 'pause_reason', 'paused_until'):
         header = set_field(header, key, None)
     header = set_field(header, 'advance_times',
                        ','.join(f'{t:.0f}' for t in (recent + [moment])[-MAX_ADVANCES:]))

@@ -129,8 +129,7 @@ def status(root):
             result.update(cancelling=True, cancel_reason=pending, finishing=work_in_progress(root))
         held = pause_request(parsed)
         if held is not None:
-            result.update(paused=True, pause_reason=held[0], paused_until=held[1],
-                          pause_source=parsed['header_fields'].get('pause_source') or 'owner')
+            result.update(paused=True, pause_reason=held[0], paused_until=held[1])
         return result
 
 
@@ -143,14 +142,14 @@ def clear_pause(root):
         parsed = parse_state(state.read_text())
         was = parsed['header_fields'].get('paused') == 'true'
         header = parsed['header']
-        for key in ('paused', 'pause_reason', 'paused_until', 'pause_source'):
+        for key in ('paused', 'pause_reason', 'paused_until'):
             header = set_field(header, key, None)
         if header != parsed['header']:
             atomic_bytes(state, ('---\n' + header + '\n---\n' + parsed['prompt']).encode())
         return was
 
 
-def pause(root, reason, minutes=None, until=None, source=None):
+def pause(root, reason, minutes=None, until=None):
     """Hold the loop without ending it or spending its budget.
 
     For a coordinator that cannot work, typically at a provider usage limit. While
@@ -192,8 +191,6 @@ def pause(root, reason, minutes=None, until=None, source=None):
         header = set_field(parsed['header'], 'paused', 'true')
         header = set_field(header, 'pause_reason', json.dumps(reason.strip()))
         header = set_field(header, 'paused_until', None if deadline is None else f'{deadline:.0f}')
-        # A provider-limit pause lifts itself when work resumes; an owner's pause never does.
-        header = set_field(header, 'pause_source', source)
         atomic_bytes(state, ('---\n' + header + '\n---\n' + parsed['prompt']).encode())
         log(root, 'PAUSE_REQUESTED', parsed['iteration'], reason.strip())
         return {'status': 'paused', 'state': STATE, 'iteration': parsed['iteration'],

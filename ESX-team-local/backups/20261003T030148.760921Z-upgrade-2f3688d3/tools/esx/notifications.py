@@ -163,20 +163,6 @@ def loop_status(root):
                     f"{len(opened)} open issues."}
 
 
-def loop_event(root, kind, text):
-    """Queue a loop_paused or loop_resumed notice for the active run (delivered like any event)."""
-    root = Path(root).resolve()
-    current = session(root)
-    if current is None:
-        return None
-    _, run = current
-    route = json.loads(local(root, 'esx/project.json').read_text()).get('communication', {})
-    if not route.get('provider') or route.get('provider') in ('none', 'disabled'):
-        return None
-    with ledger(root) as data:
-        return emit(data, [kind, run, now()], kind, run, text, route)
-
-
 HEARTBEAT_QUIET_SECONDS = 600
 
 

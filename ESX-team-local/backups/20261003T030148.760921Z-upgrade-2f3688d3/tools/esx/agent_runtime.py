@@ -178,31 +178,6 @@ def duplicate_completion(root, agent_id, footer):
     return None
 
 
-def pause_for_provider_limit(root, limit, who):
-    """Pause the parent loop when a role turn was refused for a usage limit.
-
-    With a known reset time the hold lifts at that time; either way it lifts when
-    a later coordinator turn does real work. Nothing happens without a loop, and a
-    pause already in force is left as it is.
-    """
-    if not isinstance(limit, dict) or os.environ.get("ESX_AGENT_RUNTIME_CHILD") == "1":
-        return
-    try:
-        import loop_control
-        current = loop_control.status(root)
-        if current.get("status") != "active" or current.get("paused"):
-            return
-        reset = limit.get("reset_at")
-        if reset and datetime.fromisoformat(reset) <= datetime.now(timezone.utc):
-            return
-        loop_control.pause(root, f"provider usage limit ({who})", until=reset, source="provider_limit")
-        import ralph_stop
-        ralph_stop.queue_loop_event(root, "loop_paused", f"Loop paused: the provider refused a {who} turn for a usage "
-                                    "limit" + (f" until {reset}" if reset else "") + ". It resumes by itself.")
-    except (ValueError, OSError, KeyError, TypeError):
-        pass
-
-
 def stop_record(root, event, *, transport="native_subagent"):
     """Persist a native hook stop without equating a stop with a completed report."""
     event = event if isinstance(event, dict) else {}
@@ -218,15 +193,7 @@ def stop_record(root, event, *, transport="native_subagent"):
             message, report_source = recovered, "agent_transcript"
     footer = footer_from(message)
     status, error = "completed", None
-    limited = None
-    if footer is None:
-        # A subagent the provider refused for a usage limit ends on the CLI's synthetic record.
-        import ralph_stop
-        if ralph_stop.provider_turn(event.get("agent_transcript_path")) == "limited":
-            limited = {"limit_type": None, "reset_at": None}
-    if limited:
-        status, error = "failed", "provider usage limit"
-    elif event.get("is_error") or event.get("error"):
+    if event.get("is_error") or event.get("error"):
         status, error = "failed", str(event.get("error") or "runtime reported an error")
     elif event.get("stop_reason") not in (None, "end_turn", "stop_sequence"):
         status, error = "incomplete", "runtime did not finish its report"
@@ -234,20 +201,6 @@ def stop_record(root, event, *, transport="native_subagent"):
         status, error = "incomplete", "missing runtime identity"
     elif not footer or footer.get("agent", footer.get("agent_name")) != event.get("agent_type"):
         status, error = "incomplete", "missing, malformed, or mismatched structured footer"
-    if status == "completed" and event.get("agent_type") in ("bob", "richard"):
-        # The same capture-time contract a retained turn gets: a missing, mismatched or
-        # stale reference is reported now, not at closeout (TEAM-NATIVE-FOOTER-VALIDATION-001).
-        start_path = Path(root) / "devel-loop/loop_state/issue-start.json"
-        try:
-            start = json.loads(start_path.read_text()) if start_path.is_file() else None
-        except (OSError, ValueError):
-            start = None
-        if isinstance(start, dict) and start.get("id") == footer.get("issue_id"):
-            errors = footer_contract.reference_errors(root, event["agent_type"], footer, start,
-                                                      event.get("agent_id"))
-            if errors:
-                # The work was done and only the report is defective: a short followup fixes it.
-                status, error = "incomplete", "report cites a reference that does not resolve: " + "; ".join(errors)
     event_id = uuid.uuid4().hex
     report_path = local(Path(root), "devel-loop/loop_state/agent_reports/" + event_id + ".md")
     report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -268,11 +221,7 @@ def stop_record(root, event, *, transport="native_subagent"):
     if original:
         # Kept in the log as what happened; excluded wherever the latest completion counts.
         record["duplicate_of"] = original
-    if limited:
-        record["provider_limit"] = limited
     append_record(root, record)
-    if limited:
-        pause_for_provider_limit(root, limited, str(event.get("agent_type") or "subagent"))
     return record
 
 
@@ -507,10 +456,7 @@ def provider_limit(path):
     assignment, so the coordinator should pause until the reset, not correct it.
     """
     found = None
-    import ralph_stop
     for event in stream_events(path):
-        if ralph_stop.synthetic_limit(event) and found is None:
-            found = {"limit_type": None, "reset_at": None}
         info = event.get("rate_limit_info") if event.get("type") == "rate_limit_event" else None
         if isinstance(info, dict) and info.get("status") == "rejected":
             stamp = info.get("resetsAt")
@@ -1021,7 +967,7 @@ def _run_turn(root, *, role=None, issue=None, prompt, session=None, correction_r
                   "replacement": replacement,
                   "effective_permission_mode": (init or {}).get("permissionMode"),
                   "permission_denials": permission_denials(turn / "stdout.jsonl"),
-                  "provider_limit": provider_limit(turn / "stdout.jsonl") if status != "completed" else None,
+                  "provider_limit": provider_limit(turn / "stdout.jsonl") if status == "failed" else None,
                   "report": reference(turn / "report.md", root),
                   "invocation": reference(turn / "invocation.json", root),
                   "stream": reference(turn / "stdout.jsonl", root),
@@ -1037,8 +983,6 @@ def _run_turn(root, *, role=None, issue=None, prompt, session=None, correction_r
             atomic_json(turn / 'partial.json', {'status': status, 'error': error, 'handoff': record['handoff']})
         atomic_json(turn / "record.json", record)
         append_record(root, record)
-        if record.get("provider_limit"):
-            pause_for_provider_limit(root, record["provider_limit"], f"retained {role}")
         state["turns"].append(event_id)
         state.update(status=status, active_event_id=None, last_event_id=event_id)
         atomic_json(state_file, state)
