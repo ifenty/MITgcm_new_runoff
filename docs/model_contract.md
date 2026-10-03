@@ -76,8 +76,10 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
 - Store time as the slowest (unlimited) dimension, e.g. `flux(time, source)`.
   **Chunking** (owner decision, 2026-09-29): use whatever layout is most efficient
   for the model's access pattern, which reads the bracketing records for all
-  sources. The converter picks chunk shape and compression from a measured read
-  benchmark and documents the choice (RUNOFF-001 / RUNOFF-002).
+  sources. The current default is the layout of
+  [runoff schema](runoff_schema.md) §8, which the converter writes: one record
+  per chunk along time, with deflate compression. A measured read benchmark at
+  high resolution settles the final chunk shape and compression (RUNOFF-007).
 - A missing or fill value in the flux stops the run with an error naming the
   source and time (owner decision, 2026-09-29).
 - Read the static index and fraction arrays (~10⁶ entries) once at init.

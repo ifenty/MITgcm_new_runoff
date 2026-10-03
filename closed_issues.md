@@ -300,3 +300,40 @@ rnf is compiled into lab_sea and cs32.
 - tests/rnf/refusal_check.py: 7 of 7, single and 2 processes. It judges each process on its own files and was mutation-tested by both reviewers.
 
 **Reviews:** Richard A approved; Richard B rejected round 0 on one record (ptracers compiled-out coverage), and both approved round 1. NetCDF is available in the Docker build (HAVE_NETCDF, -lnetcdff).
+
+## RESOLVED: Python dense-to-sparse runoff converter
+
+**Date Identified**: 2026-09-29T21:30:00Z
+**Status**: Resolved
+**UUID**: RUNOFF-002
+**Anchors**: docs/model_contract.md#input-one-netcdf-file-per-run-phase-1; docs/verification_matrix.md#scientific-qualification-matrix
+
+### Issue or research question
+A tool is needed that reads a dense MITgcm runoff binary (m/s, any grid layout), the grid (`rA`, surface mask) and timing, and writes schema-conformant NetCDF. Flux in m³/s is rA·runoff; each nonzero cell becomes a one-cell source, or cells are grouped with fractions.
+
+### Evidence
+Design decisions from the project owner, recorded in `esx/project_profile.md` and `docs/model_contract.md` (2026-09-29). No code exists yet.
+
+Precision note from RUNOFF-003 review (Richard, 2026-10-02): the oracle pass criterion is 10 matching digits on `cg2d_init_res`, and a float32-level (6e-8) change in applied runoff moves it by about 6e-10. Sparse files for the oracle tests must therefore reproduce the dense m/s values to better than 1e-9 relative: store `runoff_flux` as float64 (flux = dense·rA computed in float64), not float32.
+
+### Scientific or engineering impact
+This produces the oracle inputs for every sparse-vs-dense test.
+
+### Proposed action and acceptance
+Put the tool in the `MITgcmutils.runoff` package, as `MITgcm/utils/python/MITgcmutils/MITgcmutils/runoff/convert.py` (not under `tools/runoff/`, as first planned), with pytest tests in `tests/runoff/test_convert.py`. Acceptance: the dense→sparse→dense round-trip reproduces cs32 `core_rnof_1_cs32.bin` and the lab_sea dense files exactly (`float32`), fractions sum to 1 within 1e-6, and no source targets a land cell.
+
+Unblocked 2026-09-30: RUNOFF-001 closed; schema 1.0 is approved (docs/runoff_schema.md), and MITgcmutils.runoff.check validates files against it.
+
+### Resolution (2026-10-03)
+`MITgcmutils.runoff.convert` (`dense_to_sparse`, `sparse_to_dense` and a CLI) converts dense runoff and runoff-temperature binaries into schema-1.0 NetCDF:
+- any precision and any global 2D layout;
+- every exf timing mode: 0, > 0 with a start date or start time, a repeat cycle, -12, -1, and yearly files;
+- timing conventions cited to pkg/exf and pkg/cal source (schema §14).
+
+Sparse files exist for all six lab_sea dense oracle cases and for the cs32 runoff and temperature. They regenerate byte-identically with `gen_sparse.py`. Every file passes the full checker with grid checks, and each round-trips exactly at float32. cs32 float64 matches to one ulp, which review B proved is the best any float64 flux can do.
+
+**Tests:** tests/runoff gives 325 passed. They include a test that each lab_sea file reproduces the field exf applies at every forcing time, to 1e-12.
+
+**Reviews:**
+- A independently transliterated exf record selection: zero mismatches over about 70,000 model times in every mode.
+- B confirmed rA is bit-identical to the model's, and that 30 of 30 mutants are caught after round 1.

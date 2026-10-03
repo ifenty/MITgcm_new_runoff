@@ -32,9 +32,42 @@ runs on the unmodified code today.
 | Hold-exact interpolation mode | lab_sea, daily or monthly | input values themselves: `runoff` diagnostic = Σ flux·frac/rA of the current record; no dense oracle exists | ≤ 1e-12 relative (real*8 arithmetic on float32 inputs) | new check script (RUNOFF-005) | local | yes |
 | Fraction-sum and refusals that need the file | invalid files: sum ≠ 1, land cell, off-grid index, unknown tracer, target beyond an open boundary or under an ice shelf | expected fatal `RNF` error text in the run logs | exact message match | more cases in `tests/rnf/refusal_check.py` (RUNOFF-004) | local | yes |
 | Volume conservation | any sparse case | Σ runoff·rA = Σ flux_s(t) | ≤ 1e-12 relative | new check script | local | yes |
-| Converter round-trip | cs32 and lab_sea dense files | dense → sparse → dense regenerates the original array | exact for float32 inputs | pytest under `tests/` (RUNOFF-002) | local | yes |
+| Converter round-trip and converted inputs (**configured**) | the dense runoff files of the six `lab_sea/input.rnof_*` cases (float32) and of cs32 (`core_rnof_1_cs32.bin`, `runoff_temperature.bin`, float64; needs the grid output of a cs32 run, else skipped); synthetic lat-lon and exch2-shaped grids with land, a blank tile and grouped sources; a hand-built file with two sources feeding one cell | dense → sparse → dense gives back every dense record; fractions, fluxes and temperatures computed in the test from the inputs; for two sources on one cell, runoff as the sum of flux·fraction/rA and temperature as the flux-weighted mean, worked out by hand, including a record without flux and the fill value; time axes worked out by hand per exf timing mode; at every forcing time of the six lab_sea oracle runs, the sparse file read by the schema's rules against the field exf applies from the dense file (`lab_sea_runoff_timing_check.Case`, the emulation the direct timing check compares with the model), with a one-record shift as negative control; the integrity checker with grid checks on every converted file; each committed sparse file equals its regeneration | exact for float32 inputs and for the cs32 temperature; cs32 runoff (float64) exact at float32 and within one unit in the last place at float64, because (d·rA)/rA is not always d; total flux per record ≤ 1e-12 relative; field at forcing times ≤ 1e-12 of the largest runoff value; checker: no error, no warning | `{python} -m pytest -q tests/runoff` (`tests/runoff/test_convert.py`) | local | yes |
 | Upstream contribution | all verification experiments, master vs branch, plus `-mpi` | `tr_out_master.txt` | no diff beyond timestamps | `MITgcm/verification/testreport` (Docker) and `tools/do_tst_2+2` | local | before the PR |
 | 2 km scale I/O | 10⁵–10⁶ sources, 50 years daily, thousands of processes | wall-clock and I/O profile | owner-defined | cluster | remote | no (phase 1) |
+
+**Sparse inputs of the dense cases (available, RUNOFF-002):** the planned
+"Sparse = dense" rows above use these files, written by
+`MITgcm/verification/lab_sea/input.rnof_const/gen_sparse.py` with the converter
+of [runoff schema](runoff_schema.md) §14. Each stores `runoff_flux` in float64
+and passes the integrity checker with no error and no warning.
+
+| Dense case | Sparse file or files | Sources | Time axis |
+| --- | --- | --- | --- |
+| `lab_sea/input.rnof_const` | `runoff_sparse.nc`; `runoff_sparse_cells.nc` | 4 (the groups of `runoff_sources.txt`: `baffin` 3 cells, `labrador` 2, `greenland`, `newfound`); 7 (one per cell) | 1 record, `constant` |
+| `lab_sea/input.rnof_daily` | `runoff_sparse.nc` | 7 (one per cell) | 40 records, `fixed` 86400 s from 1979-01-01 00:00 |
+| `lab_sea/input.rnof_month` | `runoff_sparse.nc` | 7 | 12 records, `monthly`, repeat `annual`, nominal year 1979 |
+| `lab_sea/input.rnof_month1` | `runoff_sparse.nc` | 7 | 6 records, `monthly`, December 1978 to May 1979 |
+| `lab_sea/input.rnof_clim` | `runoff_sparse.nc` | 7 | 12 records, `fixed` 2628000 s from 1978-01-16 12:00, repeat `annual` (365 days) |
+| `lab_sea/input.rnof_yearly` | `runoff_sparse_1978.nc`, `runoff_sparse_1979.nc` | 7 | 365 records each, `fixed` 86400 s from 1 January 00:00 |
+| `global_ocean.cs32x15/input.icedyn`, `input.seaice` | `input.rnof_sparse/runoff_sparse.nc` (runoff and runoff temperature; no namelists yet, RUNOFF-006) | 1189 (one per cell) | 12 records, `fixed` 2592000 s from model time 1296000 s, repeat `annual` on the `360_day` calendar |
+
+- In the five timed lab_sea cases the cells of `baffin` and `labrador` vary
+  differently in time, so their shares of the group's flux are not constant
+  and each cell is its own source (`baffin_288` and so on). Only `const` tests
+  a source that spans a tile and process boundary.
+- The cs32 runoff and runoff temperature are constant in time: the 12 records
+  of `core_rnof_1_cs32.bin`, and of `runoff_temperature.bin`, are identical.
+  The cs32 sparse = dense oracle therefore tests the exch2 mapping and the
+  volume and temperature paths, and cannot detect a record chosen or weighted
+  wrongly. Timing without `pkg/cal` needs a case with records that differ.
+- The cs32 build has no `pkg/cal` (`-cal` in `code/packages.conf`), so its
+  file's time is model time in seconds from the reference date of the time
+  units, and the `360_day` calendar is the one in which its 360-day repeat
+  cycle is one year. A run without `useCAL` takes start time, period and
+  repeat cycle in seconds from `data.rnf` ([package design](package_design.md),
+  decision 7): 1296000, 2592000 and 31104000 for this file. How the reader
+  treats the file's own time axis in such a run is decided in RUNOFF-005.
 
 **Other experiments (not oracles):**
 

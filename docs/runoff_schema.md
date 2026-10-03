@@ -11,6 +11,8 @@ cells** with a fixed **fraction** of its water. Each source has time series on
 one shared **time** axis: a volume flux, and optionally temperature, salinity and
 passive-tracer concentrations. To build the target table from source locations
 and an MITgcm grid, see [Building the target table](#13-building-the-target-table).
+To convert an existing dense `runoffFile`, see
+[Converting dense runoff files](#14-converting-dense-runoff-files).
 
 The file has three kinds of content:
 
@@ -301,7 +303,9 @@ start-up), as exf dense fields do:
 - Chunk time series with **1 record per chunk** along `time` and a large chunk
   along `source`. The whole source dimension works when it fits in about 4 MB
   (1 million float32 values); otherwise use equal pieces of about that size.
-  RUNOFF-002 settles the final recommendation by a measured read benchmark. The
+  This layout is the current default, and the converter (§14) writes it. A
+  measured read benchmark at high resolution settles the final recommendation
+  (RUNOFF-007). The
   checker warns when a chunk covers more than one record, because then reading
   one record decompresses several.
 - Compression (`zlib`/deflate, level 1–4, with `shuffle`) is allowed and
@@ -826,3 +830,161 @@ check_files("targets.nc", grid_dir="run/", tables_only=True)
 The builder uses `scipy`'s k-d tree for nearest-cell searches when `scipy` is
 installed. Otherwise it uses a slower pure-numpy search that gives identical
 results.
+
+## 14. Converting dense runoff files
+
+`dense_to_sparse` (module `MITgcmutils.runoff.convert`, also a command-line
+tool) turns a dense `pkg/exf` `runoffFile` into a schema-1.0 file that gives
+the model the same runoff. `sparse_to_dense` is the inverse.
+
+**Inputs.**
+
+- **Dense file:** runoff in m/s, one global 2D record per time, big-endian
+  `float32` or `float64` (`exf_iprec`). The record's shape is the grid's
+  `(ny, nx)`, and `target_cell` is `i + nx·j` in it. Nothing else about the
+  kind of grid is used, so lat-lon, cubed-sphere and LLC layouts are converted
+  alike.
+- **Grid:** `RAC` and `hFacC` (level 1) from a directory of MITgcm grid
+  output, and `XC`, `YC` when present. From Python the arrays can be given
+  directly. Level 1 is the surface level in z coordinates. In pressure
+  coordinates the surface is level `Nr`, and level 1 is dry wherever the
+  ocean is shallower than the deepest level, so with `--grid-dir` the
+  converter refuses runoff on such cells. From Python, pass the surface mask
+  as the `hfac` array.
+- **Timing:** the `runoff*` settings of `data.exf` and the calendar of
+  `data.cal`, as options (table below).
+
+**Values.**
+
+- **Flux:** $F_s(t) = \sum_c \mathrm{runoff}(c, t)\,\mathrm{rA}(c)$ in m³/s,
+  computed and stored in `float64`. A `float32` flux (`--flux-dtype f4`)
+  changes the applied runoff by about 6·10⁻⁸ relative, which the dense
+  oracle tests can see.
+- **Round trip:** `sparse_to_dense` computes
+  $\sum_s F_s\,f_{s,c} / \mathrm{rA}(c)$. For one-cell sources it gives back
+  `float32` dense values exactly and `float64` values to one unit in the last
+  place. $(d \cdot \mathrm{rA}) / \mathrm{rA}$ is not always $d$ in `float64`,
+  and where it is not, no `float64` flux gives $d$ back.
+- **Sources:** by default every wet cell that is nonzero in at least one
+  record is one source (`cell_<index>`) with fraction 1.
+- **Grouping** (`--sources FILE`): each line is `source_id i j [cell ...]` with
+  0-based `i`, `j`, as in the lab_sea `runoff_sources.txt`. The cells of a
+  group form one source, and its fractions are the cells' shares of the
+  group's flux. A sparse source has one fixed fraction per cell, so this needs
+  shares that are constant in time. A group whose shares change by more than
+  10⁻⁹ between records is refused with an error that names it. With
+  `--split-varying` that group is written as one source per cell
+  (`<group>_<cell>`) instead. The same applies to a group that has no
+  fractions in [0, 1]: one whose flux sums to zero over all records, or with
+  a cell whose runoff has the opposite sign of the group's total. Both need
+  negative runoff. Cells with runoff that are in no group are one-cell
+  sources.
+- **Temperature** (`--temperature FILE`, a dense `runoftempFile` in °C): the
+  mean over the source's cells weighted by their fractions, which is the
+  flux-weighted mean because the shares are constant. For a one-cell source
+  it is the cell value. It is written for every record, also where the flux
+  is zero. A source has one temperature, so cell temperatures that differ
+  within a group are replaced by this mean, and `sparse_to_dense` does not
+  give them back.
+- **Refusals:** a nonzero value on a land cell (`hFacC` = 0 at level 1), and a
+  NaN or Inf value, stop the conversion with an error that names the cell and
+  record. Negative values give a warning. Only the records exf would read are
+  converted and checked.
+
+**Timing.** Each exf timing mode maps to one time axis. Line numbers refer to
+`pkg/exf`, `pkg/cal` and `eesupp/src` in `MITgcm/`.
+
+| exf setting | What exf does | Sparse file |
+|---|---|---|
+| `runoffperiod = 0` | Reads record 1 once (`exf_init_fld.F`, 98–126) and skips the field afterwards (`exf_set_fld.F`, 120). In a build with `ALLOW_GENTIM2D_CONTROL` the test at line 118 has no period condition, and `EXF_GetFFieldRec` returns record 1 with weight 1 (`exf_getffieldrec.F`, 97–105): the same field. | One record, `constant`, no bounds. |
+| `runoffperiod > 0` with a start date (`pkg/cal`) | Record $k$ is at the start date plus $(k-1)$ periods (`exf_getffield_start.F`, 80–104; `exf_getffieldrec.F`, 116–132 and 149). | `fixed`, `mitgcm_time_period`; `time` at the record times. |
+| `runoffperiod > 0` with `runoffStartTime` (no `pkg/cal`) | Record $k$ is at `runoffStartTime` plus $(k-1)$ periods, in seconds of model time; the start time defaults to 0 (`exf_getffield_start.F`, 62–64 and 106; `exf_getffieldrec.F`, 219–231; `get_periodic_interval.F`, 96–133). | `fixed`; model time 0 is the reference date of the time units. |
+| `runoffRepCycle > 0` (default `repeatPeriod`: `exf_readparms.F`, 951) | Takes the time since record 1 modulo the cycle (`exf_getffieldrec.F`, 134–146; `get_periodic_interval.F`, 83–94 and 115–133). | `mitgcm_time_repeat = "annual"`, with cycle ÷ period records. Refused unless the cycle is one year of the file's calendar (M05). |
+| `runoffperiod = -12` | Twelve records, January to December, at mid-month, repeated every model year (`exf_set_fld.F`, 133–140; `cal_getmonthsrec.F`, 106–117 and 134–214). | `monthly`, `annual`, on a nominal year (`--clim-year`). |
+| `runoffperiod = -1` | One record per consecutive calendar month, at mid-month; record 1 is the month of the start date (`exf_set_fld.F`, 142–153; `exf_getmonthsrec.F`, 58–69). | `monthly`, repeat `none`. |
+| `useExfYearlyFields` | Reads `<name>_YYYY` (`exf_getyearlyfieldname.F`, 45–57). Only the start date's offset from 1 January is kept (`exf_getffield_start.F`, 85–92). The record after the last one of a year is record 1 of the next file (`exf_getffieldrec.F`, 154–190). Needs `pkg/cal` and no repeat period (`exf_check.F`, 71–84). | `<out>_YYYY.nc`, `fixed`; all years share one source and target table. Refused unless the year is a whole number of periods (X01). |
+
+- **Bounds:** `time_bnds` is not an exf input. The converter writes:
+  - `monthly`: the calendar months, with `time` at their midpoint;
+  - a single `fixed` file: intervals of one period centred on the record
+    times;
+  - yearly `fixed` files: intervals of one period counted from 1 January,
+    because every bound of a `_YYYY` file must lie in its year and the files
+    must join without a gap (§7). `time` is then the start date's offset after
+    the start of its bounds: at the start, for records at 1 January 00:00.
+- **Runs without `pkg/cal`:** the time axis is model time in seconds, counted
+  from the reference date of the time units (`0001-01-01` by default). A
+  360-day repeat cycle is one year only on the `360_day` calendar, so such a
+  file is written with `--calendar 360_day`. The cs32 runoff is the example:
+  its build has no `pkg/cal` (`-cal` in `code/packages.conf`). A run without
+  `pkg/cal` can't convert a CF date, so it takes start time, period and
+  repeat cycle in seconds from `data.rnf`
+  ([package design](package_design.md), decision 7); the values to give are
+  the converter's `--start-time`, `--period` and `--repeat-cycle`, which the
+  file also records in its `exf_start_time`, `exf_period` and
+  `exf_repeat_cycle` attributes.
+- **What schema 1.0 can't express:** a repeat cycle that is not one calendar
+  year, and yearly files whose year is not a whole number of periods (for
+  example weekly records). The converter stops with an error that names the
+  rule.
+
+**Command line.** It exits 0 on success, 1 on invalid input or checker errors
+in the output, and 2 on a usage or I/O problem. It runs the checker on the
+output unless you pass `--no-check`.
+
+| Option | exf or other source | Meaning |
+|---|---|---|
+| `--grid-dir DIR` | model grid output | `RAC`, `hFacC`, and `XC`, `YC` if present |
+| `--prec {32,64}` | `exf_iprec` | precision of the dense files (default 32) |
+| `--period P` | `runoffperiod` | 0, seconds, -12 or -1 |
+| `--startdate1 YYYYMMDD`, `--startdate2 HHMMSS` | `runoffstartdate1`, `runoffstartdate2` | date of record 1 |
+| `--start-time S` | `runoffStartTime` | time of record 1 in seconds of model time, without `pkg/cal` |
+| `--repeat-cycle S` | `runoffRepCycle` | repeat cycle in seconds |
+| `--years YYYY ...` | `useExfYearlyFields` | convert `INPUT_YYYY` to `OUT_YYYY.nc` for each year |
+| `--calendar C` | `TheCalendar` | a CF calendar (§6.3), or `gregorian`, `noLeapYear`, `model` |
+| `--clim-year Y` | — | nominal year of a `-12` climatology (default: the start date's year, or 2001) |
+| `--temperature FILE` | `runoftempFile` | dense runoff temperature |
+| `--sources FILE`, `--split-varying` | — | grouping, described above |
+| `--flux-dtype {f8,f4}` | — | storage type of the time series (default `f8`) |
+| `--grid-name NAME` | — | `mitgcm_grid_name` |
+| `--to-dense` | — | convert a sparse file back to a dense binary (`--variable`, `--prec`) |
+
+```sh
+# daily records from 1 January 1979, not repeated
+python -m MITgcmutils.runoff.convert runoff_daily.bin -o runoff.nc --grid-dir run/ \
+    --period 86400 --startdate1 19790101 --calendar gregorian
+# yearly files runoff_1978, runoff_1979 -> runoff_1978.nc, runoff_1979.nc
+python -m MITgcmutils.runoff.convert runoff -o runoff --grid-dir run/ \
+    --period 86400 --startdate1 19780101 --years 1978 1979
+# 30-day records with a 360-day cycle, float64, no pkg/cal, with temperature
+python -m MITgcmutils.runoff.convert core_rnof_1_cs32.bin -o runoff.nc --grid-dir run/ \
+    --prec 64 --period 2592000 --start-time 1296000 --repeat-cycle 31104000 \
+    --calendar 360_day --temperature runoff_temperature.bin
+# and back
+python -m MITgcmutils.runoff.convert runoff.nc -o runoff_back.bin --to-dense
+```
+
+From Python:
+
+```python
+from MITgcmutils.runoff import dense_to_sparse, sparse_to_dense
+
+paths = dense_to_sparse("runoff_month.bin", "runoff.nc", grid_dir="run/",
+                        period=-12, calendar="gregorian", clim_year=1979)
+dense = sparse_to_dense(paths[0])          # (nrec, ny, nx), m/s
+```
+
+**Converted test inputs.** `MITgcm/verification/lab_sea/input.rnof_const/gen_sparse.py`
+writes the sparse form of every dense runoff test case:
+
+- `lab_sea/input.rnof_{const,daily,month,month1,clim}/runoff_sparse.nc` and
+  `input.rnof_yearly/runoff_sparse_{1978,1979}.nc`. In `const` the groups of
+  `runoff_sources.txt` are kept, and `runoff_sparse_cells.nc` has the same
+  runoff as one source per cell. In the other cases the cells of a group vary
+  differently in time, so each is its own source.
+- `global_ocean.cs32x15/input.rnof_sparse/runoff_sparse.nc`: runoff and runoff
+  temperature, 1189 sources.
+
+lab_sea writes its grid with `pkg/mnc`, so the script computes the lab_sea
+cell areas as the model does (`ini_spherical_polar_grid.F`, 187–188) and takes
+the wet mask from the bathymetry.

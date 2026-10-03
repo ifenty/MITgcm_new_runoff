@@ -90,11 +90,10 @@ Freshwater formulation errors change sea level and salinity drift silently.
 ### Proposed action and acceptance
 Acceptance: test cases in at least one lat-lon and one cs32 configuration for each combination; volume and salt budgets closed (RUNOFF-016).
 
-## BLOCKED: Runoff diagnostics and monitor output
+## UNRESOLVED: Runoff diagnostics and monitor output
 
 **Date Identified**: 2026-10-02T22:30:00Z
-**Status**: Blocked
-**Blocked-By**: RUNOFF-012 — diagnostics register through the package skeleton
+**Status**: Unresolved
 **UUID**: RUNOFF-015
 **Anchors**: MITgcm/pkg/exf/exf_diagnostics_fill.F::<module>
 
@@ -111,6 +110,8 @@ Needed for every verification check and for users.
 Acceptance: diagnostics listed in available_diagnostics, filled each step, values equal the applied fields (direct check).
 
 Scope decision from RUNOFF-012: the skeleton has no `rnf_diagnostics_init.F`. Decision 1 has `RNF_INIT_FIXED` call it, so RUNOFF-015 adds both the routine and the call.
+
+Unblocked 2026-10-03: RUNOFF-012 closed (pkg/rnf skeleton, fork ac33291aa).
 
 ## BLOCKED: Volume, heat, salt and tracer budget closure checks
 
@@ -331,11 +332,10 @@ Glacier subglacial discharge enters at depth; interior-cell T/S tendencies are w
 ### Proposed action and acceptance
 Acceptance: schema 1.1 and checker update, analytic interior-cell tests, budget closure, isomip/cs32 cases.
 
-## BLOCKED: Package documentation (MITgcm RST manual, namelist reference, how-to)
+## UNRESOLVED: Package documentation (MITgcm RST manual, namelist reference, how-to)
 
 **Date Identified**: 2026-10-02T22:30:00Z
-**Status**: Blocked
-**Blocked-By**: RUNOFF-012 — documents the package created there
+**Status**: Unresolved
 **UUID**: RUNOFF-026
 **Anchors**: MITgcm/doc/phys_pkgs/exf.rst::<module>
 
@@ -351,11 +351,12 @@ A package without manual documentation will not be accepted upstream or used.
 ### Proposed action and acceptance
 Acceptance: Sphinx build of the doc section succeeds; Richard reviews accuracy against code and namelist.
 
-## BLOCKED: MITgcm coding standards and TAF-friendliness review
+Unblocked 2026-10-03: RUNOFF-012 closed (pkg/rnf skeleton, fork ac33291aa).
+
+## UNRESOLVED: MITgcm coding standards and TAF-friendliness review
 
 **Date Identified**: 2026-10-02T22:30:00Z
-**Status**: Blocked
-**Blocked-By**: RUNOFF-012 — reviews the package code
+**Status**: Unresolved
 **UUID**: RUNOFF-027
 **Anchors**: MITgcm/doc/contributing/contributing.rst::<module>
 
@@ -376,6 +377,8 @@ Carry forward from RUNOFF-010 review B: the previous-step field set of the time-
 Carry forward from RUNOFF-012:
 - The lint must grep for `RUNOFF-[0-9]` and the development-repo URL. Stub comments, one run-time message and README.md carry them and must be swept as the stubs are filled.
 - The TAF list files (`rnf_ad_diff.list`, `rnf_ad.flow`) were deferred here because they need a TAF build.
+
+Unblocked 2026-10-03: RUNOFF-012 closed (pkg/rnf skeleton, fork ac33291aa).
 
 ## BLOCKED: Upstream readiness: full testreport master vs branch, MPI and 2+2
 
@@ -455,28 +458,24 @@ Mixed-layer response to warm or cold river water could differ from the dense exf
 ### Proposed action and acceptance
 Run a KPP configuration (e.g. lab_sea or cs32 with KPP) with a strongly warm/cold source both ways; report the difference in mixed-layer depth and surface T. Acceptance: a documented decision with the measured effect, reviewed by Richard; the package design updated.
 
-## UNRESOLVED: Python dense-to-sparse runoff converter
+## UNRESOLVED: Python runoff tools assume level 1 is the surface (pressure coordinates)
 
-**Date Identified**: 2026-09-29T21:30:00Z
+**Date Identified**: 2026-10-03T11:00:00Z
 **Status**: Unresolved
-**UUID**: RUNOFF-002
-**Anchors**: docs/model_contract.md#input-one-netcdf-file-per-run-phase-1; docs/verification_matrix.md#scientific-qualification-matrix
+**UUID**: RUNOFF-032
+**Anchors**: MITgcm/utils/python/MITgcmutils/MITgcmutils/runoff/check.py::<module>; MITgcm/utils/python/MITgcmutils/MITgcmutils/runoff/targets.py::<module>; MITgcm/utils/python/MITgcmutils/MITgcmutils/runoff/convert.py::<module>
 
 ### Issue or research question
-A tool is needed that reads a dense MITgcm runoff binary (m/s, any grid layout), the grid (`rA`, surface mask) and timing, and writes schema-conformant NetCDF. Flux in m³/s is rA·runoff; each nonzero cell becomes a one-cell source, or cells are grouped with fractions.
+The checker's grid rules (R01 land target), the target builder's wet mask and the converter's land refusal all read `hFacC` level 1 as the surface. In pressure coordinates the surface is level `Nr` (package design decision 5); under shelfice it is `kSurfC`. With `--grid-dir` on a pressure-coordinate grid the checker would flag valid targets as land.
 
 ### Evidence
-Design decisions from the project owner, recorded in `esx/project_profile.md` and `docs/model_contract.md` (2026-09-29). No code exists yet.
-
-Precision note from RUNOFF-003 review (Richard, 2026-10-02): the oracle pass criterion is 10 matching digits on `cg2d_init_res`, and a float32-level (6e-8) change in applied runoff moves it by about 6e-10. Sparse files for the oracle tests must therefore reproduce the dense m/s values to better than 1e-9 relative: store `runoff_flux` as float64 (flux = dense·rA computed in float64), not float32.
+RUNOFF-002: on the cs32 `input.in_p` grid, 1011 of the 1189 runoff cells are dry at level 1 and none are dry at level `Nr` (Bob round 1; review B confirmed).
 
 ### Scientific or engineering impact
-This produces the oracle inputs for every sparse-vs-dense test.
+Users of pressure-coordinate or ice-shelf configurations get false land errors, or wrong spread targets.
 
 ### Proposed action and acceptance
-Put the tool under `tools/runoff/`, with pytest tests under `tests/`. Acceptance: the dense→sparse→dense round-trip reproduces cs32 `core_rnof_1_cs32.bin` and the lab_sea dense files exactly (`float32`), fractions sum to 1 within 1e-6, and no source targets a land cell.
-
-Unblocked 2026-09-30: RUNOFF-001 closed; schema 1.0 is approved (docs/runoff_schema.md), and MITgcmutils.runoff.check validates files against it.
+Add a surface-level option to all three tools: `--surface-level top|bottom|kSurfC`, or detect it from `data` (`buoyancyRelation`) when a run directory is given, and document it. Acceptance: the cs32 `input.in_p` grid checks cleanly with the converted cs32 file; a shelfice grid uses `kSurfC`; the existing tests are unchanged.
 
 ## UNRESOLVED: pkg/rnf sparse runoff reader, per-tile lists and global fraction check
 
@@ -534,6 +533,14 @@ Time off-by-one errors at month or year boundaries are a main scientific risk.
 ### Proposed action and acceptance
 Acceptance: the lab_sea daily, monthly, monthly-repeating and yearly cases match their dense references (single-process and MPI), and the hold-exact direct check passes.
 
+Carry forward from RUNOFF-002 (converter):
+- **Gregorian fixed-period climatology:** the reader must anchor the repeat cycle at the file's real dates (package design decision 7), not at a nominal year. Read the nominal way, the lab_sea clim file departs from exf from 1980-02-29 by up to 2.2% of peak, and the 50-day oracle cannot tell the difference. Add a longer test.
+- **Constant files** carry a reference date of 0001-01-01 Gregorian, before the pkg/cal reference date of 1582-10-15. The reader must not pass it to cal.
+- **cs32 (no pkg/cal):** times are seconds of model time on a 360_day file calendar; do not demand a calendar match without cal.
+- **Yearly files:** records sit at the start of their bounds (1 January 00:00); define hold-exact behaviour.
+- **No multi-cell source in the timed oracles:** only the lab_sea const case has one, because gendata.py gives each cell its own phase. Add a group-coherent timed case.
+- **Not expressible in schema 1.0:** a repeat cycle that is not one calendar year, and yearly files that are not a whole number of periods. A schema 1.1 attribute would fix this if ever needed.
+
 ## BLOCKED: cs32 sparse-runoff oracle (exch2 volume path; runoff temperature cell-by-cell)
 
 **Date Identified**: 2026-09-29T21:30:00Z
@@ -554,6 +561,8 @@ Checks exch2 index mapping, sources spanning faces, tiles and processes, and run
 ### Proposed action and acceptance
 Design (RUNOFF-010, docs/package_design.md): runoff temperature enters as a tendency term, not through exf `runoftemp`, and differs from the exf term under sea ice (exf scales it by open-water fraction, `seaice_growth.F:956-957`). The volume oracle stays: `input.icedyn` and a variant of `input.seaice` without runoff temperature must match the dense references. Runoff temperature is checked cell by cell (dense `EXFroff`, `EXFroft`, `THETA` vs the package heat diagnostic) in ice-free cells. Acceptance: volume-only cases match their dense references to the digit threshold, single-process and `-mpi 4`.
 
+From RUNOFF-002: `verification/global_ocean.cs32x15/input.rnof_sparse/runoff_sparse.nc` holds the cs32 conversion (1189 sources, 12 records, flux and temperature). All 12 cs32 records are identical in time, so the cs32 oracle cannot detect a timing error; timing is covered by lab_sea.
+
 ## BLOCKED: Per-record parallel I/O strategy at 2 km scale
 
 **Date Identified**: 2026-09-29T21:30:00Z
@@ -573,6 +582,8 @@ Sets production feasibility. Phase 1 correctness doesn't depend on it.
 
 ### Proposed action and acceptance
 Phase 1 default: every process reads the full record. Owner to decide whether a scatter design is needed before the upstream PR.
+
+From RUNOFF-002 (review A): this issue owns the measured chunking read benchmark (docs/runoff_schema.md §8, docs/model_contract.md scale requirement). The converter writes the §8 default layout: one record per chunk, deflate, about 4 MB pieces along `source`.
 
 ## BLOCKED: Passive-tracer runoff contributions (ptracers tendency term)
 

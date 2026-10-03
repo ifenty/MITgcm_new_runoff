@@ -184,3 +184,61 @@ A judgment citing a `verify.py` evidence reference exactly as returned is accept
 
 ### Expected Effect
 Transitions are recorded on the first attempt.
+
+## 🔴 PROPOSED: Provider-limit pause lifts before its known reset on a real-output Stop
+
+**Date Identified**: 2026-10-03  07:40
+**Status**: Proposed
+**UUID**: TEAM-PAUSE-EARLY-LIFT-001
+**Category**: loop_pause
+**Severity**: Medium
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-02-runoff-010/assessment.md
+**Anchors**: tools/esx/ralph_stop.py
+
+### Issue
+A retained Bob turn hit the session limit, and `pause_for_provider_limit` correctly paused the loop with `paused_until` set to the reset. The coordinator then ended its turn with a real summary message under the grace allowance. The Stop hook classified that turn as 'working', lifted the provider_limit pause and advanced the iteration from 1 to 2, about 90 minutes before the reset.
+
+### Evidence
+The loop status after the stop: iteration 2, not paused. Before it: paused, pause_source provider_limit, paused_until 1791018600. The Bob turn 18355f6d failed with "You've hit your session limit · resets 2:10am".
+
+### Potential Impact
+An iteration is consumed, and the loop resumes while the provider is still refusing work.
+
+### Proposed Fix
+While `paused_until` is in the future, a 'working' Stop must not lift a provider_limit pause; only the reset time, or a later working Stop, lifts it.
+
+### Acceptance Criteria
+With paused_until in the future, a working Stop leaves the loop paused and does not advance it.
+
+### Expected Effect
+No iterations are lost to the grace-allowance summary turn.
+
+## 🔴 PROPOSED: Provider-limit pause time still shortens later role turns
+
+**Date Identified**: 2026-10-03  09:50
+**Status**: Proposed
+**UUID**: TEAM-PAUSE-DEADLINE-CLAMP-001
+**Category**: loop_pause
+**Severity**: Medium
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-02-runoff-010/assessment.md
+**Anchors**: tools/esx/team_budget.py
+
+### Issue
+`team_budget.reserve` clamps each turn to the issue scope's nominal deadline (`started + minutes`) while that deadline is still in the future. The scope clock keeps running through a provider-limit pause. After the 07:37–09:10Z outage, the first resumed Bob turn (`--timeout 5400`) was killed at 09:46Z. That was the original issue deadline (09:36Z) plus grace, after 33 minutes of work. Bob also reported that the resumed brief carried the old deadline, so the turn before it stopped at once.
+
+### Evidence
+RUNOFF-002:
+- turn 3f39b1ec: completed after 109 s with nothing done, "deadline passed";
+- turn e521703f: failed with "timeout" after 1989 s; its reservation deadline was 1791020182 (09:36:22Z).
+
+### Potential Impact
+Two wasted turns after every provider outage, and the role's work is cut off mid-edit.
+
+### Proposed Fix
+Pause the scope clock while the loop is paused (shift the scope deadline by the pause duration), or exempt the issue scope deadline from the turn clamp, keeping it only as a measured overrun (the module's own docstring calls these nominal, not caps).
+
+### Acceptance Criteria
+After a pause of N minutes, a turn dispatched with `--timeout T` gets at least min(T, remaining nominal + N) seconds.
+
+### Expected Effect
+No turns are lost after an outage.
