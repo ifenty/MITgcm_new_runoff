@@ -19,6 +19,13 @@ This is the scientific contract agents read. Executable paths and commands are i
   high-resolution ocean models with river and glacier discharge. The main use case
   is daily runoff for 50 years at every coastal cell of a global 2 km model. The
   feature is intended for an upstream PR to MITgcm/MITgcm.
+- **Owner direction, 2026-10-02 (owner away for several days):**
+  - Develop and test the runoff program as a robust, versatile, documented new MITgcm package that follows MITgcm coding standards.
+  - Test it in many verification configurations: regional and global; lat-lon, cubed sphere and LLC; with and without sea ice, ice shelves and open boundaries.
+  - Cover all time modes (constant, daily, monthly, monthly climatology, yearly files), each with and without temperature, salinity and tracer contributions.
+  - T, S and tracer input uses the shelfice/icefront tendency-term pattern.
+  - Plan the work as RUNOFF-010 to RUNOFF-029 and file new issues as needed.
+  - Subsurface discharge (RUNOFF-025) is now in scope. Opening the upstream PR still requires explicit owner approval.
 - In-scope deliverables and explicit exclusions:
   - **Phase 1 deliverables:**
     - 2D (surface) sparse runoff in exf
