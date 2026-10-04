@@ -25,6 +25,7 @@
     "MITgcm/pkg/rnf",
     "MITgcm/verification/global_ocean.cs32x15/code",
     "MITgcm/verification/global_ocean.cs32x15/input.icedyn",
+    "MITgcm/verification/global_ocean.cs32x15/input.rnof_sp_icedyn",
     "MITgcm/verification/global_ocean.cs32x15/input.rnof_sparse",
     "MITgcm/verification/global_ocean.cs32x15/input.seaice",
     "MITgcm/verification/lab_sea/code",
@@ -34,6 +35,7 @@
     "MITgcm/verification/lab_sea/input.rnof_daily",
     "MITgcm/verification/lab_sea/input.rnof_month",
     "MITgcm/verification/lab_sea/input.rnof_month1",
+    "MITgcm/verification/lab_sea/input.rnof_sp_const",
     "MITgcm/verification/lab_sea/input.rnof_yearly"
   ],
   "output_paths": [

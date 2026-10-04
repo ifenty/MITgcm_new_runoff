@@ -21,7 +21,7 @@ The file has three kinds of content:
 | Source table | `source` | only `source_id` | one row per source: id, names, notes, location, type |
 | Alias table | `alias` | no | any number of extra names per source |
 | Target table | `target` | yes | one row per (source, cell) pair: source index, cell index, fraction |
-| Time series | `time` × `source` | yes | flux, temperature, salinity, tracers |
+| Time series | `time` × `source` | the flux; temperature, salinity and tracers with RUNOFF-013 (§3.5) | flux, temperature, salinity, tracers |
 
 MITgcm reads only a small, fixed set of variables and attributes, marked
 **model** below. Everything else is for people and tools, and you may add more
@@ -83,7 +83,9 @@ MITgcm reads only a small, fixed set of variables and attributes, marked
 ## 3. Variables
 
 **Req.** is required (R), optional (O), or required under a condition. **Model**
-marks what MITgcm reads.
+marks what MITgcm reads. `yes` means the reader of RUNOFF-004 reads it today;
+`planned (RUNOFF-013)` marks a variable the schema defines and that reader does
+not read yet (§3.5).
 
 ### 3.1 Time
 
@@ -152,13 +154,28 @@ record is one contiguous hyperslab. Stored as float (32-bit) or double.
 | Variable | Req. | Model | Units | Missing values |
 |---|---|---|---|---|
 | `runoff_flux` | R | yes | volume flux, [m³ s⁻¹](#61-physical-variables) | **Not allowed.** Any fill value, NaN or Inf is an error, and the model stops. |
-| `runoff_temperature` | O | yes | [°C](#61-physical-variables) | Allowed: the source enters at the surface water temperature, the same as when the variable is absent. |
-| `runoff_salinity` | O | yes | [model salinity units](#61-physical-variables) | Not allowed. If the variable is absent, salinity is 0. |
-| `runoff_ptracer_<NAME>` | O | yes | any non-empty ASCII string, which must equal the ptracer's own concentration units | Not allowed. |
+| `runoff_temperature` | O | planned (RUNOFF-013) | [°C](#61-physical-variables) | Allowed: the source will enter at the surface water temperature, the same as when the variable is absent. |
+| `runoff_salinity` | O | planned (RUNOFF-013) | [model salinity units](#61-physical-variables) | Not allowed. If the variable is absent, salinity will be 0. |
+| `runoff_ptracer_<NAME>` | O | planned (RUNOFF-013) | any non-empty ASCII string, which must equal the ptracer's own concentration units | Not allowed. |
 
+- **What the model reads today** (`pkg/rnf` after RUNOFF-004): `runoff_flux`
+  only. `RNF_INIT_FIXED` walks the variables of the file and prints a warning
+  for each `runoff_temperature`, `runoff_salinity` and `runoff_ptracer_*` it
+  finds, naming RUNOFF-013
+  (`MITgcm/pkg/rnf/rnf_init_fixed.F:382-408`), so a property in the file is
+  never dropped without a word; it is not read and no value of it reaches the
+  model. The runoff therefore enters at the ambient temperature and adds no
+  salt or tracer, and the `RNF_useTemp`, `RNF_useSalt` and `RNF_usePtracers`
+  switches of `data.rnf` have no effect yet. The "Model" and "Missing values"
+  entries above, and the two rules below, are the contract RUNOFF-013
+  implements: until it lands, a missing temperature, an absent salinity and an
+  unmatched tracer name all behave the same way, namely the property is
+  ignored.
 - **Passive tracers:** `<NAME>` must equal a `PTRACERS_names` entry in
   `data.ptracers` (letters, digits and `_`). Any number is allowed. A tracer with
-  no matching ptracer is fatal in the model. Its concentration is per unit volume
+  no matching ptracer will be fatal in the model once tracer input is read
+  (RUNOFF-013); the reader of RUNOFF-004 reads no tracer variable, so it
+  matches no name and refuses none. Its concentration is per unit volume
   of runoff water.
 - **Recommended variable attributes:** `long_name`, `units`, `comment`. `runoff_flux`
   may carry `standard_name = "water_volume_transport_into_sea_water_from_rivers"`

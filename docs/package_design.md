@@ -1072,6 +1072,29 @@ are listed in [the code map](code_map.md).
    message that names RUNOFF-005, as does a file that is not `constant`.
 9. **Defaults of `RNF_SIZE.h` (decision 9):** `RNF_nSrcTile` 2000,
    `RNF_nTgtTile` 10000, `RNF_nBuf` 1000.
+10. **The fraction sums are computed only when every table entry was
+    accepted (decision 6, steps 3 and 6).** An entry that step 3 refuses is
+    not placed, so its fraction is missing from the sum of its source and
+    step 6 would report the same broken entry a second time, as a source
+    that does not sum to 1. `RNF_INIT_FIXED` therefore skips step 6 when
+    step 3 counted an error (`RNF_tableRead` in `RNF.h`) and says so in the
+    log. A negative fraction hidden in a sum of exactly 1 is still caught,
+    because step 3 tests the range of each fraction. The same holds for a
+    wrong header: nothing is placed and the sums are not computed.
+    *Why the gate cannot hide a fraction error:* it opens only when
+    `nErrEnt = 0`, and `nErrEnt ≥ 1` is itself fatal — it raises `errCount`
+    at `rnf_init_fixed.F:699`, and `errCount ≥ 1` stops every process at
+    `rnf_init_fixed.F:808-813`. So the run never continues on a path where
+    the sums were skipped: a skipped check is always accompanied by a stop
+    for the entry that caused it.
+11. **A property in the file that is not applied yet is reported, not
+    dropped silently (decisions 3 and 4).** `RNF_INIT_FIXED` walks the
+    variables of the file and prints a warning for each
+    `runoff_temperature`, `runoff_salinity` and `runoff_ptracer_*` it finds,
+    naming RUNOFF-013. Without it the volume would enter at the ambient
+    temperature and at salinity 0 with no word in the log. The ptracer
+    names are therefore not matched to `PTRACERS_names` yet, and
+    `RNF_useTemp`, `RNF_useSalt` and `RNF_usePtracers` have no effect.
 
 ## Points that differ from earlier project records
 

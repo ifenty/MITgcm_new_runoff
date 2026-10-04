@@ -24,7 +24,7 @@ runs on the unmodified code today.
 | Dense runoff baseline, 12 equally spaced records with a repeat cycle (**configured**) | `lab_sea/input.rnof_clim`: `runoffperiod = 2628000`, `runoffRepCycle = 31536000` (365 days), 50 days from 1 December, wrapping from record 12 to record 1; records 11, 12, 1, 2 read, all with non-zero weight | `results/output.rnof_clim.txt` | as above | `tests/mitgcm_oracle.sh lab_sea input.rnof_clim` and `tests/mitgcm_oracle.sh lab_sea input.rnof_clim -mpi 2` | local | yes |
 | Dense runoff baseline, yearly `_YYYY` files (**configured**) | `lab_sea/input.rnof_yearly`: `useExfYearlyFields`, daily records, 26 days from 20 December, monitor every 12 h; records 354 to 365 of `runoff_yearly_1978` and 1 to 16 of `runoff_yearly_1979` read, of which 354 to 365 and 1 to 15 have non-zero weight | `results/output.rnof_yearly.txt` | as above | `tests/mitgcm_oracle.sh lab_sea input.rnof_yearly` and `tests/mitgcm_oracle.sh lab_sea input.rnof_yearly -mpi 2` | local | yes |
 | Dense runoff timing, direct check (**configured**) | the run directories of the six `lab_sea/input.rnof_*` cases, single-process and `-mpi 2`; needs the oracle runs above to have been made | monitor statistics `exf_runoff_max`, `_min`, `_mean`, `_sd` versus the field interpolated from the input records under the exf timing conventions, at every monitor time | ≤ 1e-12 relative to the largest runoff value (real*8 interpolation of float32 records) | `{python} tests/runoff/lab_sea_runoff_timing_check.py` and `{python} tests/runoff/lab_sea_runoff_timing_check.py --mpi 2` | local | yes |
-| Sparse = dense, lat-lon, constant runoff (**configured**) | `lab_sea/input.rnof_sp_const`: the set-up of `input.rnof_const` with `useRNF`, no dense `runoffFile`, and `../input.rnof_const/runoff_sparse.nc` (4 grouped sources, 7 targets; `baffin` spans the tile and MPI process boundary, `labrador` a tile boundary); single-process (4 tiles) and `-mpi 2`. The one-source-per-cell file `runoff_sparse_cells.nc` runs as case `cells_equal_dense` of `tests/rnf/refusal_check.py`, and the same run with every flux set to zero as case `zero_flux_differs` | `results/output.rnof_sp_const.txt`, a copy of the dense `results/output.rnof_const.txt`; the two cases of the check script use the dense reference itself | digit threshold (10 on `cg2d_init_res`). Measured: 16 digits on every checked variable, single-process and `-mpi 2`, for the grouped and the per-cell file. Negative control: with zero flux only 2 digits match, so the comparison is sensitive to the runoff | `tests/mitgcm_oracle.sh lab_sea input.rnof_sp_const` and `tests/mitgcm_oracle.sh lab_sea input.rnof_sp_const -mpi 2`; `{python} tests/rnf/refusal_check.py [--mpi 2]` | local | yes |
+| Sparse = dense, lat-lon, constant runoff (**configured**) | `lab_sea/input.rnof_sp_const`: the set-up of `input.rnof_const` with `useRNF`, no dense `runoffFile`, and `../input.rnof_const/runoff_sparse.nc` (4 grouped sources, 7 targets; `baffin` spans the tile and MPI process boundary, `labrador` a tile boundary); single-process (4 tiles) and `-mpi 2`. The one-source-per-cell file `runoff_sparse_cells.nc` runs as case `cells_equal_dense` of `tests/rnf/refusal_check.py`, the same run with every flux set to zero as case `zero_flux_differs`, and that file with every source split into two that share its cell (a third and two thirds of its flux, 14 sources and 14 target entries on 7 cells) as case `two_sources_one_cell`, the only case in which the model adds two contributions into one cell | `results/output.rnof_sp_const.txt`, a copy of the dense `results/output.rnof_const.txt`; the three cases of the check script use the dense reference itself | digit threshold (10 on `cg2d_init_res`). Measured: 16 digits on every checked variable, single-process and `-mpi 2`, for the grouped and the per-cell file; 16 digits for the two-sources-on-one-cell file. Negative control: with zero flux only 2 digits match, so the comparison is sensitive to the runoff | `tests/mitgcm_oracle.sh lab_sea input.rnof_sp_const` and `tests/mitgcm_oracle.sh lab_sea input.rnof_sp_const -mpi 2`; `{python} tests/rnf/refusal_check.py [--mpi 2]` | local | yes |
 | Sparse = dense, daily records, non-repeating | the `input.rnof_daily` runoff, ≥ 1 month | `results/output.rnof_daily.txt` | digit threshold | as above | local | yes |
 | Sparse = dense, repeating monthly climatology (`period = -12`) | the `input.rnof_month` runoff, spanning ≥ 2 month boundaries | `results/output.rnof_month.txt` | digit threshold | as above | local | yes |
 | Sparse = dense, calendar-month records, non-repeating (`period = -1`; schema `monthly` sampling with repeat `none`) | the `input.rnof_month1` runoff, spanning ≥ 2 month boundaries | `results/output.rnof_month1.txt` | digit threshold | as above | local | yes |
@@ -34,8 +34,9 @@ runs on the unmodified code today.
 | Refusals that need the file (**configured**) | scratch inputs layered on `lab_sea/input`, each with a copy of `input.rnof_const/runoff_sparse.nc` that has one violation. Table entries: `target_cell` = -3 and = nx·ny; `target_source` = -1 and = number of sources; `target_level` = 2; a fraction of -0.25 and one that is not a number; a fraction of -0.25 hidden by two others in a sum of exactly 1. Targets: one moved to a land cell of the western half of the grid; `target_cell_area` off by 1 %; a fraction sum of 0.999. The file: `mitgcm_grid_nx` = 21; no `mitgcm_grid_nx`; `mitgcm_time_sampling` = `fixed`; no `target_fraction` variable. The flux: not a number, infinite, 1e31, equal to a numeric `missing_value` of -9999, equal to the `_FillValue` of a float32 variable, and 9999 with `missing_value` stored as the text "9999.". Array bounds: synthetic files with `RNF_nSrcTile` + 1 = 2001 sources on one cell (target table read in three chunks) and with `RNF_nTgtTile` + 1 = 10001 entries on one cell. Single-process and on 2 MPI processes | a run that does not end normally: the expected `RNF_INIT_FIXED`, `RNF_NC_ERROR`, `RNF_NC_READ_FLUX` or `RNF_NC_ATT_REAL` error text, naming the source id where a source is concerned, the table entry for `target_source`, and RUNOFF-005 for the time sampling; one `STOP` line per process. Land, cell area and array bounds are seen by the process that owns the tile only: its message must be in the `STDERR.*` of at least one process, the summed count in that of every process, and every process must stop within the timeout (no hang). The hidden negative fraction must be refused by its range and not reach the fraction sum. In the six flux cases the flux sums of `RNF_INIT_VARIA` must not be printed. The text `missing_value` case fails on the code before the round-1 correction, where the run ended normally with 9999 m³/s applied | exact substring match per file; one `STOP` line per process; run time below `--timeout` (default 600 s) | `{python} tests/rnf/refusal_check.py` and `{python} tests/rnf/refusal_check.py --mpi 2` | local | yes |
 | Refusals that need the file, not yet run | every file refusal listed under "Refusals in the code that no configured test runs" in the coverage limits, among them a target beyond an open boundary (`maskInC` = 0) or under an ice shelf (`kTopC` ≠ 0): no experiment that compiles `rnf` has open boundaries or `pkg/shelfice`. Also an unknown tracer, which is not in the code yet (tracers are not read) | expected fatal `RNF` error text in the run logs | exact message match | more cases (RUNOFF-017, RUNOFF-019, RUNOFF-020) | local | yes |
 | Placement of 80 fixed probe cells per layout on exch2 tiles (**configured**) | `global_ocean.cs32x15` on 4 MPI processes, the set-up of `input.rnof_sp_icedyn` with a `data.exch2` that sets `W2_mapIO` = -1 (192 × 32), 0 (6144 × 1, one long line) and 1 (32 × 192, compact). 80 probe cells per layout, 20 per process: the 4 corners of each of the 12 tiles and 32 interior cells at fixed positions. The cells are chosen without regard to any runoff file, which the probe does not read; they are not the runoff targets (coverage limits). Each probe is a target with `target_cell_area` = 1 m², so the model refuses it and prints the cell index of the file with the `i,j,bi,bj` where it placed it. With `W2_mapIO` = 0 the long-line branch of the placement runs, which no other test executes | a placement computed in the test from exch2's own topology log of the same run (`w2_tile_topology.NNNN.log`: map size, facets, each tile's facet, offset and position on the map, the tiles of each process) with the definition of the layouts, not the record arithmetic of the model; the layout rule is first checked against exch2's "on Glob.Map" position of every tile. Second, the model's dense reader: a probe must be reported "on land" exactly where the bathymetry file holds a land value at that cell index. Control: with every index of the file raised by one, no probe may be reported on the cell predicted for the original index | the reported set of (cell, process, i, j, bi, bj) equals the predicted set, nothing missing and nothing extra; every process prints the count of 80 and stops; no timeout. Measured: 80 of 80 in each layout; land at 20, 22 and 22 probes, equal to the bathymetry file; control 0 of 80 | `{python} tests/rnf/placement_probe.py`, after `tests/mitgcm_oracle.sh global_ocean.cs32x15 input.rnof_sp_icedyn -mpi 4` has built the binary | local | yes |
-| Volume conservation | at initialization (**configured**): the flux summed over the sources of the file and over the targets of all tiles, printed by `RNF_INIT_VARIA`, in the control cases of `tests/rnf/refusal_check.py`. During the run (planned): Σ runoff·rA from diagnostics | Σ flux·frac over the targets = Σ flux_s | initialization: ≤ 1e-6 relative (the fraction tolerance); measured equal in every printed digit for lab_sea and cs32. During the run: ≤ 1e-12 relative | `{python} tests/rnf/refusal_check.py`; new check script (RUNOFF-015, RUNOFF-016) | local | yes |
+| Volume conservation | at initialization (**configured**): the flux summed over the sources of the file and over the targets of all tiles, printed by `RNF_INIT_VARIA` with their relative difference, in the control cases of `tests/rnf/refusal_check.py`. During the run (planned): Σ runoff·rA from diagnostics | Σ flux·frac over the targets = Σ flux_s | initialization: ≤ 1e-6 relative (the fraction tolerance), which the model itself warns about; measured equal in every printed digit for lab_sea and cs32, with the printed relative difference 0.00000000E+00 for lab_sea (4 or 7 sources) and -3.93454799E-16 for cs32 (1189 sources, where the two sums add in a different order). During the run: ≤ 1e-12 relative | `{python} tests/rnf/refusal_check.py`; new check script (RUNOFF-015, RUNOFF-016) | local | yes |
 | Converter round-trip and converted inputs (**configured**) | the dense runoff files of the six `lab_sea/input.rnof_*` cases (float32) and of cs32 (`core_rnof_1_cs32.bin`, `runoff_temperature.bin`, float64, converted twice: all 12 records with temperature, and record 1 alone as one constant record; needs the grid output of a cs32 run, else skipped); synthetic lat-lon and exch2-shaped grids with land, a blank tile and grouped sources; a hand-built file with two sources feeding one cell | dense → sparse → dense gives back every dense record; fractions, fluxes and temperatures computed in the test from the inputs; for two sources on one cell, runoff as the sum of flux·fraction/rA and temperature as the flux-weighted mean, worked out by hand, including a record without flux and the fill value; time axes worked out by hand per exf timing mode; at every forcing time of the six lab_sea oracle runs, the sparse file read by the schema's rules against the field exf applies from the dense file (`lab_sea_runoff_timing_check.Case`, the emulation the direct timing check compares with the model), with a one-record shift as negative control; the integrity checker with grid checks on every converted file; each committed sparse file of the table below equals its regeneration: the lab_sea files in every variable, global attribute and type, and the two cs32 files (`input.rnof_sparse/runoff_sparse.nc` and `input.rnof_sp_icedyn/runoff_sparse_const.nc`) in every variable; for the constant cs32 file also one `constant` float64 record without temperature that gives back record 1 of the dense file | exact for float32 inputs and for the cs32 temperature; cs32 runoff (float64) exact at float32 and within one unit in the last place at float64, because (d·rA)/rA is not always d; total flux per record ≤ 1e-12 relative; field at forcing times ≤ 1e-12 of the largest runoff value; checker: no error, no warning | `{python} -m pytest -q tests/runoff` (`tests/runoff/test_convert.py`) | local | yes |
+| Message formats of `pkg/rnf` (**configured**) | every `WRITE(msgBuf,'(...)')` of `MITgcm/pkg/rnf/*.F` (76 statements), with the item types read from the declarations of the routine the statement is in and of `RNF.h` / `RNF_SIZE.h` | the format itself: an `A` descriptor must get a character item, `I` an integer one and `E`/`F`/`G`/`D` a real one, after expanding repeat counts, groups and Fortran format reversion. A mismatch is a runtime error that the compiler cannot see and that only a refusal path reaches, so no model run finds it. Self-tested on three mutants: the two formats that really were wrong in RUNOFF-004 and an `I` descriptor with a `_RL` item, which a two-class checker accepts | no finding, and no item of unknown type (the check must cover every statement it counts). Measured: 76 statements, 0 findings | `{python} -m pytest -q tests/runoff` (`tests/runoff/test_write_formats.py`) | local | yes |
 | Upstream contribution | all verification experiments, master vs branch, plus `-mpi` | `tr_out_master.txt` | no diff beyond timestamps | `MITgcm/verification/testreport` (in the container) and `tools/do_tst_2+2` | local | before the PR |
 | 2 km scale I/O | 10⁵–10⁶ sources, 50 years daily, thousands of processes | wall-clock and I/O profile | owner-defined | cluster | remote | no (phase 1) |
 
@@ -129,6 +130,31 @@ skipped when no cs32 run directory with grid output exists.
 
 **Coverage limits:**
 
+- **Provenance of the measured figures (2026-10-04).** The `pkg/rnf` reader
+  was written a second time after the machine move, because the first
+  implementation was never pushed to the fork and was lost with the old
+  host; the records of it (this matrix, the code map and the design's
+  implementation notes) survived. The figures re-measured on the rebuilt
+  code and this host are: the lab_sea and cs32 sparse = dense digits
+  (single-process and MPI), the two `RNF_INIT_VARIA` flux sums, every case
+  of `tests/rnf/refusal_check.py` (single-process and `--mpi 2`), every run
+  of `tests/rnf/placement_probe.py`, and the no-change and dense runs of
+  `lab_sea input`, `lab_sea input.rnof_const`,
+  `global_ocean.cs32x15 input.icedyn` and `input.seaice`. In correction
+  round 1 review A added the first measurement of a one-cell move on the
+  **current** code (the cross-facet move in the item on the 10-digit oracle
+  below) and the cell-exact reconstruction of the applied field; review B
+  added the cross-rank reduction case. The figures **not** re-measured, and
+  therefore describing the first implementation only, are the in-tile
+  one-cell-move samples and the round-off response of the cs32 experiment in
+  the items below, together with the count of shifts the area check would
+  refuse. Those were measured during the first RUNOFF-004 attempt, partly by
+  its implementer (the single-process round-off figures) and partly by its
+  review A (the 4-process round-off figures and the move samples); the code
+  they describe no longer exists. The current code refuses an in-tile move
+  through the same area check, which the configured probe and the
+  `cell_area` case run, but those digit figures have not been reproduced
+  here.
 - No LLC experiment exists in `verification/`.
 - Adjoint builds (`input_ad.*` of cs32) are not run in phase 1.
 - A local pass supports only the exercised grids and layouts.
@@ -147,17 +173,35 @@ skipped when no cs32 run directory with grid output exists.
     RUNOFF-023.
   - No test has a blank exch2 tile or facets of unequal size.
 - The 10-digit cs32 oracle does not resolve a one-cell move of the weakest
-  targets. The figures of this item were measured during RUNOFF-004 by
-  review A on the 4-process binary; no configured test repeats them. One
-  target was moved by one cell, with the area of the new cell written in the
-  file, and the run was compared with the unmoved sparse run. "Seen" means
-  that `cg2d_init_res` changes by more than 1e-10. It is a comparison of two
-  runs, not a run of the oracle against its reference.
+  targets, and a move **across a facet boundary** is not resolved by the
+  area check either. One target entry is moved by one cell, with the area of
+  the new cell written in the file, and the run is compared either with the
+  unmoved sparse run or with the committed reference. "Seen" means that
+  `cg2d_init_res` changes by more than 1e-10.
+
+  **Measured on the current code** (commit `b8251cd1c`, 4 processes,
+  correction round 1, review A; no configured test repeats it): target entry
+  1035 moved from global cell 5247 to 5248, one cell in x **across the facet
+  2/3 boundary** of the 192 × 32 layout, flux 3.714e-2 m³/s (about the 1st
+  percentile), the fractions still summing to 1. The two cells' `rA` are
+  bitwise equal, so `RNF_areaTol` is blind to the move: `RNF_INIT_FIXED`
+  accepts it with no `RNF` message, the run ends normally, and
+  `compare_results.sh` reports **10 matching digits against the 10
+  required** — a pass with zero margin. `cg2d_init_res` moves by 1.062e-10
+  in absolute terms, 4.103e-11 relative. A cross-facet move of a
+  1st-percentile target is therefore neither refused by the file checks nor
+  failed by the oracle, and the two "not seen" rows of the historical table
+  below (an in-tile move of comparably weak targets) understate it: the
+  change is at the edge of the "seen" threshold and still passes.
+  RUNOFF-033 is the issue for promoting review A's cell-exact
+  reconstruction, which does resolve such a move, into the configured suite.
+
+  **Historical samples**, measured during the first RUNOFF-004 attempt by
+  its review A on the 4-process binary of code that no longer exists. They
+  are in-tile moves; no configured test repeats them:
 
   | Sample | Targets moved | Seen | Change of `cg2d_init_res` |
   |---|---|---|---|
-  | round 1 | smallest flux (1.5e-7 m³/s) | no | 9.3e-12 |
-  | round 1 | 1st percentile (0.031 m³/s) | no | 2.1e-11 |
   | round 1 | 10th percentile (9.6 m³/s), median (279 m³/s) and largest (35,420 m³/s) | 3 of 3 | 3.4e-9, 4.9e-8 and 2.7e-6 |
   | round 3 | 8 targets from the 2nd to the 9th percentile (0.26 to 7.4 m³/s) | 7 of 8 | seen: 2.7e-10 to 4.9e-9; not seen: the 3rd-percentile target (0.61 m³/s), 8.8e-11 |
   | round 3 | 23 targets from the 10th to the 98th percentile (9.6 to 6454 m³/s) | 23 of 23 | 3.5e-9 to 1.6e-6 |
@@ -165,11 +209,12 @@ skipped when no cs32 run directory with grid output exists.
   Each sample is one move per target, not every target or every direction.
   What follows for the tests:
   - No comparison of model output detects a one-cell move of the weakest
-    targets. The oracle does not see it at 10 digits. A direct comparison of
-    two runs cannot tell it from round-off: a one-ulp change of the input
-    flux leaves `cg2d_init_res` unchanged or moves it by 1.1e-11 to 2.1e-11
-    (nine patterns, in the item on round-off below), which is as much as the
-    move of the smallest or of the 1st-percentile target.
+    targets. The oracle does not fail on it: the cross-facet move measured
+    on the current code passes at exactly the required 10 digits. A direct
+    comparison of two runs cannot tell such a move from round-off either: a
+    one-ulp change of the input flux leaves `cg2d_init_res` unchanged or
+    moves it by 1.1e-11 to 2.1e-11 (nine patterns, in the item on round-off
+    below), the same order as the 4.103e-11 relative change of that move.
   - The placement probe is not a check of the runoff targets. It checks where
     the reader places 80 fixed cells per layout, the four corners of every
     tile and fixed interior positions, and it does not read the runoff file.
@@ -179,19 +224,49 @@ skipped when no cs32 run directory with grid output exists.
     not a configured test). A misplacement confined to cells that the probe
     does not sample, of targets that carry only weak flux, is seen by neither
     the probe nor the digit-match oracle.
-  - What protects the real targets is the area check of `RNF_INIT_FIXED`,
-    when the file has `target_cell_area`. Every committed sparse file has it;
-    the schema makes it optional. Configured tests run that check on
-    lab_sea (case `cell_area`, an area off by 1 %) and on the probe cells.
-    For the cs32 targets the evidence is review A's and not a configured
-    test. With the area left as written for the original cell, the moves of
-    the smallest and of the 1st-percentile target were refused and all 4
-    processes stopped. Of the 4516 one-cell shifts of the 1189 targets inside
-    their tile, the check would refuse 4458, those where the two cells differ
-    in area by more than 1e-4. The other 58 shifts, and any file without
-    `target_cell_area`, have no such protection.
+  - What partly protects the real targets is the area check of
+    `RNF_INIT_FIXED`, when the file has `target_cell_area`. Every committed
+    sparse file has it; the schema makes it optional. Configured tests run
+    that check on lab_sea (case `cell_area`, an area off by 1 %) and on the
+    probe cells. For the cs32 targets there is no configured test. Two
+    different counts bound the gap, and they are not the same quantity:
+    - **In-tile shifts, first implementation** (its review A, code that no
+      longer exists): with the area left as written for the original cell,
+      the moves of the weakest targets were refused and all 4 processes
+      stopped. Of the **4516 one-cell shifts of the 1189 targets inside
+      their tile**, the check would refuse 4458, those where the two cells
+      differ in area by more than 1e-4; the other **58 in-tile shifts** have
+      no such protection.
+    - **Shifts the check cannot see at all, current code** (correction round
+      1, review A's census on `b8251cd1c`): **47** target entries have a
+      wet, non-target neighbour in the global index whose `rA` differs by
+      less than `RNF_areaTol`, and that census **includes cross-facet
+      neighbours**, which the in-tile count above excludes. The cross-facet
+      move measured above is one of them, and it is accepted silently.
+    A file without `target_cell_area` has no protection of either kind.
+    RUNOFF-033 covers the cell-exact check that closes this gap.
 - Only a file with one constant record can be read. No test has time records,
   temperature, salinity or tracers in the model.
+- **Two sources feeding one cell.** None of the committed oracle files makes
+  the model add two contributions into one cell: `lab_sea` has one target
+  entry per cell in both its files (4 grouped sources over 7 one-source
+  cells, or 7 one-cell sources) and the cs32 file is 1189 one-cell sources
+  with `target_fraction` exactly 1.0, so the accumulation
+  `RNF_vflx(i,j) = RNF_vflx(i,j) + flux*frac/rA` of
+  `MITgcm/pkg/rnf/rnf_fields_load.F:74-76`, which implements the profile
+  invariant "where several sources feed one cell, volumes add", ran with one
+  term per cell only. The gap was found in correction round 1 and closed by
+  the configured case `two_sources_one_cell` of
+  `tests/rnf/refusal_check.py`, which splits every source of
+  `runoff_sparse_cells.nc` into two carrying a third and two thirds of its
+  flux on the same cell: 14 sources, 14 target entries, 7 cells, measured 16
+  matching digits against `results/output.rnof_const.txt` (a reader that
+  overwrote instead of adding would apply a third or two thirds of the
+  runoff, which that comparison resolves: the zero-flux control matches to 2
+  digits). What is still Python-only is the **flux-weighted mean** of
+  temperature, salinity and tracers for overlapping sources
+  (`tests/runoff/test_convert.py`, the hand-built two-source file); it needs
+  RUNOFF-013 to exist in the model at all.
 - The code under `#ifdef ALLOW_SHELFICE` in `RNF_INIT_FIXED` (the `kTopC`
   refusal) is not compiled in any tested build: no experiment compiles both
   `rnf` and `shelfice`.
@@ -280,9 +355,13 @@ skipped when no cs32 run directory with grid output exists.
     gives 11 digits on `cg2d_init_res` against the required 10, and 16 digits on
     most monitor fields (13 on `dynstat_uvel_mean` and `dynstat_vvel_mean`), so
     the band still holds and the threshold needs no recalibration. The dense
-    lab_sea references, made on the previous host, have not yet been re-measured
-    here; the first `-mpi` and cs32 runs on this host will say whether they
-    agree as closely.
+    lab_sea references, made on the previous host, were re-measured here
+    during RUNOFF-004: `lab_sea input.rnof_const` gives 16 digits on
+    `cg2d_init_res`, and the `-mpi` and cs32 runs agree as closely as the
+    single-process ones — `lab_sea input -mpi 2` 11 digits,
+    `global_ocean.cs32x15 input.icedyn` 11 and `input.seaice` 13. The band
+    11 to 16 digits therefore holds on this host for every oracle the
+    package uses.
 
 **Sensitivity:** a dropped fraction, off-by-one global index or wrong tile
 mapping changes the runoff in at least one cell by O(1). The digit-match oracles

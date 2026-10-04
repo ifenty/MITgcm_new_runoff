@@ -119,7 +119,16 @@ This is the scientific contract agents read. Executable paths and commands are i
   these:
   - fraction sum out of tolerance
   - target cell on land or off the grid
-  - tracer name with no matching ptracer
+  - tracer name with no matching ptracer — **not yet; RUNOFF-013.** The reader
+    does not read tracer variables, so there is no name to match against
+    `PTRACERS_names`. As of RUNOFF-004 a `runoff_temperature`,
+    `runoff_salinity` or `runoff_ptracer_*` variable in the file is detected and
+    warned about per variable, naming RUNOFF-013, and is not applied
+    (`rnf_init_fixed.F:382-408`). Moved here from RUNOFF-004 on 2026-10-04:
+    matching to ptracers belongs with the tendency term that consumes it, and
+    RUNOFF-013's acceptance already names this refusal. Both RUNOFF-004
+    reviewers ruled the deferral legitimate on the merits, with no
+    silently-wrong-value path because no value is read.
   - both a sparse file and a dense `runoffFile` set (they are mutually exclusive)
   - missing required variables
   - grid mismatch (the file's grid-identity check is proposed in RUNOFF-001)
@@ -170,6 +179,16 @@ This is the scientific contract agents read. Executable paths and commands are i
     except pytest). Run ESX verification as
     `/home/ifenty/miniforge3/envs/ecco/bin/python tools/esx/verify.py …`, so
     `{python}` resolves to that env. Hooks use the system `python3` (stdlib only).
+    - **Pinned interpreter for the documentation contract.** Run `loop_gate.py`,
+      `doc_contract.py` and `audit.py` with the env interpreter, never the system
+      `python3` (3.13.12). `doc_inventory.python_units` digests
+      `ast.dump(ModuleContext().visit(tree))`, and `ast.dump` output changed
+      between 3.10 and 3.13, so the same unmodified tree yields a different
+      inventory digest: `7230056ee9…` under 3.10.19 and `8086e2cb…` under
+      3.13.12. A report sealed under one and checked under the other is reported
+      `stale` with no file changed, and both RUNOFF-004 reviewers hit this (one
+      could not root-cause it). Byte `sha256`s and `project.py` signatures are
+      interpreter-independent; only the documentation contract is affected.
     - No project code needs more than 3.10: everything compiles under it, no
       3.11+ stdlib is used, and nothing declares `requires-python`.
     - Importing `netCDF4` warns `numpy.ndarray size changed ... Expected 16 from

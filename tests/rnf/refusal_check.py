@@ -36,9 +36,13 @@ There are three kinds of case.
 * **Runs that must end normally**: the positive control (the valid file on
   ``lab_sea/input``; the flux sums that the model prints must equal the sum
   of the file), ``cells_equal_dense`` (the one-source-per-cell file must
-  reproduce the dense reference ``results/output.rnof_const.txt``), and
+  reproduce the dense reference ``results/output.rnof_const.txt``),
   ``zero_flux_differs`` (the same run with every flux set to zero must NOT
-  reproduce it, which shows that the comparison is sensitive to the runoff).
+  reproduce it, which shows that the comparison is sensitive to the runoff),
+  and ``two_sources_one_cell`` (each cell fed by two sources carrying a
+  third and two thirds of its flux must reproduce the same dense reference,
+  which is the only case that makes the model add two contributions into one
+  cell).
 
 Every process is judged on its own files. A single-process run writes its
 standard output and its ``STOP`` line to ``output.txt`` and its error messages
@@ -90,6 +94,9 @@ PREFIX = "input.rnfchk_"
 # The valid sparse file (four sources, seven targets) and its dense reference.
 SPARSE = os.path.join(VERIF, EXPERIMENT, "input.rnof_const", "runoff_sparse.nc")
 SPARSE_REL = "../input.rnof_const/runoff_sparse.nc"
+# The same runoff with one source per cell, and its path for ``split_from``.
+CELLS = os.path.join(VERIF, EXPERIMENT, "input.rnof_const",
+                     "runoff_sparse_cells.nc")
 CELLS_REL = "../input.rnof_const/runoff_sparse_cells.nc"
 DENSE_INPUT = "input.rnof_sp_const"
 DENSE_REF = "output.rnof_const.txt"
@@ -213,8 +220,60 @@ def sparse_info():
             "land_cell": i + nx * j}
 
 
+def split_file(path, source_path, share=1.0/3.0):
+    """Write a file in which two sources feed each cell of ``source_path``.
+
+    Every source of ``source_path`` (a one-source-per-cell file) becomes two
+    sources, ``<id>_a`` and ``<id>_b``, carrying ``share`` and ``1 - share``
+    of its flux, each with one target entry of fraction 1 on the same cell.
+    Every source's fractions still sum to 1 and the total flux is unchanged,
+    so the field the model applies is the same to round-off: the only
+    difference is that each cell now receives two contributions, which is
+    what exercises the accumulation of ``rnf_fields_load.F``. A reader that
+    overwrote instead of adding would apply a third or two thirds of the
+    runoff.
+    """
+    import netCDF4
+    import numpy as np
+    with netCDF4.Dataset(source_path) as src, netCDF4.Dataset(path, "w") as dst:
+        src.set_auto_maskandscale(False)
+        dst.set_auto_maskandscale(False)
+        dst.setncatts({k: src.getncattr(k) for k in src.ncattrs()})
+        ids = [str(s) for s in netCDF4.chartostring(src["source_id"][:])]
+        cell = {int(s): int(c) for s, c in zip(src["target_source"][:],
+                                               src["target_cell"][:])}
+        area = {int(s): float(a) for s, a in zip(src["target_source"][:],
+                                                 src["target_cell_area"][:])}
+        flux = np.asarray(src["runoff_flux"][0], dtype="f8")
+        n = 2*len(ids)
+        strlen = max(len(i) for i in ids) + 2
+        dst.createDimension("time", None)
+        dst.createDimension("source", n)
+        dst.createDimension("target", n)
+        dst.createDimension("id_strlen", strlen)
+        dst.createVariable("time", "f8", ("time",))[:] = [0.0]
+        dst["time"].setncatts({k: src["time"].getncattr(k)
+                               for k in src["time"].ncattrs()})
+        names = [i + s for i in ids for s in ("_a", "_b")]
+        dst.createVariable("source_id", "S1", ("source", "id_strlen"))[:] = \
+            np.array([list(x.ljust(strlen)) for x in names], dtype="S1")
+        dst.createVariable("target_source", "i4", ("target",))[:] = np.arange(n)
+        dst.createVariable("target_cell", "i4", ("target",))[:] = \
+            [cell[k] for k in range(len(ids)) for _ in (0, 1)]
+        frac = dst.createVariable("target_fraction", "f8", ("target",))
+        frac[:] = 1.0
+        frac.units = "1"
+        ar = dst.createVariable("target_cell_area", "f8", ("target",))
+        ar[:] = [area[k] for k in range(len(ids)) for _ in (0, 1)]
+        ar.units = "m2"
+        out = dst.createVariable("runoff_flux", "f8", ("time", "source"))
+        out[0, :] = [flux[k]*s for k in range(len(ids))
+                     for s in (share, 1.0 - share)]
+        out.units = "m3 s-1"
+
+
 def sparse_file(path, edit=None, skip=(), retype=None, many_sources=0,
-                many_targets=0, wet_cell=0):
+                many_targets=0, wet_cell=0, split_from=None):
     """Write a sparse runoff file at ``path``, derived from the valid one.
 
     Every dimension, variable and attribute of ``SPARSE`` is copied except
@@ -226,9 +285,14 @@ def sparse_file(path, edit=None, skip=(), retype=None, many_sources=0,
     sources, each sending all its flux to ``wet_cell``, which puts them all
     on one tile. With ``many_targets`` it is a synthetic file with one source
     and that many target entries, all on ``wet_cell`` with equal fractions.
+    With ``split_from`` it is the file of :func:`split_file`, in which two
+    sources feed each cell of that file.
     """
     import netCDF4
     import numpy as np
+    if split_from:
+        split_file(path, split_from)
+        return
     with netCDF4.Dataset(SPARSE) as src, netCDF4.Dataset(path, "w") as dst:
         src.set_auto_maskandscale(False)
         dst.set_auto_maskandscale(False)
@@ -554,6 +618,19 @@ def cases(data_pkg, data_exf, info=None):
          "nc": {"bad.nc": {"edit": scale_var("runoff_flux", slice(None), 0.0)}},
          "normal_end": True, "stderr": [], "stdout": stdout_ok,
          "flux_sum": 0.0, "digits": (DENSE_REF, 0, 9),
+         "stop": "ABNORMAL END", "forbid": no_error},
+        # Two sources on every cell: the only case in which the model adds
+        # two contributions into one cell. Overwriting instead of adding
+        # would apply a third or two thirds of the runoff, which the dense
+        # comparison sees (the zero-flux control above matches to 2 digits).
+        {"name": "two_sources_one_cell",
+         "copy_from": DENSE_INPUT, "copy": dense,
+         "files": {"data.pkg": pkg_on, "data.rnf": rnf_bad},
+         "nc": {"bad.nc": {"split_from": CELLS}},
+         "normal_end": True, "stderr": [], "stdout": stdout_ok,
+         "summary": {"RNF_nSrcFile": "14", "RNF_nTgtFile": "14",
+                     "RNF_nTgtOwned": "14"},
+         "flux_sum": info["flux_sum"], "digits": (DENSE_REF, 13, 99),
          "stop": "ABNORMAL END", "forbid": no_error},
     ]
     return out

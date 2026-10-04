@@ -242,3 +242,35 @@ After a pause of N minutes, a turn dispatched with `--timeout T` gets at least m
 
 ### Expected Effect
 No turns are lost after an outage.
+
+## 🔴 PROPOSED: doc_contract digests `ast.dump` output, so a valid sealed report reads as stale under a different Python
+
+**Date Identified**: 2026-10-04  18:10
+**Status**: Proposed
+**UUID**: TEAM-DOCCONTRACT-AST-DUMP-DIGEST-001
+**Category**: evidence_integrity
+**Severity**: High
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-04-runoff-004/assessment.md
+**Anchors**: tools/esx/doc_inventory.py:python_units; tools/esx/doc_contract.py:validate_report
+
+### Issue
+`doc_inventory.python_units` digests `context = digest(ast.dump(ModuleContext().visit(tree)))` for every inventoried `.py` file. `ast.dump` is explicitly not a stable cross-version serialization, so the same unmodified source tree yields a different inventory digest under different interpreters. A documentation report sealed under one Python and checked under another is reported `stale; regenerate the change inventory` with **no file changed**, and conversely a genuinely stale report could be accepted. Byte `sha256`s and `project.py signature` are interpreter-independent; the coupling is confined to the documentation contract.
+
+### Evidence
+Measured on MITGCM-NEW-RUNOFF, RUNOFF-004, 2026-10-04. The identical tree gives inventory digest `7230056ee9…` under Python 3.10.19 and `8086e2cb…` under 3.13.12, for all 57 inventoried `.py` files, with every inventoried file byte-identical and no mtime after the seal.
+
+Both independent reviewers hit it in the same iteration, which is what makes it High rather than Medium. Review B diagnosed it correctly. Review A reported it as a must-fix, eliminated every tree-side explanation (all 29 sealed targets byte-identical to their recorded `file_sha256`, no mtime after the seal, condition persisting after its scratch directories were removed) and stated it **could not root-cause it** — it had run the system `python3` while the seal was made under the project env. It cost one reviewer a wrong diagnosis and both of them a must-fix item, on a report whose content both later confirmed as accurate. Reproduced again on the re-sealed report: `valid: true` exit 0 under 3.10.19, `stale` exit 1 under 3.13.12.
+
+Hooks are specified to use the system `python3` while `{python}` is the project env, so the two interpreters are both in normal use in one deployment.
+
+### Potential Impact
+Wasted review rounds, and worse, misplaced trust: a reviewer who sees `stale` on an accurate report may hunt a non-existent tree change (as happened), and the symmetric failure silently accepts a stale report on a host whose Python happens to match the seal. It also makes the documentation contract non-portable across machines and CI, which the 2026-10-04 machine move showed is not hypothetical.
+
+### Proposed Fix
+Digest a normalized structural form instead of `ast.dump` output — e.g. an explicit walk emitting only the node kinds, names and nesting the contract actually relies on — so the digest depends on the source, not the interpreter's serialization. Until then, pin the interpreter per project (done for MITGCM-NEW-RUNOFF in `esx/project_profile.md`) and consider having `doc_contract.py` record the sealing interpreter version in the report and refuse, with a clear message naming both versions, when `check` runs under a different one. The clear refusal is worth doing even after the durable fix, as a guard against the next serialization that turns out to be unstable.
+
+### Acceptance Criteria
+`tools/esx/doc_inventory.py` digests a normalized structural form, and the inventory digest of an unmodified tree is byte-equal under at least Python 3.10 and 3.13: seal a report under one, run `doc_contract.py check` under the other, and require `valid: true` exit 0 from both. The existing per-file `sha256` and `project.py signature` must be unchanged by the fix (both are already interpreter-independent and are the control). Additionally, with the sealing interpreter version recorded in the report, a `check` run under a different version prints a message naming both versions and does not attribute the refusal to the tree.
+
+### Expected Effect
+No reviewer spends a must-fix item, or a wrong diagnosis, on an accurate report again, and a stale report cannot pass merely because the checking host's Python matches the sealing host's. Direction: reviewer must-fix items attributable to the documentation-contract toolchain rather than to the work under review go to zero. The qualitative invariant: the inventory digest depends on the source tree, not on the interpreter that reads it.
