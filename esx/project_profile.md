@@ -166,9 +166,19 @@ This is the scientific contract agents read. Executable paths and commands are i
     and NetCDF 4.9.0 (`-lnetcdff`) inside the `mitgcm:latest` container image,
     built from `../MITgcm_verification_docker/Dockerfile` (Debian bookworm).
   - **Python:** the conda env `/home/ifenty/miniforge3/envs/ecco` (Python 3.10.19,
-    numpy, netCDF4, xarray, pytest). Run ESX verification as
+    numpy 2.2.6, netCDF4 1.7.4, xarray 2025.6.1, pytest 9.1.1, all conda-forge
+    except pytest). Run ESX verification as
     `/home/ifenty/miniforge3/envs/ecco/bin/python tools/esx/verify.py …`, so
     `{python}` resolves to that env. Hooks use the system `python3` (stdlib only).
+    - No project code needs more than 3.10: everything compiles under it, no
+      3.11+ stdlib is used, and nothing declares `requires-python`.
+    - Importing `netCDF4` warns `numpy.ndarray size changed ... Expected 16 from
+      C header, got 96 from PyObject`. **Benign, do not chase it.** 96 is what
+      `numpy.ndarray.__basicsize__` really is; the 16 is netCDF4's Cython module
+      built against a numpy 2 header that declares the struct opaque. float64
+      written through netCDF4 and read back is bitwise identical (checked
+      2026-10-04 on π, e, 1/3, 1e±300, denormals, `nextafter(1,2)`, `-0.0`), so
+      the precision this project relies on is intact.
   - **Platform:** Oracle Linux Server 9.7, kernel 6.12 (`el9uek`), x86_64,
     SELinux enforcing. The container engine is rootless **podman** 5.6.0, not
     Docker; `tests/mitgcm_oracle.sh` and the harness still invoke `docker`, which
