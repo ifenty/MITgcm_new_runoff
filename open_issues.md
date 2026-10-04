@@ -479,42 +479,6 @@ Users of pressure-coordinate or ice-shelf configurations get false land errors, 
 ### Proposed action and acceptance
 Add a surface-level option to all three tools: `--surface-level top|bottom|kSurfC`, or detect it from `data` (`buoyancyRelation`) when a run directory is given, and document it. Acceptance: the cs32 `input.in_p` grid checks cleanly with the converted cs32 file; a shelfice grid uses `kSurfC`; the existing tests are unchanged.
 
-## UNRESOLVED: pkg/rnf sparse runoff reader, per-tile lists and global fraction check
-
-**Date Identified**: 2026-09-29T21:30:00Z
-**Status**: Unresolved
-**UUID**: RUNOFF-004
-**Anchors**: MITgcm/pkg/exf/exf_getffields.F::<module>; MITgcm/pkg/profiles/profiles_init_fixed.F::<module>
-
-### Issue or research question
-Implement init in the new package `pkg/rnf` (decisions 1, 2, 6, 10 of docs/package_design.md): `data.rnf` parameters (`RNF_PARM01`), the `HAVE_NETCDF` guard, a master-thread NetCDF read of the static arrays, the global index → local `(i,j,k,bi,bj)` mapping on every grid (including exch2/LLC and blank tiles), per-tile source lists, a `GLOBAL_SUM` fraction check (1e-6), and refusal of a land cell or sparse + dense both set. (Refusing an unknown tracer moved to RUNOFF-013 on 2026-10-04, by Arch's scope resolution after both reviewers ruled the deferral legitimate: the reader does not read tracer variables, so there is no name to match against `PTRACERS_names`, and RUNOFF-013's acceptance already names the refusal. A tracer, temperature or salinity variable present in the file is warned about per variable and not applied, `rnf_init_fixed.F:382-408`, so no value is silently wrong.) Then assign exf `runoff` = Σ flux·frac/rA each step from the one guarded `RNF_EXF_RUNOFF` call in `exf_getffields.F`, and refuse a non-blank `runofffile`/`runoftempfile`, non-zero `runoffconst`, missing `useEXF`/`ALLOW_RUNOFF`, and targets under an ice shelf (`kTopC ≠ 0`).
-
-### Evidence
-Design decisions from the project owner, recorded in `esx/project_profile.md` and `docs/model_contract.md` (2026-09-29). No code exists yet.
-
-Design requirement (2026-09-30): map `target_cell` to owned points with the same arithmetic `pkg/mdsio` uses to place tile rows in a global file (`mdsio_write_field.F:445-480`: `tBx`/`tBy` from `myXGlobalLo`/`myYGlobalLo` or `exch2_txGlobalo`/`exch2_tyGlobalo`, plus the `iGjLoc`/`jGjLoc` fold cases), not a rectangular box test. Under compact `W2_mapIO` (0 or > 0) or when a face is wider than the global array, tile rows are folded or strung into a line (`w2_set_map_tiles.F:189-203`). Test cases: cs32 with `W2_mapIO = -1` (verified by Richard B for the flattened index) and a compact `W2_mapIO` layout.
-
-Precision note from RUNOFF-003 review (Richard, 2026-10-02): the oracle pass criterion is 10 matching digits on `cg2d_init_res`, and a float32-level (6e-8) change in applied runoff moves it by about 6e-10. Sparse files for the oracle tests must therefore reproduce the dense m/s values to better than 1e-9 relative: store `runoff_flux` as float64 (flux = dense·rA computed in float64), not float32.
-
-Design (RUNOFF-010, docs/package_design.md): mapping uses the `mdsio_read_field.F:399-430` placement arithmetic; the package skeleton (RUNOFF-012) is the first step of this work.
-
-### Scientific or engineering impact
-This is the core feature. Mapping errors silently lose mass.
-
-### Proposed action and acceptance
-Acceptance: the lab_sea constant case, sparse = dense, single-process and MPI; the negative tests stop with the expected messages; all no-change experiments pass.
-
-Unblocked 2026-09-30: RUNOFF-001 closed; schema 1.0 is approved (docs/runoff_schema.md), and MITgcmutils.runoff.check validates files against it.
-
-Unblocked 2026-10-03: RUNOFF-010 closed (docs/package_design.md). Do RUNOFF-012 (package skeleton) first. Carry forward from review A: `RNF_CHECK` must test `useShelfIce .AND. SHI_update_kTopC` under `ALLOW_SHELFICE`, because `SHELFICE_READPARMS` returns before setting the default when shelfice is unused (`shelfice_readparms.F:79-87`, `103-107`). Carry forward from review B: the contract bullet "a source without a temperature contributes at the surface water temperature" needs the qualifier "except in a build without `ALLOW_ATM_TEMP` that sets `temp_EvPrRn`, where it enters at `temp_EvPrRn`". Also label the time-level row "start at iteration 0" rather than "cold start". Review A also noted that the time-level table assumes `exactConserv`, which always holds with a nonlinear free surface (`config_check.F:725`).
-
-Carry forward from the 2026-10-04 machine move: the two sparse oracle input directories this issue's acceptance names, `lab_sea/input.rnof_sp_const` and `global_ocean.cs32x15/input.rnof_sp_icedyn`, do not exist and never did — RUNOFF-002 put its sparse files inside the dense case directories (`lab_sea/input.rnof_*/runoff_sparse*.nc`) and in `cs32x15/input.rnof_sparse/`. They were listed in `project.json` `configuration_paths` ahead of being built, which blocked the ESX gate ("configured input is missing") on work that creating them is part of. They have been removed from `configuration_paths` (cs32's entry replaced by the `input.rnof_sparse` directory that does exist). Create both directories here, then add them back to `configuration_paths`; the `focused` and `scientific` suite commands that name them were left in place as this issue's acceptance.
-
-Carry forward from RUNOFF-012:
-- Remove the skeleton "reader not implemented" stop at the end of `RNF_CHECK`.
-- A refusal detected on one tile only (land, maskInC, under-shelf) must reach every rank before the stop. Count it, `GLOBAL_SUM` the count, then stop on all ranks; otherwise `ALL_PROC_DIE` hangs the other ranks (review B).
-- `RNF_SIZE.h` holds five placeholder bounds from decision 9, to be set here.
-
 ## BLOCKED: Sparse runoff time handling: interpolation, hold-exact, repeat cycles, yearly files
 
 **Date Identified**: 2026-09-29T21:30:00Z
@@ -632,5 +596,12 @@ This is the issue's own stated failure mode — "mapping errors silently lose ma
 Promote review A's oracle to `tests/rnf/` as a configured command, reusing the `EXFroff` diagnostic path so no model code is needed, and add it to the `scientific` suite beside `placement_probe.py`. Acceptance: the check is bitwise exact on the unperturbed candidate for lab_sea (1 and 2 processes) and cs32 (1 and 4 processes), and fails with a non-zero extra/missing count on a deliberately perturbed input.
 
 Second, add an init-time coordinate check. Review A's correction-round-1 refinement (2026-10-04), which supersedes an earlier framing of this issue that asked whether `RNF_areaTol` should be tightened or `target_cell_area` required to match `rA` bitwise: **neither can work.** The two cells of the move above have `rA` that is *bitwise equal*, so no area tolerance however tight separates them. But the schema already carries `target_lon`/`target_lat`, and for entry 1035 those equal cell 5247's `XC`/`YC` exactly (133.8655, 28.5373) while cell 5248 lies at (−38.1226, 39.2996) — **172° of longitude away**. Comparing `target_lon`/`target_lat` against the owning cell's `XC`/`YC` at init would refuse that move outright, cheaply, for every target, and is a far stronger guard than any area tolerance. Acceptance for this part: the move of entry 1035 is refused with an `RNF` message naming the source and cell, the unperturbed committed files pass, and the tolerance is justified against the grid's own cell spacing rather than chosen.
+
+Carry forward (review A, correction round 2, 2026-10-04), two documentation/instrumentation items raised as non-blocking and deliberately NOT taken in RUNOFF-004, because editing an inventoried file after both approvals invalidates them (LL-006, hit twice in this issue):
+
+1. `docs/verification_matrix.md` **understates this project's own coverage**. It calls the sparse = dense oracle a comparison of "the end state of the run", but `compare_results.sh` compares each monitor variable as a time series over every monitor line — its own header documents this — so the oracle verifies the applied constant field at all 48 lab_sea monitor times, not just at the end. Correct it in the project's favour.
+2. `tests/runoff/lab_sea_runoff_timing_check.py::check_case` reports `"monitor output has %d runoff records" % len(series["time"])`, i.e. the count of monitor *times*, not of runoff statistics. That is what produced the misleading "48 runoff records" on a sparse run with 48 times and zero runoff statistics. The sparse trigger is gone, but a truncated or misconfigured **dense** run would mislead the same way. Report the time count and the statistic count separately.
+
+Also noted and accepted as-is: `sparse_case()` returns True on the presence of `data.rnf` alone, without requiring `useRNF`. It over-triggers slightly but fails safe — toward SKIP-and-say-so rather than a false pass — and the all-skip guard backs it up. Recorded so it is not later mistaken for an exact test.
 
 Carry forward (Arch, 2026-10-04): `docs/verification_matrix.md` still says "the two "not seen" rows of the historical table below" after correction round 1 removed those two rows; the table now carries one embedded "not seen" value and no such rows. Review A raised it as non-blocking. I wrote the one-line fix, found it staled Bob's sealed documentation report — which both reviewers had already confirmed — and reverted it rather than spend a second correction round re-confirming a cross-reference wording. Fix it in the next issue that edits this file, inside that issue's own documentation plan. The ordering lesson is the closeout doctor's: finalize every signed field before taking the final verification receipt.

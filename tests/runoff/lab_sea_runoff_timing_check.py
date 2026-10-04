@@ -1,7 +1,21 @@
 #!/usr/bin/env python3
-"""Check the runoff that pkg/exf applied in the lab_sea ``input.rnof_*`` runs.
+"""Check the runoff that pkg/exf applied in the lab_sea dense ``input.rnof_*`` runs.
 
-For every ``MITgcm/verification/lab_sea/input.rnof_<X>`` case the script reads
+**Scope: the dense pkg/exf path only.** The model of this script is the exf
+record machinery: it reads the ``runoff*`` settings of a case's ``data.exf``
+and predicts which records of a dense ``runoffFile`` exf holds at each
+monitor time and with which weights. A case that takes its runoff from
+``pkg/rnf`` instead (``data.rnf`` and ``useRNF``, with a blank ``runoffFile``)
+matches the ``input.rnof_*`` glob but cannot be judged by that model: its
+``EXF_MONITOR`` writes no ``exf_runoff_*`` statistics, because exf writes
+them only for a dense file. Such a case is reported as ``SKIP``, with the
+reason, and counts as neither a pass nor a failure (:func:`sparse_case`).
+``lab_sea/input.rnof_sp_const`` is the one skipped today; the timing check of
+the sparse path, which has to model ``pkg/rnf`` record selection, comes with
+RUNOFF-005.
+
+For every dense ``MITgcm/verification/lab_sea/input.rnof_<X>`` case the
+script reads
 
 * the runoff timing settings from the case's ``data.exf`` and the calendar
   start date from its ``data.cal`` (or from ``input/data.cal``),
@@ -46,7 +60,7 @@ records held and the records with non-zero weight at those times). The
 occur. The exit status is non-zero when a statistic
 differs by more than the tolerance (1e-12 relative to the largest runoff
 value), when a run directory or its monitor output is missing, or when no
-case is found.
+dense case is found; a skipped sparse case alone cannot make the run pass.
 
 Usage (numpy is the only dependency)::
 
@@ -248,6 +262,27 @@ def monitor_series(path):
     return out
 
 
+def sparse_case(directory):
+    """True when the case takes its runoff from ``pkg/rnf``, not from exf.
+
+    Such a case names a sparse runoff file in ``data.rnf`` and switches the
+    package on with ``useRNF`` in ``data.pkg``; its ``runoffFile`` is blank,
+    so ``EXF_MONITOR`` writes no ``exf_runoff_*`` statistics at all
+    (``exf_monitor.F``) and the dense model of this script has nothing to
+    compare. The six dense cases have neither file setting.
+    """
+    if os.path.exists(os.path.join(directory, "data.rnf")):
+        return True
+    pkg = os.path.join(directory, "data.pkg")
+    if os.path.exists(pkg):
+        with open(pkg) as handle:
+            text = "\n".join(line.split("#")[0] for line in handle)
+        value = namelist_value(text, "useRNF")
+        if value is not None and value.strip().upper().startswith(".T"):
+            return True
+    return False
+
+
 def check_case(directory, suffix, weights):
     """Compare one case; return a result dictionary with key ``ok``."""
     name = os.path.basename(directory)
@@ -309,19 +344,31 @@ def main():
     suffix = "_mpi%d" % args.mpi if args.mpi else ""
     directories = sorted(glob.glob(os.path.join(LAB, "input.rnof_*")))
     weights = area_weights()
-    results = [check_case(d, suffix, weights) for d in directories]
+    # A sparse case matches the glob but the dense model cannot judge it:
+    # name it and the reason, and count it as neither pass nor fail.
+    skipped = [{"case": os.path.basename(d),
+                "reason": "sparse runoff case (data.rnf, useRNF): its runoff"
+                          " comes from pkg/rnf and this check models the"
+                          " dense pkg/exf path only; the sparse timing check"
+                          " comes with RUNOFF-005"}
+               for d in directories if sparse_case(d)]
+    dense = [d for d in directories if not sparse_case(d)]
+    results = [check_case(d, suffix, weights) for d in dense]
     for r in results:
         print("%-4s %-18s %-24s %4s samples  %s .. %s  %s" % (
             "PASS" if r["ok"] else "FAIL", r["case"], r.get("mode", "-"),
             r.get("samples", "-"), r.get("first", "-"), r.get("last", "-"),
             r["message"]))
+    for s in skipped:
+        print("SKIP %-18s %s" % (s["case"], s["reason"]))
     if not results:
-        print("FAIL no input.rnof_* case found under %s" % LAB)
+        print("FAIL no dense input.rnof_* case found under %s (%d skipped)"
+              % (LAB, len(skipped)))
     if args.json:
         os.makedirs(os.path.dirname(os.path.abspath(args.json)), exist_ok=True)
         with open(args.json, "w") as f:
             json.dump({"tolerance": TOLERANCE, "run_suffix": suffix,
-                       "results": results}, f, indent=1)
+                       "results": results, "skipped": skipped}, f, indent=1)
     return 0 if results and all(r["ok"] for r in results) else 1
 
 
