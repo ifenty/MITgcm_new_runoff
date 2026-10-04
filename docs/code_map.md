@@ -111,6 +111,12 @@ its routines and its hooks are specified in
   and `events_logger = "file"`, because this user has no systemd cgroup
   delegation. Build the image with `MITgcm/verification/docker_build.sh`.
 
+  For a long run detached in tmux, `loginctl enable-linger <user>` is also
+  needed (it does not require root). Without it, systemd removes
+  `/run/user/<uid>` when the last login session closes, which kills the tmux
+  session and breaks rootless podman, since that runtime directory holds its
+  state.
+
   Two differences from a real `docker build`: podman builds in OCI format, so the
   Dockerfile's `SHELL ["/bin/bash","-c"]` is ignored and `RUN` steps use
   `/bin/sh` (every `RUN` there is POSIX-compatible, so image content is
