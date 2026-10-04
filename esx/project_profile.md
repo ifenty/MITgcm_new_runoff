@@ -223,7 +223,16 @@ This is the scientific contract agents read. Executable paths and commands are i
   - No paid resources are authorized beyond normal Claude usage.
 - Agent runtime, supported resume operation and configured role models: Claude
   Code CLI with retained agent sessions, per the ESX defaults. No role model pins.
-  Live-session qualification (`agent_runtime.py probe`) is not yet run.
+  Live-session qualification (`agent_runtime.py probe`) passed 2026-10-04 on this
+  host for runtime fingerprint `1d9758f9`, with both halves of the witness: a
+  project-allowed Bash command ran and a disallowed one was blocked and recorded.
+  Re-run it after any ESX upgrade, permission change or machine move (LL-002).
+- Notification provider: **Slack is unavailable on this host.** `claude mcp list`
+  reports no MCP servers, there is no `slack` CLI, no `SLACK_*` variable and no
+  slack entry in `.claude/settings*.json`; the machine move did not carry the MCP
+  configuration. A session outage is recorded, so loop events queue instead of
+  being delivered. The owner's standing authorization to post routine updates to
+  `C0C5EV9TFCJ` is unchanged and applies as soon as a provider exists.
 
 **MITgcm conventions:**
 
