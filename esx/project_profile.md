@@ -151,8 +151,8 @@ This is the scientific contract agents read. Executable paths and commands are i
     from them by scripts kept in the experiment input directories.
   - The 2 km production dataset is not used in local tests.
 - What a local test establishes and what requires cluster/field/full-data evidence:
-  local Docker runs establish correctness on the verification grids. Scale behavior
-  needs a cluster run: per-record I/O at 10⁵–10⁶ sources and thousands of
+  local container runs establish correctness on the verification grids. Scale
+  behavior needs a cluster run: per-record I/O at 10⁵–10⁶ sources and thousands of
   processes.
 - Known capability boundaries to document:
   - No LLC experiment exists in `verification/`.
@@ -162,16 +162,21 @@ This is the scientific contract agents read. Executable paths and commands are i
 ## Runtime and operations
 
 - Languages, compiler/interpreter, environment/lockfiles and platform:
-  - **Fortran 77:** fixed-form `.F` through CPP, built with gfortran, MPI and
-    NetCDF inside the `mitgcm:latest` Docker image.
-  - **Python:** the conda env `/home/ifenty/miniforge3/envs/ecco` (Python 3.14,
+  - **Fortran 77:** fixed-form `.F` through CPP, built with gfortran 12.2.0, MPI
+    and NetCDF 4.9.0 (`-lnetcdff`) inside the `mitgcm:latest` container image,
+    built from `../MITgcm_verification_docker/Dockerfile` (Debian bookworm).
+  - **Python:** the conda env `/home/ifenty/miniforge3/envs/ecco` (Python 3.10.19,
     numpy, netCDF4, xarray, pytest). Run ESX verification as
     `/home/ifenty/miniforge3/envs/ecco/bin/python tools/esx/verify.py …`, so
     `{python}` resolves to that env. Hooks use the system `python3` (stdlib only).
-  - **Platform:** Linux (WSL2).
-- Local compute budget, allowed scheduler/cluster queues and timeout: local Docker
-  only, and each suite command must finish within 3600 s. No cluster queues are
-  configured.
+  - **Platform:** Oracle Linux Server 9.7, kernel 6.12 (`el9uek`), x86_64,
+    SELinux enforcing. The container engine is rootless **podman** 5.6.0, not
+    Docker; `tests/mitgcm_oracle.sh` and the harness still invoke `docker`, which
+    resolves to a shim. See [the code map](../docs/code_map.md) for the shim, its
+    two required flags and the host prerequisites.
+- Local compute budget, allowed scheduler/cluster queues and timeout: local
+  container only, and each suite command must finish within 3600 s. No cluster
+  queues are configured.
 - Commands that submit jobs must wait for completion and return scientific verdicts:
   `tests/mitgcm_oracle.sh` compiles, runs and compares in the foreground. It exits
   non-zero on build failure, abnormal run end or FAIL.
@@ -183,9 +188,11 @@ This is the scientific contract agents read. Executable paths and commands are i
 - Allowed source edits, protected files and prohibited operations:
   - **Allowed:** edit only `MITgcm/`, which is a clone of the fork
     `ifenty/MITgcm`, on the branch `new_runoff`, plus this project's own files.
-  - **Protected:** never edit `../MITgcm` or `../MITgcm_verification_docker`.
+  - **Protected:** never edit `../MITgcm_verification_docker`; it is a clone of
+    `ifenty/MITgcm_verification_docker`, and the harness is shared with other
+    projects. Changes there belong in a PR to that repository.
   - The fork's `master` matched upstream at clone time, plus 3 docs-only commits
-    (`doc/outp_pkgs/outp_pkgs.rst`). In `MITgcm/`, the Docker script symlinks in
+    (`doc/outp_pkgs/outp_pkgs.rst`). In `MITgcm/`, the harness script symlinks in
     `verification/` and the `build_docker*` / `output_docker*` / `build_esx*` /
     `output_esx*` directories are listed in `.git/info/exclude`.
   - **Prohibited:** never push to MITgcm/MITgcm. Its `upstream` push URL is set to

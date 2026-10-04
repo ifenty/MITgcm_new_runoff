@@ -16,9 +16,8 @@ It must work on every MITgcm grid type, and each tile keeps only its own target 
 - **Code:** `MITgcm/` is a clone of the user's fork `ifenty/MITgcm` (branch `new_runoff`); all code changes go there.
   - Commit to `new_runoff` often and push it to `origin` (the fork).
   - Never commit or push to MITgcm/MITgcm (`upstream`), or to the fork's `master`.
-  - `../MITgcm` is an unrelated upstream checkout; don't edit it.
 - **Project repo:** this folder is its own git repo (it ignores `MITgcm/`). Commit project and ESX records here and push to `origin main` (github.com/ifenty/MITgcm_new_runoff).
-- **Tests:** `tests/mitgcm_oracle.sh <experiment> <input_dir> [-mpi N]` compiles, runs and compares a verification experiment in Docker. Run ESX tools with `/home/ifenty/miniforge3/envs/ecco/bin/python`.
+- **Tests:** `tests/mitgcm_oracle.sh <experiment> <input_dir> [-mpi N]` compiles, runs and compares a verification experiment in the `mitgcm:latest` container. Run ESX tools with `/home/ifenty/miniforge3/envs/ecco/bin/python`. The container engine is podman, reached through a `docker` shim; see [docs/code_map.md](docs/code_map.md).
 
 <!-- ESX-TEAM -->
 Read [ESX project instructions](esx/project_instructions.md) for the team workflow and project configuration.
