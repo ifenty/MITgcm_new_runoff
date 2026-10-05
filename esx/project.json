@@ -180,6 +180,12 @@
         "input.rnof_sp_icedyn"
       ],
       [
+        "{python}",
+        "tests/rnf/applied_field_check.py",
+        "--case",
+        "cs32"
+      ],
+      [
         "tests/mitgcm_oracle.sh",
         "global_ocean.cs32x15",
         "input.seaice",
@@ -191,6 +197,14 @@
         "global_ocean.cs32x15",
         "input.rnof_sp_icedyn",
         "-mpi",
+        "4"
+      ],
+      [
+        "{python}",
+        "tests/rnf/applied_field_check.py",
+        "--case",
+        "cs32",
+        "--mpi",
         "4"
       ],
       [
@@ -237,10 +251,24 @@
         "input.rnof_sp_const"
       ],
       [
+        "{python}",
+        "tests/rnf/applied_field_check.py",
+        "--case",
+        "lab_sea"
+      ],
+      [
         "tests/mitgcm_oracle.sh",
         "lab_sea",
         "input.rnof_sp_const",
         "-mpi",
+        "2"
+      ],
+      [
+        "{python}",
+        "tests/rnf/applied_field_check.py",
+        "--case",
+        "lab_sea",
+        "--mpi",
         "2"
       ],
       [

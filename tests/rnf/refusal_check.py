@@ -24,7 +24,15 @@ There are three kinds of case.
   - table entries: a cell index or a source index out of range, a
     ``target_level`` of 2, a fraction that is negative or not a number, a
     negative fraction hidden in a sum that is still 1;
-  - a target on land, a wrong cell area, a fraction sum off by 1e-3;
+  - a target on land, a wrong cell area, a fraction sum off by 1e-3, and
+    a target moved one cell in x while its ``target_lon``/``target_lat``
+    still name the cell it came from (``target_coords``). That move is
+    what no other check can see: the cell it lands on is wet, the
+    fractions still sum to 1, and on this lat-lon grid its ``rA`` is
+    bitwise equal, so the case also asserts that the land, fraction and
+    area messages do **not** appear. ``target_coords_nan`` is the same
+    check against a coordinate that is not a number, which the obvious
+    "distance greater than the tolerance" form accepts;
   - the file as a whole: a grid size mismatch, a missing grid attribute, a
     time sampling other than ``constant``, a missing required variable;
   - the flux: not a number, infinite, above 1e30, equal to a numeric
@@ -201,6 +209,18 @@ def sparse_info():
     target) and ``land_cell`` (a land cell of the western half of the grid,
     which one process owns in a two-process run). Land is where
     ``input/bathy.labsea1979`` is not negative.
+
+    It also has the three values of the ``target_coords`` case, which moves
+    one target to its neighbour in x: ``moved_entry`` (the table entry),
+    ``moved_cell`` (the cell it is moved to) and ``moved_source`` (the id
+    of its source, for the expected message). The entry is the first whose
+    neighbour in x is wet, is not already a target of the file and is in
+    the same row, so that the move is the failure the cell-centre check
+    exists for: on this lat-lon grid ``rA`` depends only on latitude, so
+    the neighbour's area is bitwise equal and no area tolerance can tell
+    the two cells apart, exactly as for the two cs32 cells across the
+    facet 2/3 boundary of RUNOFF-033. ``ValueError`` if the file has no
+    such entry, so the case can never run as something weaker.
     """
     import netCDF4
     import numpy as np
@@ -210,14 +230,26 @@ def sparse_info():
         nx = int(ds.getncattr("mitgcm_grid_nx"))
         ny = int(ds.getncattr("mitgcm_grid_ny"))
         flux_sum = float(np.asarray(ds["runoff_flux"][0], dtype="f8").sum())
-        wet_cell = int(ds["target_cell"][0])
+        cells = np.asarray(ds["target_cell"][:]).astype(int)
+        wet_cell = int(cells[0])
     bathy = np.fromfile(os.path.join(VERIF, EXPERIMENT, "input", "bathy.labsea1979"),
                         dtype=">f4").reshape(ny, nx)
     land = [(int(j), int(i)) for j, i in np.argwhere(bathy >= 0.0) if i < nx // 2]
     j, i = land[len(land) // 2]
+    wet = (bathy < 0.0).ravel()
+    moved = [(k, int(c) + 1) for k, c in enumerate(cells)
+             if int(c) % nx + 1 < nx and wet[int(c) + 1]
+             and int(c) + 1 not in set(cells.tolist())]
+    if not moved:
+        raise ValueError(f"{SPARSE} has no target whose neighbour in x is "
+                         f"wet and not already a target: the target_coords "
+                         f"case has no one-cell move to make")
+    moved_entry, moved_cell = moved[0]
     return {"ids": ids, "target_source": target_source, "nx": nx, "ny": ny,
             "flux_sum": flux_sum, "wet_cell": wet_cell,
-            "land_cell": i + nx * j}
+            "land_cell": i + nx * j,
+            "moved_entry": moved_entry, "moved_cell": moved_cell,
+            "moved_source": ids[target_source[moved_entry]]}
 
 
 def split_file(path, source_path, share=1.0/3.0):
@@ -523,6 +555,32 @@ def cases(data_pkg, data_exf, info=None):
                   ["RNF: target_cell_area differs from the cell area rA: "
                    f"source {ids[0]},"],
                   edit=scale_var("target_cell_area", 0, 1.01)),
+        # One target moved one cell in x, with target_lon/target_lat left
+        # pointing at the cell it came from. The cell it lands on is wet,
+        # its fractions still sum to 1 and its area is bitwise equal, so
+        # the land, fraction and area checks are all blind to it: only the
+        # cell-centre check sees it. ``forbid`` asserts that blindness, so
+        # the case cannot pass through the area check by accident.
+        file_case("target_coords",
+                  ["refused target(s) on all processes", one_init],
+                  ["RNF: target_lon/target_lat are not the centre of this "
+                   f"cell: source {info['moved_source']},",
+                   "RNF: the two centres are"],
+                  edit=set_var("target_cell", info["moved_entry"],
+                               info["moved_cell"])),
+        # A coordinate that is not a number. Every comparison with a NaN
+        # is false, so the natural "distance greater than the tolerance"
+        # form accepts such a target and the summary still reports that
+        # the check ran; whether it did was build-dependent (refused at
+        # -O3, accepted at -O0). The check is written as a negated .LE.
+        # for that reason, and this case is what holds it that way. The
+        # file stays schema-valid: MITgcmutils.runoff.check passes it.
+        file_case("target_coords_nan",
+                  ["refused target(s) on all processes", one_init],
+                  ["RNF: target_lon/target_lat are not the centre of this "
+                   f"cell: source {ids[0]},",
+                   "RNF: the two centres are"],
+                  edit=set_var("target_lon", 0, float("nan"))),
         file_case("missing_flux",
                   [f"RNF: missing runoff_flux: source {ids[0]},",
                    "missing value(s) of runoff_flux (not allowed)"],
@@ -591,6 +649,17 @@ def cases(data_pkg, data_exf, info=None):
             case["forbid"] = ["RNF_INIT_VARIA: runoff flux"]
     next(c for c in out if c["name"] == "fraction_hidden")["forbid"] = \
         forbid_file + ["fraction sum is not 1"]
+    # The point of target_coords: the checks that came before it cannot see
+    # a one-cell move. If any of them fires, the case is no longer the
+    # measurement it claims to be.
+    next(c for c in out if c["name"] == "target_coords")["forbid"] = \
+        forbid_file + ["target_cell_area differs from the cell area",
+                       "target on land", "fraction sum is not 1"]
+    # The NaN case must not be let through by the skip path either: if the
+    # check had been skipped, the summary would say so and the run would
+    # end normally, which "refused target(s)" above already excludes.
+    next(c for c in out if c["name"] == "target_coords_nan")["forbid"] = \
+        forbid_file + ["the target cell centres are not checked against"]
 
     # Runs that must end normally.
     no_error = list(MESSAGES.values()) + ["fatal error(s)", "ABNORMAL END"]
@@ -602,7 +671,11 @@ def cases(data_pkg, data_exf, info=None):
          "files": {"data.pkg": pkg_on, "data.rnf": rnf_ok},
          "normal_end": True, "stderr": [], "stdout": stdout_ok,
          "summary": {"RNF_file": f"'{SPARSE_REL}'",
-                     "RNF_nSrcFile": str(len(ids)), "RNF_nTgtOwned": "7"},
+                     "RNF_nSrcFile": str(len(ids)), "RNF_nTgtOwned": "7",
+                     # the file has target_lon/target_lat and the grid is
+                     # spherical polar, so the cell-centre check must have
+                     # run on this control rather than be skipped
+                     "RNF_lonLatChk": "T"},
          "flux_sum": info["flux_sum"], "stop": "ABNORMAL END",
          "forbid": no_error},
         {"name": "cells_equal_dense",

@@ -193,6 +193,14 @@ E_CASES = [
                              target_fraction=[0.5, 0.3, 0.2, 0.5, 0.5]), None,
                  "runoff.nc", id="T05-no-targets"),
     pytest.param("T07", dict(target_level=[1, 1, 1, 2, 1]), None, "runoff.nc", id="T07"),
+    # T09: the model stops the run on a non-finite value in any of these
+    # three, because both of its comparisons are negated <= (RUNOFF-033).
+    pytest.param("T09", None, setv("target_lon", 2, np.nan), "runoff.nc",
+                 id="T09-lon-nan"),
+    pytest.param("T09", None, setv("target_lat", 1, np.inf), "runoff.nc",
+                 id="T09-lat-inf"),
+    pytest.param("T09", None, setv("target_cell_area", 0, np.nan), "runoff.nc",
+                 id="T09-area-nan"),
     pytest.param("M01", dict(time_units="days after 2000-01-01"), None, "runoff.nc",
                  id="M01-units"),
     pytest.param("M01", dict(time_units="months since 2000-01-01"), None, "runoff.nc",
@@ -513,7 +521,9 @@ def test_packed_fraction_is_checked_as_stored(tmp_path):
 
 
 def test_packed_target_lon_is_not_s07(tmp_path):
-    """target_lon is not model-read (schema section 1), so packing it is allowed."""
+    """No stored target_lon value is used by the model (Model `check`, schema
+    sections 1 and 3), so packing it is allowed. The model reads it to compare
+    with XC, and skips that comparison when it is packed."""
     p = build(tmp_path, modifier=packed("target_lon", None, scale_factor=1.0))
     with netCDF4.Dataset(p) as ds:
         assert "scale_factor" in ds.variables["target_lon"].ncattrs()
@@ -831,7 +841,7 @@ def test_s08_descriptive_mitgcm_attributes_may_be_utf8_ncstring(tmp_path):
     ("runoff_flux", np.float64(-999.0), True),
     ("runoff_flux", np.float32(-999.0), False),
     ("target_fraction", "none", True),
-    ("target_lon", "none", False),              # not model-read
+    ("target_lon", "none", False),              # no stored value is used
 ])
 def test_s09_missing_value_type(tmp_path, var, value, fires):
     """MF4: missing_value on a model-read variable is a number of its own type."""
@@ -856,7 +866,7 @@ def _build_filtered(tmp_path, var, create, name):
     ("target_fraction", {"compression": "zstd"}, True),
     ("runoff_flux", {"compression": "zlib", "complevel": 4, "shuffle": True,
                      "fletcher32": True}, False),
-    ("target_lon", {"compression": "zstd"}, False),   # not model-read
+    ("target_lon", {"compression": "zstd"}, False),   # no stored value used
 ], ids=["flux-zstd", "flux-bzip2", "fraction-zstd", "flux-zlib-shuffle-fletcher32",
         "lon-zstd"])
 def test_p02_filters(tmp_path, var, create, fires):
@@ -938,7 +948,9 @@ def test_r01_land_cell(tmp_path, grid_dir):
 @pytest.mark.parametrize("stored_packed, fires", [(True, False), (False, True)],
                          ids=["packed-correct", "packed-attrs-on-unpacked-values"])
 def test_r03_compares_unpacked_lon_lat(tmp_path, grid_dir, stored_packed, fires):
-    """Richard A p05: target_lon/lat are not model-read and may be packed."""
+    """Richard A p05: target_lon/lat may be packed, because the model uses no
+    stored value of them -- it reads them only to check them against XC/YC and
+    skips that check when they are packed. R03 therefore has to unpack."""
     def fn(ds):
         for name in ("target_lon", "target_lat"):
             v = ds.variables[name]

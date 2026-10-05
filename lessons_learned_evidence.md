@@ -171,3 +171,24 @@ Discovery by name pattern silently equates "matches the pattern" with "is in sco
 ### Correction
 - `sparse_case()` is the predicate: it discriminates on configuration intent (`data.rnf`, `useRNF`), not on the name pattern, and reports a match it cannot judge as `SKIP` with the reason and owning issue.
 - A skip counts as neither a pass nor a failure, it is recorded under `skipped` in the JSON rather than in `results`, and a guard makes a run of only skips exit non-zero — verified by execution, so the check cannot pass vacuously.
+
+## LESSON: A closed hole needs a case that catches its reopening; a new guard needs a demonstrated failure [LL-009]
+
+**Date Identified**: 2026-10-05T10:30:00Z
+**Confidence**: supported
+
+### Lesson and applicability
+A measurement establishes that code is correct now. A test establishes that it stays correct. The two are routinely conflated when a fix is accompanied by a careful measurement, because the measurement feels like verification — and it is, of the present tense only. Two shapes are especially prone to it: a one-token fix applied to several sibling call sites where only one receives a case, and a guard reachable only after an earlier check passes, where reverting the earlier one leaves every existing case green and the later guard never runs.
+
+### Evidence
+- **Instance 1 — the accumulation-order premise.** `applied_field_check.py` compares bitwise (`--rtol 0`), licensed by the premise that `rnf_fields_load.F:75-77` accumulates in the file's table order. Review A measured the premise true on the real binary with a three-term order-dependent cell. But both committed sparse files have at most **one** target entry per cell (lab_sea 7 on 7, cs32 1189 on 1189), so no enrolled case sums more than one term: a future reorder of the per-tile list construction would void the premise while all four enrolled cases still passed bitwise. Disclosed in the matrix and the oracle docstring; the permanent case filed against RUNOFF-005.
+- **Instance 2 — the `--min-dumps` guard.** The zero-sample PASS review A found was closed by a range check in `main`. A direct `check_case(..., min_dumps=0)` would still compare zero dumps. `main` is the only caller in the repo, so this is bounded — recorded, not requested.
+- **Instance 3 — the non-finite `target_cell_area`.** Commit `016fdee5d` fixed the same NaN fail-open in **two** sibling comparisons. `target_coords_nan` was enrolled for the coordinate one; nothing sets `target_cell_area` non-finite. The existing `cell_area` case is a finite 1.01× error, and the coordinate check is reached only *after* the area check passes — so reverting the area comparison to `.GT.` leaves both cases green and no configured command notices. Correct today (review A measured `area_nan` refused in round 1) and covered checker-side by `T09-cell-area-nan`, but the model-side backstop, which exists precisely for files that never saw the checker, is held by nothing. One `file_case` closes it; filed against RUNOFF-017.
+- **The counterexample that shows the standard is reachable:** `target_coords_nan` was enrolled in the same round as its fix, and review B verified it cannot go green through the skip path — both by confirming the forbidden skip-warning string is text the model really emits, and by noting its required messages can only be produced by the check firing. That is what a closed hole looks like when it is done.
+- **The demonstrated-failure half:** the new oracle was required to be shown failing on a perturbed input before it was accepted — lab_sea 48 extra / 48 missing at relative deviation 1.0, cs32 entry 1035 at 10/10. A test never observed to fail carries no information about what it would catch. Review A then went further and showed the *control* itself fails when fed a blind model's field, so the control is not vacuous either.
+- **Cost of being wrong:** a reopened hole is invisible until it ships. The NaN fail-open that started this round was itself build-dependent — accepted at the project's own `-O0`, refused at `-O3` — which is exactly the kind of regression a suite is supposed to hold and a measurement cannot.
+
+### Correction
+- When a fix touches sibling call sites, enrol a case per site, not per fix.
+- When a guard sits behind an earlier check, ask what reverting the earlier check would do to the later one's coverage.
+- State plainly in the record when a measurement closed a *correctness* question but not *regression coverage*, and file the permanent case rather than letting the measurement stand in for it.

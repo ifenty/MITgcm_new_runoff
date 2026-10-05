@@ -47,10 +47,21 @@ MITgcm reads only a small, fixed set of variables and attributes, marked
   or `alias_`, or are `time` / `time_bnds`. Model-control global attributes start
   with `mitgcm_`. A variable named `runoff_*` that the schema doesn't define is an
   error, because it is almost always a typo, like `runoff_temprature`.
-- **No packing.** Variables the model reads (`time`, `time_bnds`, `source_id`,
-  `target_source`, `target_cell`, `target_fraction`, `target_level`,
-  `target_cell_area` and every `runoff_*` variable) must not carry `scale_factor` or `add_offset`. The
-  Fortran reader reads stored values directly and does not unpack them.
+- **No packing.** Variables whose **stored value the model uses** (`time`,
+  `time_bnds`, `source_id`, `target_source`, `target_cell`,
+  `target_fraction`, `target_level`, `target_cell_area` and every `runoff_*`
+  variable) must not carry `scale_factor` or `add_offset`. The Fortran reader
+  reads stored values directly and does not unpack them, so a packed value
+  would be used as written.
+  This set is not the same as "every variable the model reads".
+  `target_lon` and `target_lat` are read but only ever *checked* against the
+  grid (Model `check`, §3), so no result depends on them and the rule does
+  not reach them: packing them is allowed in schema 1.0 and stays an S07
+  pass, and the model skips the cell-centre check rather than comparing
+  packed numbers against degrees. A file that wants that check has to leave
+  them unpacked. Omitting the two variables altogether — also legal — gives
+  up the check in the same way, and the package summary reports which it was
+  (`RNF_lonLatChk`).
 - **Text attributes the model reads** are ASCII `char` (NC_CHAR) attributes, not
   `string` (NC_STRING) ones, because `NF_GET_ATT_TEXT` can't read NC_STRING. They
   are `mitgcm_runoff_schema_version`, `mitgcm_time_sampling`,
@@ -83,9 +94,17 @@ MITgcm reads only a small, fixed set of variables and attributes, marked
 ## 3. Variables
 
 **Req.** is required (R), optional (O), or required under a condition. **Model**
-marks what MITgcm reads. `yes` means the reader of RUNOFF-004 reads it today;
-`planned (RUNOFF-013)` marks a variable the schema defines and that reader does
-not read yet (§3.5).
+marks what MITgcm reads. There are three states:
+
+- `yes` — the reader of RUNOFF-004 reads the value and uses it.
+- `check` — the reader reads the value only to **validate** it against the
+  model's own grid, and never uses it afterwards. Nothing in the model's
+  results depends on it; the only thing that depends on it is whether the run
+  is refused. `target_lon`/`target_lat` are the only such variables (§3.4),
+  and because no stored value is used, the no-packing rule of §1 does not
+  reach them: the reader skips the check instead of unpacking.
+- `planned (RUNOFF-013)` — a variable the schema defines and that reader does
+  not read yet (§3.5).
 
 ### 3.1 Time
 
@@ -138,9 +157,9 @@ Rows may appear in any order. Sorting by source and then cell is recommended.
 | `target_cell` | `(target)` | int (int32 recommended; int64 allowed) | R | yes | 0-based global cell index, `cell = i + mitgcm_grid_nx · j`. `(i, j)` are the 0-based positions in the global 2D array that MITgcm reads from a dense `runoffFile` on this grid, with `i` varying fastest (Fortran order). For exch2 cubed-sphere and LLC grids this is the exch2 global I/O map (`exch2_global_Nx` × `exch2_global_Ny`, the `Global Map (IO)` line, which exch2 writes to `w2_tile_topology.NNNN.log` when `W2_printMsg < 0` (the default, `-1`) and to STDOUT otherwise), not the `SIZE.h` Nx × Ny, and it depends on `W2_mapIO`: e.g. 192 × 32 for cs32 with `W2_mapIO = -1` and 90 × 1170 for LLC90 with `W2_mapIO = 1`. The index does not depend on the tile size or MPI layout. |
 | `target_fraction` | `(target)` | double (float allowed) | R | yes | Share of the source's flux sent to this cell, `units = "1"`. Each value is in `[0, 1]`. Each source's fractions sum to 1 within 1e-6. |
 | `target_level` | `(target)` | int | O | yes | Reserved for 3D runoff. Schema 1.0 allows only 1, which means the surface cell of the column: level 1 in z coordinates, `Nr` in pressure coordinates, `kSurfC` under `pkg/shelfice` ([package design](package_design.md), decision 5). If absent, every target is level 1. |
-| `target_cell_area` | `(target)` | double (float allowed) | O | yes | Horizontal area `rA` of the cell on the grid the file was built for, in m². If present, the model compares it with its own `rA` (relative tolerance 1e-4) to catch a file built for a different grid. |
-| `target_lon` | `(target)` | float/double | O | no | Cell-center longitude, `degrees_east`. For people and plots. |
-| `target_lat` | `(target)` | float/double | O | no | Cell-center latitude, `degrees_north`. |
+| `target_cell_area` | `(target)` | double (float allowed) | O | yes | Horizontal area `rA` of the cell on the grid the file was built for, in m². If present, the model compares it with its own `rA` (relative tolerance 1e-4) to catch a file built for a different grid. **A value that is not a finite number is not allowed:** any NaN or ±Inf is an error, and the model stops. The comparison is written as a negated `≤`, so such a value is refused and not accepted (which a plain "difference greater than the tolerance" test would do, since every comparison with a NaN is false). The checker flags it as `T09`. |
+| `target_lon` | `(target)` | float/double | O | check | Cell-center longitude, `degrees_east`. For people and plots, and, when both of these are present and unpacked, checked by the model: `RNF_INIT_FIXED` refuses a target whose stored centre is further from the owning cell's `XC`,`YC` than half that cell's own grid spacing (`RNF_lonLatTol`). That is what catches a target moved to another cell of the same area, which no area tolerance can catch: across a cubed-sphere facet boundary two cells have `rA` that is bitwise equal. No value is ever *used*, so the check is skipped — with a warning, and `RNF_lonLatChk = F` in the package summary — when either variable is absent, when either carries `scale_factor` or `add_offset` (this reader does not unpack), or when the grid's `XC`,`YC` are not degrees (a Cartesian grid). **Where the check runs, a value that is not a finite number is not allowed:** any NaN or ±Inf is an error, and the model stops. The distance test is written as a negated `≤` so such a value is refused and not accepted; written the obvious way round it would be accepted, because every comparison with a NaN is false. The checker flags it as `T09`. |
+| `target_lat` | `(target)` | float/double | O | check | Cell-center latitude, `degrees_north`. Checked with `target_lon`, as above. |
 
 **Target rules:** each `(source, cell, level)` triple appears at most once, so merge
 duplicates before writing. Different sources may share a cell. The model adds
@@ -388,6 +407,7 @@ misbehave), **W** a warning (suspicious but usable), **I** information.
 | `T06` | W | A fraction is exactly 0. |
 | `T07` | E | `target_level`, if present, is 1 everywhere (schema 1.0). |
 | `T08` | I | Targets are not sorted by source and cell. |
+| `T09` | E | `target_cell_area`, `target_lon` or `target_lat`, where present, holds a value that is not a finite number (NaN or ±Inf). The model stops the run on one, so this is an error and not a warning. Tested on the stored values, which is what the Fortran reads; a fill marker is a finite number and is left to `S09`, `R02` and `R03`. No grid directory is needed. |
 | `M01` | E | `time` units and `calendar` are allowed. |
 | `M02` | W | `calendar` attribute is missing. |
 | `M03` | E | `time` is finite and strictly increasing. |
@@ -409,7 +429,7 @@ misbehave), **W** a warning (suspicious but usable), **I** information.
 | `X01` | E | Across several files: identical source, alias and target tables, grid attributes and variable set; records in time order, with each file's first bound equal to the previous file's last bound; `_YYYY` files share one offset of their first `time` value from 1 January of the year in their name; for `fixed` sampling the spacing across each file boundary equals `mitgcm_time_period`. |
 | `R01` | E | (`--grid-dir`) A target cell is on land (`hFacC` = 0 at level 1). |
 | `R02` | E | (`--grid-dir`) `target_cell_area` differs from `RAC` by more than 1e-4 relative. |
-| `R03` | W | (`--grid-dir`) `target_lon` / `target_lat` differ from `XC` / `YC` by more than 1e-3 degrees. |
+| `R03` | W | (`--grid-dir`) `target_lon` / `target_lat` differ from `XC` / `YC` by more than 1e-3 degrees. The model refuses the same disagreement at init, but only above half the cell's own spacing, which on every grid in use is far coarser than 1e-3°, so a file that passes R03 always passes the model's check. R03 stays a warning: it compares *unpacked* values and runs on grids whose `XC`,`YC` the model would not compare at all. |
 
 ## 10. Example header
 

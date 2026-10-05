@@ -50,11 +50,10 @@ Carry forward from RUNOFF-012:
 - cs32 `input.in_p` already runs dense exf runoff and runoff temperature in pressure coordinates, with a reference.
 - `obcs_ctrl` has only adjoint inputs.
 
-## BLOCKED: Temperature and salinity runoff contributions via tendency terms
+## UNRESOLVED: Temperature and salinity runoff contributions via tendency terms
 
 **Date Identified**: 2026-10-02T22:30:00Z
-**Status**: Blocked
-**Blocked-By**: RUNOFF-004 — needs the sparse reader and per-tile lists
+**Status**: Unresolved
 **UUID**: RUNOFF-013
 **Anchors**: MITgcm/pkg/icefront/icefront_tendency_apply.F::<module>; MITgcm/pkg/shelfice/shelfice_forcing.F::<module>
 
@@ -70,11 +69,14 @@ Core physics deliverable; wrong signs or double counting break heat/salt conserv
 ### Proposed action and acceptance
 Design (RUNOFF-010, docs/package_design.md): decision 3 gives the term `[(mT) − m_T·T_ref]·mass2rUnit/(drF·hFacC)` (and the S analogue) in `APPLY_FORCING_T/S` after the ICEFRONT calls, with `T_ref`/`S_ref` from the freshwater formulation table, the same-step `PmEpR` time level, and the `rhoConstFresh/rhoConst` mass convention. Acceptance: analytic single-cell tests for every row of the decision 3 tables (heat and salt budgets to 1e-12 relative); cell-by-cell agreement with the exf `runoftemp` term in ice-free cells (dense EXFroff/EXFroft/THETA vs package diagnostic); budget closure in RUNOFF-016.
 
-## BLOCKED: Real versus virtual freshwater flux and free-surface options
+Unblocked 2026-10-04: RUNOFF-004 closed (sparse reader, per-tile lists, placement by the `mdsio_read_field.F` arithmetic, `GLOBAL_SUM` fraction check and the exf volume flux; fork `610d4cbaf`, final verification receipt `2e11b06d`, all 33 scientific commands passing). Note the reader accepts **one constant record only**: `rnf_init_fixed.F:199-217` stops the run for `RNF_useYearlyFiles` or any `RNF_period` other than 0, naming RUNOFF-005.
+
+Scope moved in from RUNOFF-004 (Arch, 2026-10-04): **refusing a tracer name with no matching ptracer** belongs here. The RUNOFF-004 reader reads no tracer, temperature or salinity variable, so there is no name to match against `PTRACERS_names`; a variable present in the file is warned about per variable and not applied (`rnf_init_fixed.F:382-408`). Both RUNOFF-004 reviewers ruled the deferral legitimate because no value is silently wrong. This issue's acceptance already names the refusal; `docs/runoff_schema.md` §3.5 and `esx/project_profile.md` now mark it as arriving here.
+
+## UNRESOLVED: Real versus virtual freshwater flux and free-surface options
 
 **Date Identified**: 2026-10-02T22:30:00Z
-**Status**: Blocked
-**Blocked-By**: RUNOFF-004 — needs the sparse volume flux in the model
+**Status**: Unresolved
 **UUID**: RUNOFF-014
 **Anchors**: MITgcm/model/src/external_forcing_surf.F::<module>; MITgcm/pkg/exf/exf_mapfields.F::<module>
 
@@ -89,6 +91,8 @@ Freshwater formulation errors change sea level and salinity drift silently.
 
 ### Proposed action and acceptance
 Acceptance: test cases in at least one lat-lon and one cs32 configuration for each combination; volume and salt budgets closed (RUNOFF-016).
+
+Unblocked 2026-10-04: RUNOFF-004 closed (sparse reader, per-tile lists, placement by the `mdsio_read_field.F` arithmetic, `GLOBAL_SUM` fraction check and the exf volume flux; fork `610d4cbaf`, final verification receipt `2e11b06d`, all 33 scientific commands passing). Note the reader accepts **one constant record only**: `rnf_init_fixed.F:199-217` stops the run for `RNF_useYearlyFiles` or any `RNF_period` other than 0, naming RUNOFF-005.
 
 ## UNRESOLVED: Runoff diagnostics and monitor output
 
@@ -135,11 +139,10 @@ Acceptance: checks pass to 1e-12 relative on lab_sea and cs32 sparse cases, sing
 
 Adams-Bashforth note (RUNOFF-010 review, 2026-10-03): with forcing inside Adams-Bashforth (`temp_integrate.F:367-372`, `tracForcingOutAB ≠ 1`) the package term is extrapolated like the model's own forcing, so close heat, salt and tracer budgets in the sum over time, or run the check with `tracForcingOutAB=1` or a non-AB scheme.
 
-## BLOCKED: Refusal and negative tests for invalid runoff input
+## UNRESOLVED: Refusal and negative tests for invalid runoff input
 
 **Date Identified**: 2026-10-02T22:30:00Z
-**Status**: Blocked
-**Blocked-By**: RUNOFF-004 — needs the model reader
+**Status**: Unresolved
 **UUID**: RUNOFF-017
 **Anchors**: docs/runoff_schema.md::<module>
 
@@ -161,13 +164,16 @@ Carry forward from RUNOFF-012:
 - Configure the cs32 case (`useRNF=.TRUE.` in input.seaice) that triggers both the `runofffile` and `runoftempfile` refusals, giving "2 fatal error(s)". lab_sea cannot test `runoftempfile` because `EXF_CHECK` stops first without `ALLOW_RUNOFTEMP`.
 - Refusal branches compiled but never executed: `ALLOW_RUNOFF` undefined, `HAVE_NETCDF` undefined, `useShelfIce` with `SHI_update_kTopC`, and `USE_OLD_EXTERNAL_FORCING`.
 
+Carry forward from RUNOFF-033 (review A, correction round 2, 2026-10-05): **enrol a non-finite `target_cell_area` case.** Commit `016fdee5d` made the same one-token NaN fail-open fix at **two** sibling comparison sites in `rnf_init_fixed.F` — the cell-centre check and the pre-existing `target_cell_area` check — but only the first got a permanent case (`target_coords_nan`). The existing `cell_area` case is `scale_var("target_cell_area", 0, 1.01)`, a **finite** error, and the coordinate check is reached only *after* the area check passes, so reverting the area comparison to `.GT.` would leave **both** existing cases green and no configured command would notice. The behaviour is correct today — review A measured `area_nan` refused with exit 1 in correction round 1 — and `T09-cell-area-nan` covers the checker side, so what is missing is regression coverage of the model-side backstop, which exists precisely for files that never went through `MITgcmutils.runoff.check`. One line closes it: a `file_case` with `set_var("target_cell_area", 0, float("nan"))` expecting the message the model already prints, `target_cell_area differs from the cell area rA`, confirmed by review A's round-1 probe. See LL-009.
+
 Carry forward from RUNOFF-004 (review B, correction round 1, 2026-10-04): add the **cross-rank global-count oracle**. `tests/rnf/refusal_check.py::judge` asserts that a tile-local refusal message appears in *some* rank's `STDERR` and that each rank emits one `STOP` line, but it never asserts the **value** of the `GLOBAL_SUM_INT`-ed count, and `sparse_info` always selects a land cell in the western half, i.e. rank 0 — so the zero-local/non-zero-global case has no case. Review B wrote and ran the two that distinguish a correct reduction from a lucky one, on 2 MPI ranks: `land_rank1_only`, where rank 0 owns no refused target and prints no detail line yet still prints `1 refused target(s) on all processes` and stops, and `land_both_ranks`, where each rank sees 1 locally yet both print `2`. Both passed, with no hang. Fold them into `refusal_check.py` and assert the summed value. Its receipt is `devel-loop/loop_state/scratch/ab74b9af824d5b71c/richard_refusal_mpi2.json`; the same run also covered four refusal paths that had no case (`RNF_period` set in `data.rnf`, schema major version 2.0, `constant` sampling with two records, and `runoff_flux` with its dimensions transposed). Low priority: the mechanism is proven by execution and unchanged since. Note the scratch receipt is git-ignored and local to this machine, so re-derive the cases from the description rather than relying on the file surviving.
 
-## BLOCKED: global_ocean.90x40x15 and global_oce_latlon sparse runoff testbeds
+Unblocked 2026-10-04: RUNOFF-004 closed (sparse reader, per-tile lists, placement by the `mdsio_read_field.F` arithmetic, `GLOBAL_SUM` fraction check and the exf volume flux; fork `610d4cbaf`, final verification receipt `2e11b06d`, all 33 scientific commands passing). Note the reader accepts **one constant record only**: `rnf_init_fixed.F:199-217` stops the run for `RNF_useYearlyFiles` or any `RNF_period` other than 0, naming RUNOFF-005.
+
+## UNRESOLVED: global_ocean.90x40x15 and global_oce_latlon sparse runoff testbeds
 
 **Date Identified**: 2026-10-02T22:30:00Z
-**Status**: Blocked
-**Blocked-By**: RUNOFF-004 — needs the model reader
+**Status**: Unresolved
 **UUID**: RUNOFF-018
 **Anchors**: MITgcm/verification/global_ocean.90x40x15/input/data::<module>; MITgcm/verification/global_oce_latlon/input.yearly/data::<module>
 
@@ -183,11 +189,12 @@ Global lat-lon coverage beyond the regional lab_sea grid.
 ### Proposed action and acceptance
 Acceptance: dense references and sparse=dense to the digit threshold, single and MPI, plus budget checks.
 
-## BLOCKED: Regional open-boundary testbeds (seaice_obcs, obcs_ctrl)
+Unblocked 2026-10-04: RUNOFF-004 closed (sparse reader, per-tile lists, placement by the `mdsio_read_field.F` arithmetic, `GLOBAL_SUM` fraction check and the exf volume flux; fork `610d4cbaf`, final verification receipt `2e11b06d`, all 33 scientific commands passing). Note the reader accepts **one constant record only**: `rnf_init_fixed.F:199-217` stops the run for `RNF_useYearlyFiles` or any `RNF_period` other than 0, naming RUNOFF-005.
+
+## UNRESOLVED: Regional open-boundary testbeds (seaice_obcs, obcs_ctrl)
 
 **Date Identified**: 2026-10-02T22:30:00Z
-**Status**: Blocked
-**Blocked-By**: RUNOFF-004 — needs the model reader
+**Status**: Unresolved
 **UUID**: RUNOFF-019
 **Anchors**: MITgcm/verification/seaice_obcs/input/data::<module>
 
@@ -206,6 +213,8 @@ Acceptance: sparse=dense (or budget-checked) cases single and MPI.
 Open-boundary rule (RUNOFF-010 design, decision 5): a target with `maskInC = 0` is refused at init, naming the source, because `EmPmR` is multiplied by `maskInC` with `useRealFreshWaterFlux` (`external_forcing_surf.F:149-156`). Test a source in the first interior cell and the refusal beyond the boundary, and establish from `pkg/obcs/obcs_init_fixed.F` whether the boundary row itself has `maskInC = 0`.
 
 Carry forward from RUNOFF-010 review A: the loops that zero `maskInC` start at the open-boundary index itself (`obcs_init_fixed.F:79-87`, `296-301`), so a target on the boundary row is refused at init.
+
+Unblocked 2026-10-04: RUNOFF-004 closed (sparse reader, per-tile lists, placement by the `mdsio_read_field.F` arithmetic, `GLOBAL_SUM` fraction check and the exf volume flux; fork `610d4cbaf`, final verification receipt `2e11b06d`, all 33 scientific commands passing). Note the reader accepts **one constant record only**: `rnf_init_fixed.F:199-217` stops the run for `RNF_useYearlyFiles` or any `RNF_period` other than 0, naming RUNOFF-005.
 
 ## BLOCKED: Runoff on grids with ice-shelf cavities (top wet level below k=1)
 
@@ -479,11 +488,10 @@ Users of pressure-coordinate or ice-shelf configurations get false land errors, 
 ### Proposed action and acceptance
 Add a surface-level option to all three tools: `--surface-level top|bottom|kSurfC`, or detect it from `data` (`buoyancyRelation`) when a run directory is given, and document it. Acceptance: the cs32 `input.in_p` grid checks cleanly with the converted cs32 file; a shelfice grid uses `kSurfC`; the existing tests are unchanged.
 
-## BLOCKED: Sparse runoff time handling: interpolation, hold-exact, repeat cycles, yearly files
+## UNRESOLVED: Sparse runoff time handling: interpolation, hold-exact, repeat cycles, yearly files
 
 **Date Identified**: 2026-09-29T21:30:00Z
-**Status**: Blocked
-**Blocked-By**: RUNOFF-004 — needs the reader and per-tile lists
+**Status**: Unresolved
 **UUID**: RUNOFF-005
 **Anchors**: MITgcm/pkg/exf/exf_getffieldrec.F::<module>; MITgcm/pkg/exf/exf_getyearlyfieldname.F::<module>
 
@@ -509,11 +517,17 @@ Carry forward from RUNOFF-002 (converter):
 - **No multi-cell source in the timed oracles:** only the lab_sea const case has one, because gendata.py gives each cell its own phase. Add a group-coherent timed case.
 - **Not expressible in schema 1.0:** a repeat cycle that is not one calendar year, and yearly files that are not a whole number of periods. A schema 1.1 attribute would fix this if ever needed.
 
+Unblocked 2026-10-04: RUNOFF-004 closed (sparse reader, per-tile lists, placement by the `mdsio_read_field.F` arithmetic, `GLOBAL_SUM` fraction check and the exf volume flux; fork `610d4cbaf`, final verification receipt `2e11b06d`, all 33 scientific commands passing). Note the reader accepts **one constant record only**: `rnf_init_fixed.F:199-217` stops the run for `RNF_useYearlyFiles` or any `RNF_period` other than 0, naming RUNOFF-005.
+
+Carry forward from RUNOFF-033 (review A, correction round 1, 2026-10-05): **own a permanent order-sensitive accumulation case.** `tests/rnf/applied_field_check.py` compares the applied field bitwise (`--rtol 0`), and that criterion is licensed by the premise that `rnf_fields_load.F:75-77` accumulates in the sparse file's table order. Review A measured the premise true on the real binary — three entries of one source on one cell with fractions `(1.0, d, d)` where **both** small terms are 0.3 ulp of the first, giving forward vs reversed differing by exactly 1 ulp — but **no enrolled case exercises it**: both committed files have at most one target entry per cell (lab_sea 7 on 7, cs32 1189 on 1189), so none of the four enrolled oracle cases ever sums more than one term. A reorder of the per-tile list construction in `RNF_INIT_FIXED` (chunk-wise, sorted by source, or tile-local) would void the premise and **all four cases would still pass bitwise**.
+
+This issue is the right home because it makes multi-record live and will touch `RNF_FIELDS_LOAD` itself. Review A also corrected the cost estimate: this needs **no new committed input file**. `tests/rnf/refusal_check.py::split_file` already generates a multi-entry file at run time from the committed one (each source becomes `<id>_a`/`<id>_b`, flux split, fraction 1 on a shared cell), and its docstring already says it "is what exercises the accumulation of `rnf_fields_load.F`". Extend that split from two sub-sources to **three**, sizing the two smaller sub-sources so each contributes 0.3 ulp of the first term. **The pair sum is what makes it order-sensitive, not either term alone** (review A, correction round 2): `fl(t1 + 0.3u) = t1` twice over, but `fl((0.3u + 0.3u) + t1) = t1 + u`. Two sub-sources would give a two-term sum, and two-term floating-point addition is commutative — the case would not be order-sensitive at all and would pass vacuously, which is the exact failure this issue exists to prevent. Verify order-sensitivity directly before enrolling it: reverse the terms in the reconstruction and require the bitwise result to change. Acceptance: the case is order-sensitive by construction (reversing the terms changes the bitwise result), it passes on the current reader, and it is enrolled so the suite would notice a future reorder.
+
 ## BLOCKED: cs32 sparse-runoff oracle (exch2 volume path; runoff temperature cell-by-cell)
 
 **Date Identified**: 2026-09-29T21:30:00Z
 **Status**: Blocked
-**Blocked-By**: RUNOFF-004 — needs the reader; also needs the RUNOFF-002 converter
+**Blocked-By**: RUNOFF-005 — needs sparse time handling for the 12-record file; and RUNOFF-013 — needs the runoff-temperature tendency term for the cell-by-cell check
 **UUID**: RUNOFF-006
 **Anchors**: MITgcm/pkg/exf/exf_mapfields.F::<module>; tests/mitgcm_oracle.sh::<module>
 
@@ -530,6 +544,8 @@ Checks exch2 index mapping, sources spanning faces, tiles and processes, and run
 Design (RUNOFF-010, docs/package_design.md): runoff temperature enters as a tendency term, not through exf `runoftemp`, and differs from the exf term under sea ice (exf scales it by open-water fraction, `seaice_growth.F:956-957`). The volume oracle stays: `input.icedyn` and a variant of `input.seaice` without runoff temperature must match the dense references. Runoff temperature is checked cell by cell (dense `EXFroff`, `EXFroft`, `THETA` vs the package heat diagnostic) in ice-free cells. Acceptance: volume-only cases match their dense references to the digit threshold, single-process and `-mpi 4`.
 
 From RUNOFF-002: `verification/global_ocean.cs32x15/input.rnof_sparse/runoff_sparse.nc` holds the cs32 conversion (1189 sources, 12 records, flux and temperature). All 12 cs32 records are identical in time, so the cs32 oracle cannot detect a timing error; timing is covered by lab_sea.
+
+Reconsidered 2026-10-04 on RUNOFF-004's closure, which satisfied both of this issue's original dependencies (the reader, and the RUNOFF-002 converter). **Half of this issue's acceptance is already met:** RUNOFF-004 created `global_ocean.cs32x15/input.rnof_sp_icedyn` (record 1 of `core_rnof_1_cs32.bin` as one constant record, 1189 one-cell sources) and it matches the dense `results/output.icedyn.txt` at 11 matching digits single-process **and** `-mpi 4`, which is the "volume-only cases match their dense references, single-process and -mpi 4" criterion. Review A also proved the exch2 placement bijective over all 6144 cells with per-process counts 321+443+151+274. What remains is therefore narrower than the original scope: the **12-record** file (`input.rnof_sparse/runoff_sparse.nc`), which needs RUNOFF-005, and the **cell-by-cell runoff temperature** check, which needs RUNOFF-013's tendency term. Re-blocked on those two rather than left blocked on a closed issue. Keep the recorded limit that all 12 cs32 records are identical in time, so this oracle cannot detect a timing error; timing stays with lab_sea.
 
 ## BLOCKED: Per-record parallel I/O strategy at 2 km scale
 
@@ -574,34 +590,40 @@ Required for tracer studies (dye, nutrients, isotopes). Wrong reference values b
 Acceptance: analytic single-cell tracer budget to 1e-12 relative; a missing tracer in the file adds nothing; an unknown tracer name is refused at init; budget closure (RUNOFF-016) with at least two tracers; no-change runs unchanged.
 
 
-## UNRESOLVED: The configured digit oracle cannot detect a one-cell target move; promote a cell-exact applied-field check
+## UNRESOLVED: test_write_formats cannot type a WRITE item declared in a model header
 
-**Date Identified**: 2026-10-04T17:30:00Z
+**Date Identified**: 2026-10-05T08:30:00Z
 **Status**: Unresolved
-**UUID**: RUNOFF-033
-**Anchors**: MITgcm/pkg/rnf/rnf_fields_load.F::<module>; tests/rnf/placement_probe.py::main
+**UUID**: RUNOFF-034
+**Anchors**: tests/runoff/test_write_formats.py::<module>; MITgcm/pkg/rnf/rnf_init_fixed.F::<module>
 
 ### Issue or research question
-Every configured sparse = dense oracle judges `output.txt` monitor digits, and that criterion cannot see a misplaced target. Measured on the RUNOFF-004 candidate (`b8251cd1c`, cs32, 4 processes) by review A: moving one target entry one cell in x, across the facet 2/3 boundary of the 192 x 32 layout, with the two cells' `rA` **bitwise equal** so `RNF_areaTol` is blind and the fractions still summing to 1, is accepted silently with no `RNF` message, the run ends normally, and `compare_results.sh` reports **10 matching digits against the 10 required — PASS with zero margin**. `cg2d_init_res` moves 1.062e-10 absolute, 4.103e-11 relative. A cell-exact oracle flags the same run immediately (`extra cells = 1`, `missing cells = 1`, relative error 1.0), with global mass still exactly conserved, which is why the digit check cannot see it: the water is not lost, only moved.
-
-Should the project adopt a cell-exact applied-field check as a configured test, so that placement is guarded by something with real margin rather than by a threshold it passes exactly?
+`tests/runoff/test_write_formats.py` builds its item-type table from `RNF_SIZE.h` and `RNF.h` only, so a `WRITE(msgBuf,...)` item declared in a *model* header — `GRID.h`'s `xC`, `yC`, `dxF`, `dyF`, for instance — is unclassifiable. It fails loudly rather than silently (the coverage test refuses any item it cannot type), so this is not a correctness hole, but it makes the checker an obstacle instead of a guard the moment a message quotes a grid quantity.
 
 ### Evidence
-Review A built the oracle and ran it: an added `EXFroff` snapshot stream with `diag_mnc=.FALSE.`, `writeBinaryPrec=64` and `useSingleCpuIO`, dumping the field the model actually applies, compared cell by cell at float64 against an independent reconstruction of `Σ_s flux_s·frac_{s,c}/rA(c)` computed from the NetCDF file and the model's own `RAC.data`. On the unperturbed candidate it is **bitwise identical** over all 6144 cs32 cells and all 10 dumped steps (1189 non-zero, 0 extra, 0 missing, `sum(applied·rA)` equal to `Σ flux` exactly), and likewise on lab_sea on 2 processes where `baffin`'s 0.2667/0.4/0.3333 split straddles the process boundary. Review A also censused the exposure: **47 of the 1189** cs32 targets have a global-index neighbour that is wet, not already a target, and within `RNF_areaTol` in area, so the move above is not a contrived single case.
+Found by the implementer during RUNOFF-033 (2026-10-05). Writing the new cell-centre refusal message, `test_write_formats.py` reported `XC(...)` as "no known type". The implementer worked around it by holding the values in typed `_RL` locals rather than extending the checker — a reasonable local choice that leaves the limitation in place for the next message. The checker itself was created in RUNOFF-004 after two real Fortran runtime format bugs reached the tree on refusal-only paths, so weakening its reach is a direct loss of what it was built for.
 
 ### Scientific or engineering impact
-This is the issue's own stated failure mode — "mapping errors silently lose mass" — except that mass is conserved and the water simply arrives in the wrong cell, which is worse for detection. At 2 km production scale with 10^5-10^6 sources the digit oracle's blindness scales with the number of sources, while the cell-exact check does not. Without it, a future refactor of the placement arithmetic has no configured test with margin.
+Bounded and visible, not silent. The risk is behavioural: an implementer facing a loud refusal will route around the checker, as happened here, so messages that quote model state drift outside its coverage exactly where new refusals are being added.
 
 ### Proposed action and acceptance
-Promote review A's oracle to `tests/rnf/` as a configured command, reusing the `EXFroff` diagnostic path so no model code is needed, and add it to the `scientific` suite beside `placement_probe.py`. Acceptance: the check is bitwise exact on the unperturbed candidate for lab_sea (1 and 2 processes) and cs32 (1 and 4 processes), and fails with a non-zero extra/missing count on a deliberately perturbed input.
+Extend the symbol table to the model headers `pkg/rnf` actually includes (`GRID.h`, `SIZE.h`, `PARAMS.h`, `EEPARAMS.h`), or give it a declared-type override table for named externals. Acceptance: a `WRITE(msgBuf,...)` quoting `xC` or `dxF` directly is typed correctly rather than refused; the existing 76-statement/0-finding result is unchanged; and the negative controls still detect both historical bugs plus an `I` descriptor with a `_RL` item.
 
-Second, add an init-time coordinate check. Review A's correction-round-1 refinement (2026-10-04), which supersedes an earlier framing of this issue that asked whether `RNF_areaTol` should be tightened or `target_cell_area` required to match `rA` bitwise: **neither can work.** The two cells of the move above have `rA` that is *bitwise equal*, so no area tolerance however tight separates them. But the schema already carries `target_lon`/`target_lat`, and for entry 1035 those equal cell 5247's `XC`/`YC` exactly (133.8655, 28.5373) while cell 5248 lies at (−38.1226, 39.2996) — **172° of longitude away**. Comparing `target_lon`/`target_lat` against the owning cell's `XC`/`YC` at init would refuse that move outright, cheaply, for every target, and is a far stronger guard than any area tolerance. Acceptance for this part: the move of entry 1035 is refused with an `RNF` message naming the source and cell, the unperturbed committed files pass, and the tolerance is justified against the grid's own cell spacing rather than chosen.
+## UNRESOLVED: doc_contract rejects a Fortran header as a documentation reference
 
-Carry forward (review A, correction round 2, 2026-10-04), two documentation/instrumentation items raised as non-blocking and deliberately NOT taken in RUNOFF-004, because editing an inventoried file after both approvals invalidates them (LL-006, hit twice in this issue):
+**Date Identified**: 2026-10-05T08:30:00Z
+**Status**: Unresolved
+**UUID**: RUNOFF-035
+**Anchors**: tools/esx/doc_contract.py::validate_report; MITgcm/pkg/rnf/RNF.h::<module>
 
-1. `docs/verification_matrix.md` **understates this project's own coverage**. It calls the sparse = dense oracle a comparison of "the end state of the run", but `compare_results.sh` compares each monitor variable as a time series over every monitor line — its own header documents this — so the oracle verifies the applied constant field at all 48 lab_sea monitor times, not just at the end. Correct it in the project's favour.
-2. `tests/runoff/lab_sea_runoff_timing_check.py::check_case` reports `"monitor output has %d runoff records" % len(series["time"])`, i.e. the count of monitor *times*, not of runoff statistics. That is what produced the misleading "48 runoff records" on a sparse run with 48 times and zero runoff statistics. The sparse trigger is gone, but a truncated or misconfigured **dense** run would mislead the same way. Report the time count and the statistic count separately.
+### Issue or research question
+`doc_contract.py seal` accepts `MITgcm/pkg/rnf/RNF.h::<module>` as a disposition *target* but rejects it as a disposition *reference*, with "contains no inventoried documentation". A Fortran header is where `pkg/rnf` documents its parameters and their tolerances, so it is a legitimate thing for a judgment to cite.
 
-Also noted and accepted as-is: `sparse_case()` returns True on the presence of `data.rnf` alone, without requiring `useRNF`. It over-triggers slightly but fails safe — toward SKIP-and-say-so rather than a false pass — and the all-skip guard backs it up. Recorded so it is not later mistaken for an exact test.
+### Evidence
+Found by the implementer during RUNOFF-033 correction round 1 (2026-10-05): two dispositions that cited `RNF.h` were refused at seal and had to cite the verification-matrix and schema headings instead. The reason those dispositions existed was the `RNF_lonLatTol` comment block, which lives in `RNF.h` — so the citation was redirected away from the text it was actually about.
 
-Carry forward (Arch, 2026-10-04): `docs/verification_matrix.md` still says "the two "not seen" rows of the historical table below" after correction round 1 removed those two rows; the table now carries one embedded "not seen" value and no such rows. Review A raised it as non-blocking. I wrote the one-line fix, found it staled Bob's sealed documentation report — which both reviewers had already confirmed — and reverted it rather than spend a second correction round re-confirming a cross-reference wording. Fix it in the next issue that edits this file, inside that issue's own documentation plan. The ordering lesson is the closeout doctor's: finalize every signed field before taking the final verification receipt.
+### Scientific or engineering impact
+Minor and framework-side. It pushes a judgment's citation away from the prose it concerns, which makes the sealed record slightly less useful to the next reader, and it is asymmetric in a way that is not obvious from the error text.
+
+### Proposed action and acceptance
+Decide whether this is intended. If a reference must resolve to inventoried Markdown, say so in the error message and in the documentation contract. If a commented Fortran header should be citable, treat `path::<module>` the way a disposition target already does. Acceptance: either the refusal names the rule it enforces, or a `RNF.h` citation seals.

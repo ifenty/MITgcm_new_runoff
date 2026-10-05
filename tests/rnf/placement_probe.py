@@ -11,8 +11,12 @@ is not covered by it.
 
 The sparse = dense oracle of ``global_ocean.cs32x15`` does not see a one-cell
 move of its weakest targets either (``docs/verification_matrix.md``, coverage
-limits). What protects such a target is the area check of ``RNF_INIT_FIXED``,
-when the file has ``target_cell_area``.
+limits). What protects such a target is not this probe but, since
+RUNOFF-033, ``tests/rnf/applied_field_check.py``, which compares the field
+the model applies with the field the file asks for on every cell, and the
+cell-centre check of ``RNF_INIT_FIXED`` when the file has
+``target_lon``/``target_lat``. The area check of ``RNF_INIT_FIXED`` covers
+only a move between cells of different area.
 
 How the model is made to answer. ``RNF_INIT_FIXED`` refuses a target on land,
 and a target whose ``target_cell_area`` differs from the cell area, with a

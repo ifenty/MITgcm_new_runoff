@@ -1,0 +1,627 @@
+{
+  "retrospective": {
+    "schema_version": 3,
+    "id": "RUNOFF-033",
+    "iteration": 1,
+    "closes_timestamp": "2026-10-05T05:47:20.935406+00:00",
+    "timestamp": "2026-10-05T09:43:20Z",
+    "accounting": {
+      "path": "devel-loop/loop_state/accounting/83c532a2a4e7e2631caaf29a948a61ca9ed2babb8938d84d7d0100a2c9a74bcd.json",
+      "sha256": "83c532a2a4e7e2631caaf29a948a61ca9ed2babb8938d84d7d0100a2c9a74bcd"
+    },
+    "measured": {
+      "span_minutes": 235,
+      "dispatches": {
+        "bob": 4,
+        "richard": 7
+      },
+      "rounds": {
+        "bob": 3,
+        "richard": 3
+      },
+      "cost_usd": {
+        "bob": 0.0,
+        "richard": 0.0
+      },
+      "unknown_cost_event_ids": [
+        "e4ca1b5a1ca44b3aa6d8418406e77991",
+        "21c718b077d34f2f97e125c246c3bc4d",
+        "53a40762f7984fbf95d0f875944bfb7b",
+        "301c3305f45e4f7abb9ccf0f9ae98819",
+        "ee21d569d994440c95840adc433cced6",
+        "7fafdbd6fac74c7ba0de8526ed3d6164",
+        "b08bca63b4b7424a9878d26dcd27c996",
+        "1e0255ff087e4478a1074bc9cc82245b",
+        "90a2153e86aa431db82522a740ed4393",
+        "d2c8a13108a44c4aa57ba66e1f981886",
+        "68932c07c9014f389b142fe7f510204f"
+      ],
+      "coordinator_coverage": "recorded",
+      "billing_status": "provider_reported_not_invoice_reconciled",
+      "coordinator": {
+        "tool_measured_minutes": 47.9,
+        "self_reported_minutes": 141.0,
+        "self_reported_usd": null,
+        "provider_reported_usd": null
+      },
+      "cost_scope": "cost_usd and span-based figures describe dispatched agents; coordinator cost is recorded separately: Arch self-reported 141 min, cost unknown (coordinator.self_reported; not added to cost_usd)"
+    },
+    "problems": [
+      {
+        "category": "guard_fails_open_on_non_finite",
+        "summary": "The new cell-centre refusal accepted a misplaced target carrying NaN coordinates while reporting that the check had run, and the verdict was build-dependent.",
+        "evidence": "rnf_init_fixed.F:758 was `IF ( gcDist .GT. tolDist )`; NaN loses `.GT.`, so at the project's own FOPTIM = -O0 a target moved one cell with NaN target_lon/target_lat ended normally, exit 0, with no RNF line, and the summary printed RNF_lonLatChk = T. Review B executed it on the real model and showed the same expression refuses at -O3. Such a file was also fully schema-valid: 0 errors, 0 warnings, exit 0. The package already used the fail-closed form three lines away for target_fraction.",
+        "minutes_lost": 95
+      },
+      {
+        "category": "overstated_numerical_claim",
+        "summary": "Two claims about the tolerance margin were asserted rather than measured, and both were wrong on the project's own grid.",
+        "evidence": "The 'one whole spacing away, twice this threshold, factor 2, the designed minimum' claim fails at a cs32 facet corner where dxF jumps 120208 -> 156359 m: the distance is 0.5*(dxF_src + dxF_dst), so the margin is 1 + spacing(src)/spacing(dst) = 1.78, 11 per cent below the stated minimum. Then the replacement claim, that using the wrong rSphere scales every margin, was also wrong: review B measured the floor identical under 6370 and 6371 km (ratio exactly 1.000000000000) because the margin is a ratio of two lengths that both scale with the radius; only a mismatch between the two sides moves it, by 6371/6370.",
+        "minutes_lost": 40
+      },
+      {
+        "category": "fix_created_contract_disagreement",
+        "summary": "Making non-finite coordinates fatal left the format contract declaring valid a file the model halts on, for two variables.",
+        "evidence": "docs/runoff_schema.md section 3.4 stated only the distance and area-tolerance conditions. Review B measured MITgcmutils.runoff.check returning 0 errors and 0 warnings on the exact file the model refuses, so a producer writing a NaN fill for an unlocatable target could not learn the constraint from the document that defines the format. Third instance this session of a correction creating a new inaccuracy downstream of itself.",
+        "minutes_lost": 35
+      },
+      {
+        "category": "closed_hole_without_regression_case",
+        "summary": "Three separate pieces of correct behaviour were measured once and left unheld by any test, one of them a hole closed in this very issue.",
+        "evidence": "The accumulation-order premise licensing --rtol 0 is exercised by no enrolled case, because both committed files have at most one target entry per cell. The --min-dumps guard lives only in main. And commit 016fdee5d fixed the same NaN fail-open at two sibling sites but enrolled a case for only one: reverting the target_cell_area comparison to .GT. would leave both existing cases green, since cell_area tests a finite error and the coordinate check is reached only after the area check passes. Review A found the pattern during a stale-orientation refresh I had called mechanical.",
+        "minutes_lost": 25
+      },
+      {
+        "category": "dispatch_before_start_gate",
+        "summary": "Arch prepared the issue and dispatched the implementer before running --check-start, and the implementer refused to work.",
+        "evidence": "loop_gate.py --next printed 'run --check-start for RUNOFF-033 now, before any dispatch or edit; the iteration has no start receipt'. Bob verified the absence three ways, declined to start, and proved it had made no edits by showing project.py signature equal to verify_signature_at_start. Its reasoning was right: implementing first would have forced a late --check-start covering already-changed targets. One wasted dispatch.",
+        "minutes_lost": 15
+      },
+      {
+        "category": "stale_role_file_path_in_briefs",
+        "summary": "Every agent brief this session cited a role contract path that does not exist, and three agents silently compensated.",
+        "evidence": "Briefs cited .claude/ESX-team/BOB.md and .claude/ESX-team/RICHARD.md; that directory holds only ARCHITECT.md and manifest.md, and the role files are .claude/agents/*.md. Bob reported it in RUNOFF-033; it had been wrong through all of RUNOFF-004 as well, masked because every agent resolved it to the right file on its own.",
+        "minutes_lost": 10
+      }
+    ],
+    "solutions": [
+      {
+        "problem": 0,
+        "action": "fixed",
+        "reference": "MITgcm fork commit 016fdee5d plus tests/rnf/refusal_check.py case target_coords_nan",
+        "reason": "Both comparison sites now use the negated .LE. form the package already used for target_fraction, and the 35th refusal case holds the invariant. Review B verified the case cannot go green through the skip path, on two independent grounds, and review A verified a finite 1 per cent area error still refuses so the sibling check was not inverted."
+      },
+      {
+        "problem": 1,
+        "action": "fixed",
+        "reference": "MITgcm fork commit f718599a5 plus the 'Target cell centres' row of docs/verification_matrix.md",
+        "reason": "Replaced with the guarantee that holds, strictly greater than 1 on any grid with positive cell sizes, carrying both measured floors (1.779673 cs32 over 37.7 M ordered pairs, 1.999904 lab_sea), the stronger result that no single-target_cell corruption of any size can evade the check, the MIN-not-MAX necessity as 2*cos(lat), and the real radius requirement that distance and spacing come from the same grid dump."
+      },
+      {
+        "problem": 2,
+        "action": "fixed",
+        "reference": "checker rule T09 in MITgcmutils/runoff/check.py and schema.py, with docs/runoff_schema.md sections 3.4 and 9",
+        "reason": "Chose the stronger half over documenting the gap: the constraint now reaches producers through the tool that defines the format. Placed in the grid-independent T series because R01-R03 need --grid-dir and a producer validating standalone would never see it. Review B ruled the fill-marker exclusion correct, since a non-finite value has no distance and so cannot be expressed by the documented condition while a finite sentinel is already refused at 1.12e7 m."
+      },
+      {
+        "problem": 3,
+        "action": "fixed",
+        "reference": "lessons_learned.md LL-009 with its evidence entry, plus the RUNOFF-005 and RUNOFF-017 entries of open_issues.md",
+        "reason": "What is fixed is the disclosure and the filing, and I state that rather than claiming the cases exist. All three instances are recorded as LL-009 with their evidence, including the counterexample (target_coords_nan, enrolled in the same round as its fix and proved by review B to be unable to pass via the skip path) that shows the standard is reachable. The two durable cases are filed with their exact form: RUNOFF-017 carries the one-line file_case for a non-finite target_cell_area and the message the model already prints, RUNOFF-005 carries the three-term accumulation case with the corrected 0.3-ulp-each arithmetic and a requirement to verify order-sensitivity before enrolment. The matrix and the oracle docstring now say outright that the closing measurement was a scratch file nothing re-runs, so no reader will mistake the measurement for coverage. The regression cases themselves remain open in those two issues; the behaviour they would guard is correct and measured today."
+      },
+      {
+        "problem": 4,
+        "action": "fixed",
+        "reference": "lessons_learned.md LL-009 and the agent_continuity note of this closeout",
+        "reason": "The gate caught it and the implementer refused rather than proceeding, which is the control working. Recorded in the continuity note so the wasted dispatch is visible, and the general habit \u2014 run the gate, then act \u2014 is the common shape of four Arch errors this session."
+      },
+      {
+        "problem": 5,
+        "action": "fixed",
+        "reference": "corrected in the RUNOFF-033 briefs from the first reviewer dispatch onward",
+        "reason": "Briefs now cite .claude/agents/richard.md and .claude/agents/bob.md. Worth recording that agents compensating silently for a wrong instruction is what let it survive two issues: the error was invisible precisely because every agent was competent enough to route around it."
+      }
+    ],
+    "confirmations": [
+      {
+        "category": "demonstrate_the_guard_failing",
+        "summary": "Requiring the new oracle to be shown failing on a perturbed input, not merely passing on a clean one, is what makes it evidence.",
+        "evidence": "The enrolled controls detect their moves in the suite itself: cs32 entry 1035 moved 5247 -> 5248 at 10 extra / 10 missing and relative deviation 1.0, lab_sea at 48/48. That is the exact misplacement which passes the digit oracle at exactly its 10-digit threshold. Review A went further and showed the control itself fails when fed a blind model's field, so the control is not vacuous either."
+      },
+      {
+        "category": "distinct_reviewer_questions",
+        "summary": "The standing rule again produced findings neither reviewer could have reached from the other's question.",
+        "evidence": "Review A owned oracle efficacy and discovered that no enrolled case exercises the premise licensing the bitwise criterion, then built a three-term order-dependent case on the real binary to settle it. Review B owned the refusal and found it failed open on a non-finite value. Neither duplicated the other across three rounds."
+      },
+      {
+        "category": "reviewer_concedes_to_implementer",
+        "summary": "An implementer corrected a reviewer's formula, the reviewer verified and conceded, and the explanation improved beyond either version.",
+        "evidence": "Review B suggested sinc(dLambda/2) for the zonal shortening. Bob measured the exact ratio as latitude-dependent (1.0 at the equator, 0.999969 at 51 N, 0.999952 at 77 N) and declined to assert the identity. Review B then measured it at four latitudes, found sinc is the polar limit approached only at 89 N, traced its own error to using asin(x) ~ x, conceded, and noted the latitude-resolved form explains why the lab_sea floor sits in the grid's top row."
+      },
+      {
+        "category": "arch_errors_caught_by_gate_or_agent",
+        "summary": "Every Arch error this iteration was caught by the tooling or by an agent rather than shipping.",
+        "evidence": "The gate caught dispatch-before---check-start; Bob caught the non-existent role-file path; review A caught that my RUNOFF-005 build instruction described the 0.3 ulp term wrongly in a way that would have produced a vacuously-passing test; review A caught the stale orientation receipt I had carried; and review B caught the schema disagreement my own fix created. None required the owner."
+      }
+    ],
+    "carry_forward": [
+      "docs/verification_matrix.md:38 still says two centres are 'at least' 0.5*(s_from + s_to) apart where RNF.h was corrected to 'about' with the reason; review B carried it as a suggestion rather than requiring a fourth round. Fix in the next issue that edits that row.",
+      "docs/runoff_schema.md section 3.4 could add that the way to express an unknown coordinate is to OMIT the two optional variables rather than fill individual rows - the question a producer who trips T09 will actually have.",
+      "RUNOFF-017 owns the non-finite target_cell_area refusal case (LL-009) and review B's cross-rank global-count oracle; RUNOFF-005 owns the permanent order-sensitive accumulation case with the corrected 0.3-ulp-each arithmetic.",
+      "applied_field_check.py's --min-dumps guard lives in main, so a direct check_case(..., min_dumps=0) would compare zero dumps; main is its only caller today. input.rnfapply_* scratch dirs are still absent from MITgcm/.git/info/exclude, a pattern shared with refusal_check and placement_probe.",
+      "Still unexecuted after this issue: the exch2 fold and long-line placement branches, maskInC = 0, kTopC != 0 (never compiled - no experiment builds both rnf and shelfice), blank exch2 tiles, multi-threaded runs, non-constant records, LLC, and the two cell-centre skip paths (packed coordinates, non-degree grid).",
+      "RUNOFF-034 (test_write_formats cannot type a WRITE item from a model header) and RUNOFF-035 (doc_contract rejects a Fortran header as a documentation reference) were filed from implementer findings and remain open."
+    ],
+    "no_problem_reason": ""
+  },
+  "accounting": {
+    "billing_status": "provider_reported_not_invoice_reconciled",
+    "by_phase": {
+      "orientation": {
+        "effort_seconds": 2.6088547706604004,
+        "elapsed_seconds": 2.6088547706604004,
+        "events": 16
+      },
+      "verification": {
+        "effort_seconds": 4163.027496814728,
+        "elapsed_seconds": 4163.027496814728,
+        "events": 11
+      }
+    },
+    "by_role": {
+      "bob": {
+        "dispatches": 4,
+        "reported_usd": 0.0,
+        "rounds": 3,
+        "seconds": 0.0,
+        "tool_calls": 0,
+        "unknown_cost_events": 4,
+        "unknown_tool_call_events": 4,
+        "usage": {}
+      },
+      "richard": {
+        "dispatches": 7,
+        "reported_usd": 0.0,
+        "rounds": 3,
+        "seconds": 0.0,
+        "tool_calls": 0,
+        "unknown_cost_events": 7,
+        "unknown_tool_call_events": 7,
+        "usage": {}
+      }
+    },
+    "child_elapsed_seconds": 0,
+    "components": [
+      {
+        "event_id": "e4ca1b5a1ca44b3aa6d8418406e77991",
+        "kind": "unmetered_native",
+        "parent_event_id": "e4ca1b5a1ca44b3aa6d8418406e77991",
+        "reported_usd": null,
+        "role": "bob",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "21c718b077d34f2f97e125c246c3bc4d",
+        "kind": "unmetered_native",
+        "parent_event_id": "21c718b077d34f2f97e125c246c3bc4d",
+        "reported_usd": null,
+        "role": "bob",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "53a40762f7984fbf95d0f875944bfb7b",
+        "kind": "unmetered_native",
+        "parent_event_id": "53a40762f7984fbf95d0f875944bfb7b",
+        "reported_usd": null,
+        "role": "richard",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "301c3305f45e4f7abb9ccf0f9ae98819",
+        "kind": "unmetered_native",
+        "parent_event_id": "301c3305f45e4f7abb9ccf0f9ae98819",
+        "reported_usd": null,
+        "role": "richard",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "ee21d569d994440c95840adc433cced6",
+        "kind": "unmetered_native",
+        "parent_event_id": "ee21d569d994440c95840adc433cced6",
+        "reported_usd": null,
+        "role": "bob",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "7fafdbd6fac74c7ba0de8526ed3d6164",
+        "kind": "unmetered_native",
+        "parent_event_id": "7fafdbd6fac74c7ba0de8526ed3d6164",
+        "reported_usd": null,
+        "role": "richard",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "b08bca63b4b7424a9878d26dcd27c996",
+        "kind": "unmetered_native",
+        "parent_event_id": "b08bca63b4b7424a9878d26dcd27c996",
+        "reported_usd": null,
+        "role": "richard",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "1e0255ff087e4478a1074bc9cc82245b",
+        "kind": "unmetered_native",
+        "parent_event_id": "1e0255ff087e4478a1074bc9cc82245b",
+        "reported_usd": null,
+        "role": "bob",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "90a2153e86aa431db82522a740ed4393",
+        "kind": "unmetered_native",
+        "parent_event_id": "90a2153e86aa431db82522a740ed4393",
+        "reported_usd": null,
+        "role": "richard",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "d2c8a13108a44c4aa57ba66e1f981886",
+        "kind": "unmetered_native",
+        "parent_event_id": "d2c8a13108a44c4aa57ba66e1f981886",
+        "reported_usd": null,
+        "role": "richard",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "68932c07c9014f389b142fe7f510204f",
+        "kind": "unmetered_native",
+        "parent_event_id": "68932c07c9014f389b142fe7f510204f",
+        "reported_usd": null,
+        "role": "richard",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      }
+    ],
+    "coordinator": {
+      "coverage": "recorded",
+      "included_in_reported_usd": "no",
+      "provider_reported_usd": null,
+      "self_reported": {
+        "minutes": 141.0,
+        "records": [
+          {
+            "minutes": 55.0,
+            "phase": "coordination",
+            "record_id": "d5e8be34205b4ecb893c74d400c922dd",
+            "recorded_at": "2026-10-05T09:43:19.870921+00:00",
+            "source": "Arch self-report: wall-clock span of dispatch, briefing and review-routing turns across two correction rounds and three reviewer confirmations",
+            "usd": null
+          },
+          {
+            "minutes": 56.0,
+            "phase": "verification",
+            "record_id": "a5f688cc6f4548fd857c7d54a5023f2f",
+            "recorded_at": "2026-10-05T09:43:19.922510+00:00",
+            "source": "Arch self-report: measured tool elapsed time, the 37-command scientific suite at 2861 s plus two structural runs",
+            "usd": null
+          },
+          {
+            "minutes": 30.0,
+            "phase": "closeout",
+            "record_id": "58f5c7bc826542c5a379b0c5dd6b6dd0",
+            "recorded_at": "2026-10-05T09:43:19.984254+00:00",
+            "source": "Arch self-report: assembling issue-done.json, the stale-orientation refresh cycle and the gate sequence",
+            "usd": null
+          }
+        ],
+        "records_without_usd": 3,
+        "usd": null
+      },
+      "tool_measured": {
+        "basis": "wall time of gate commands run as arch; excludes interactive session time",
+        "effort_seconds": 2872.558010816574,
+        "elapsed_seconds": 2872.558010816574,
+        "events": 4
+      }
+    },
+    "coordinator_coverage": "recorded",
+    "end": "2026-10-05T09:41:55.227466+00:00",
+    "issue_id": "RUNOFF-033",
+    "missing_timing_event_ids": [
+      "e4ca1b5a1ca44b3aa6d8418406e77991",
+      "21c718b077d34f2f97e125c246c3bc4d",
+      "53a40762f7984fbf95d0f875944bfb7b",
+      "301c3305f45e4f7abb9ccf0f9ae98819",
+      "ee21d569d994440c95840adc433cced6",
+      "7fafdbd6fac74c7ba0de8526ed3d6164",
+      "b08bca63b4b7424a9878d26dcd27c996",
+      "1e0255ff087e4478a1074bc9cc82245b",
+      "90a2153e86aa431db82522a740ed4393",
+      "d2c8a13108a44c4aa57ba66e1f981886",
+      "68932c07c9014f389b142fe7f510204f"
+    ],
+    "outside_child_intervals_seconds": 14074.292060136795,
+    "phase_events": [
+      {
+        "event_id": "ca79fb68787344ffbc24e26bcb0210d5",
+        "finished_at": "2026-10-05T05:48:49.418061+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.250584383495152,
+        "started_at": "2026-10-05T05:48:49.167473+00:00"
+      },
+      {
+        "event_id": "28572e18e1034b1f9421fb06a9fe3f06",
+        "finished_at": "2026-10-05T06:00:24.708900+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.16796594485640526,
+        "started_at": "2026-10-05T06:00:24.540930+00:00"
+      },
+      {
+        "event_id": "a0dfae7cc4644b90925d89b7d110d745",
+        "finished_at": "2026-10-05T06:46:22.212952+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "orientation",
+        "reason": null,
+        "seconds": 0.07056469190865755,
+        "started_at": "2026-10-05T06:46:22.142384+00:00"
+      },
+      {
+        "event_id": "477f1ed9d2624594ad5ba2c0dfc31868",
+        "finished_at": "2026-10-05T06:46:28.814315+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "orientation",
+        "reason": null,
+        "seconds": 0.0661713145673275,
+        "started_at": "2026-10-05T06:46:28.748141+00:00"
+      },
+      {
+        "event_id": "d3c9c9e4154040908fccc08a81679ad9",
+        "finished_at": "2026-10-05T06:46:46.398804+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.22060483042150736,
+        "started_at": "2026-10-05T06:46:46.178195+00:00"
+      },
+      {
+        "event_id": "a9358811df3e422dbad3e33645c6dd4c",
+        "finished_at": "2026-10-05T06:55:52.076107+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "verification",
+        "reason": null,
+        "role": "afd56a33139dbecff",
+        "seconds": 415.1836211979389,
+        "started_at": "2026-10-05T06:48:56.892499+00:00"
+      },
+      {
+        "event_id": "4f14b55d763342d0930ca8de0294abce",
+        "finished_at": "2026-10-05T07:05:53.134548+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.1916133863851428,
+        "started_at": "2026-10-05T07:05:52.942942+00:00"
+      },
+      {
+        "event_id": "f3ac00a01c4c45809cdac1466beb1032",
+        "finished_at": "2026-10-05T07:09:31.889755+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.14544512517750263,
+        "started_at": "2026-10-05T07:09:31.744305+00:00"
+      },
+      {
+        "event_id": "3b48d5d1258241f7bf259b084681bc45",
+        "finished_at": "2026-10-05T07:16:34.677513+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "verification",
+        "reason": null,
+        "role": "a302247c30fdb17a6",
+        "seconds": 12.163037948310375,
+        "started_at": "2026-10-05T07:16:22.514485+00:00"
+      },
+      {
+        "event_id": "441f11c789ee42608279a642eadf5bc0",
+        "finished_at": "2026-10-05T07:20:04.956807+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "verification",
+        "reason": null,
+        "role": "ad0d16d5cb76e572b",
+        "seconds": 13.950208849273622,
+        "started_at": "2026-10-05T07:19:51.006613+00:00"
+      },
+      {
+        "event_id": "52dc0ccb79a240d1942691d54422a0cc",
+        "finished_at": "2026-10-05T07:54:24.891733+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "verification",
+        "reason": null,
+        "role": "afd56a33139dbecff",
+        "seconds": 403.7033469444141,
+        "started_at": "2026-10-05T07:47:41.188396+00:00"
+      },
+      {
+        "event_id": "14988919a5c0441e829e0b7701e9d27a",
+        "finished_at": "2026-10-05T08:00:30.089299+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.2737360605970025,
+        "started_at": "2026-10-05T08:00:29.815551+00:00"
+      },
+      {
+        "event_id": "89d2db7b5a344e6ca54ccc8f43bcfda8",
+        "finished_at": "2026-10-05T08:07:00.491657+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "verification",
+        "reason": null,
+        "role": "ad0d16d5cb76e572b",
+        "seconds": 8.468695846386254,
+        "started_at": "2026-10-05T08:06:52.022972+00:00"
+      },
+      {
+        "event_id": "cba7c4ce2e9e4e7b878d999be66274db",
+        "finished_at": "2026-10-05T08:07:23.479492+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "verification",
+        "reason": null,
+        "role": "a302247c30fdb17a6",
+        "seconds": 12.280259065330029,
+        "started_at": "2026-10-05T08:07:11.199241+00:00"
+      },
+      {
+        "event_id": "6b21ad23e4064aa187e4fe4a40aad091",
+        "finished_at": "2026-10-05T08:09:10.667509+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "orientation",
+        "reason": null,
+        "seconds": 0.1962311388924718,
+        "started_at": "2026-10-05T08:09:10.471275+00:00"
+      },
+      {
+        "event_id": "fc3c57bd0c274de88199258320469299",
+        "finished_at": "2026-10-05T08:26:00.454148+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "verification",
+        "reason": null,
+        "role": "afd56a33139dbecff",
+        "seconds": 403.2587565574795,
+        "started_at": "2026-10-05T08:19:17.195404+00:00"
+      },
+      {
+        "event_id": "600eda6f19924ed6bb3d9bdde83f2348",
+        "finished_at": "2026-10-05T08:34:56.938972+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.32333430275321007,
+        "started_at": "2026-10-05T08:34:56.615634+00:00"
+      },
+      {
+        "event_id": "3e9449472c3547eaab82c40aee2813ab",
+        "finished_at": "2026-10-05T08:40:19.877787+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "verification",
+        "reason": null,
+        "role": "a302247c30fdb17a6",
+        "seconds": 12.253520985133946,
+        "started_at": "2026-10-05T08:40:07.624266+00:00"
+      },
+      {
+        "event_id": "b067a8acb10c42db82648e7e608102c8",
+        "finished_at": "2026-10-05T08:40:38.479632+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "verification",
+        "reason": null,
+        "role": "ad0d16d5cb76e572b",
+        "seconds": 9.633996380493045,
+        "started_at": "2026-10-05T08:40:28.845648+00:00"
+      },
+      {
+        "event_id": "df4d08c6b093430aab63c2b126e2dd73",
+        "finished_at": "2026-10-05T08:42:44.523927+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "orientation",
+        "reason": null,
+        "seconds": 0.17908441741019487,
+        "started_at": "2026-10-05T08:42:44.344839+00:00"
+      },
+      {
+        "event_id": "b40f3001bbb64c85ba42ed52d8bb5320",
+        "finished_at": "2026-10-05T08:45:03.414784+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.1752743236720562,
+        "started_at": "2026-10-05T08:45:03.239506+00:00"
+      },
+      {
+        "event_id": "30eaccc7fc634f8984157b6b1700e941",
+        "finished_at": "2026-10-05T08:45:46.814662+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 9.714953646995127,
+        "started_at": "2026-10-05T08:45:37.099717+00:00"
+      },
+      {
+        "event_id": "cc2b721241bc4e45b44614e2d8a43508",
+        "finished_at": "2026-10-05T08:47:59.086036+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "orientation",
+        "reason": null,
+        "seconds": 0.079055892303586,
+        "started_at": "2026-10-05T08:47:59.006981+00:00"
+      },
+      {
+        "event_id": "cdb95f49b6374bec82194a6f9ef6b238",
+        "finished_at": "2026-10-05T08:48:05.033597+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "orientation",
+        "reason": null,
+        "seconds": 0.08955335430800915,
+        "started_at": "2026-10-05T08:48:04.944042+00:00"
+      },
+      {
+        "event_id": "cbe7171008e14e3ea1d725cbb14e6343",
+        "finished_at": "2026-10-05T08:48:18.491523+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 9.853392839431763e-06,
+        "started_at": "2026-10-05T08:48:18.491505+00:00"
+      },
+      {
+        "event_id": "681aa43bca1c4e469ae87e57110f8297",
+        "finished_at": "2026-10-05T08:48:30.959908+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.17957176826894283,
+        "started_at": "2026-10-05T08:48:30.780332+00:00"
+      },
+      {
+        "event_id": "a5791a92d5804e7a915c788da4c553d8",
+        "finished_at": "2026-10-05T09:40:48.376216+00:00",
+        "issue_id": "RUNOFF-033",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 2862.417198254727,
+        "started_at": "2026-10-05T08:53:05.959016+00:00"
+      }
+    ],
+    "reported_usd": 0,
+    "schema_version": 2,
+    "span_seconds": 14074.292060136795,
+    "start": "2026-10-05T05:47:20.935406+00:00",
+    "unknown_cost_event_ids": [
+      "e4ca1b5a1ca44b3aa6d8418406e77991",
+      "21c718b077d34f2f97e125c246c3bc4d",
+      "53a40762f7984fbf95d0f875944bfb7b",
+      "301c3305f45e4f7abb9ccf0f9ae98819",
+      "ee21d569d994440c95840adc433cced6",
+      "7fafdbd6fac74c7ba0de8526ed3d6164",
+      "b08bca63b4b7424a9878d26dcd27c996",
+      "1e0255ff087e4478a1074bc9cc82245b",
+      "90a2153e86aa431db82522a740ed4393",
+      "d2c8a13108a44c4aa57ba66e1f981886",
+      "68932c07c9014f389b142fe7f510204f"
+    ]
+  }
+}
