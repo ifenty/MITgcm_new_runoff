@@ -47,10 +47,14 @@ There are three kinds of case.
   reproduce the dense reference ``results/output.rnof_const.txt``),
   ``zero_flux_differs`` (the same run with every flux set to zero must NOT
   reproduce it, which shows that the comparison is sensitive to the runoff),
-  and ``two_sources_one_cell`` (each cell fed by two sources carrying a
+  ``two_sources_one_cell`` (each cell fed by two sources carrying a
   third and two thirds of its flux must reproduce the same dense reference,
-  which is the only case that makes the model add two contributions into one
-  cell).
+  which is the case that makes the model add two contributions into one
+  cell), and ``three_sources_one_cell`` (the same with three sources,
+  sized by ``ulp_shares`` so that the three-term sum is sensitive to the
+  order it is added in; what tests the order itself is the bitwise case
+  ``order_sensitive_sum`` of ``tests/rnf/applied_field_check.py``, which
+  uses the same generator).
 
 Every process is judged on its own files. A single-process run writes its
 standard output and its ``STOP`` line to ``output.txt`` and its error messages
@@ -108,6 +112,10 @@ CELLS = os.path.join(VERIF, EXPERIMENT, "input.rnof_const",
 CELLS_REL = "../input.rnof_const/runoff_sparse_cells.nc"
 DENSE_INPUT = "input.rnof_sp_const"
 DENSE_REF = "output.rnof_const.txt"
+# Size of each of the two small terms of the order-sensitive three-way
+# split, in units in the last place of the big one. It has to lie
+# strictly between 0.25 and 0.5: see ``ulp_shares``.
+ULP_SHARE = 0.35
 RNF_SIZE = os.path.join(ROOT, "MITgcm", "pkg", "rnf", "RNF_SIZE.h")
 
 # The process and thread label that MITgcm puts in front of its log lines.
@@ -121,6 +129,18 @@ DATA_RNF = """# Sparse runoff package parameters
 
 DATA_RNF_BLANK = """# Sparse runoff package parameters
  &RNF_PARM01
+ &
+"""
+
+# The committed yearly set, with a repeat cycle added: the one
+# combination RNF_TIME_SETUP refuses that is a data.rnf fault rather
+# than a file fault, so it needs the real yearly files and not a
+# generated one.
+DATA_RNF_YEARLY = """# Sparse runoff package parameters
+ &RNF_PARM01
+  RNF_file = '../input.rnof_yearly/runoff_sparse.nc',
+  RNF_useYearlyFiles = .TRUE.,
+  RNF_repCycle = 31536000.,
  &
 """
 
@@ -252,21 +272,68 @@ def sparse_info():
             "moved_source": ids[target_source[moved_entry]]}
 
 
-def split_file(path, source_path, share=1.0/3.0):
-    """Write a file in which two sources feed each cell of ``source_path``.
+def ulp_shares(flux, area, fraction=0.35):
+    """Three fluxes whose sum on one cell is sensitive to the order it is added in.
 
-    Every source of ``source_path`` (a one-source-per-cell file) becomes two
-    sources, ``<id>_a`` and ``<id>_b``, carrying ``share`` and ``1 - share``
-    of its flux, each with one target entry of fraction 1 on the same cell.
-    Every source's fractions still sum to 1 and the total flux is unchanged,
-    so the field the model applies is the same to round-off: the only
-    difference is that each cell now receives two contributions, which is
-    what exercises the accumulation of ``rnf_fields_load.F``. A reader that
-    overwrote instead of adding would apply a third or two thirds of the
-    runoff.
+    ``flux`` goes to one cell of area ``area``, so the term the model adds
+    is ``flux/area``. This returns ``(big, small, small)`` such that the
+    two small terms are each ``fraction`` units in the last place (ulp) of
+    the big one, with ``0.25 < fraction < 0.5``.
+
+    That window is the whole point (RUNOFF-005, review A of RUNOFF-033).
+    With ``t`` the big term and ``c = fraction*ulp(t)``:
+
+    * ``fl(t + c) = t`` and ``fl(t + c) + c = t``: adding the two small
+      terms **after** the big one changes nothing, because each one on
+      its own rounds away;
+    * ``fl(c + c) = 2c`` and ``fl(2c + t) = t + ulp(t)``: adding them to
+      each other **first** carries the pair over the rounding boundary.
+
+    So the forward and reversed sums differ by exactly one ulp. Two
+    sub-sources could not do this: a two-term floating-point sum is
+    commutative, so a two-way split is order-insensitive whatever the
+    sizes, and a case built that way would pass vacuously.
+
+    The ulp is taken of the big term itself, not of ``flux/area``, so the
+    sizing survives the big term falling in a lower binade than the
+    original value; two passes are enough because the correction is of
+    order 1e-16.
+    """
+    import numpy as np
+    small = 0.0
+    for _ in range(2):
+        big = (flux - 2.0*small)/area
+        small = fraction*(float(np.nextafter(big, np.inf)) - big)*area
+    return flux - 2.0*small, small, small
+
+
+def split_file(path, source_path, share=1.0/3.0, ulp=None):
+    """Write a file in which several sources feed each cell of ``source_path``.
+
+    Every source of ``source_path`` (a one-source-per-cell file) becomes
+    two sources, ``<id>_a`` and ``<id>_b``, carrying ``share`` and
+    ``1 - share`` of its flux, each with one target entry of fraction 1 on
+    the same cell. Every source's fractions still sum to 1 and the total
+    flux is unchanged, so the field the model applies is the same to
+    round-off: the only difference is that each cell now receives two
+    contributions, which is what exercises the accumulation of
+    ``rnf_fields_load.F``. A reader that overwrote instead of adding would
+    apply a third or two thirds of the runoff.
+
+    With ``ulp`` set to a fraction, each source becomes **three**
+    sub-sources instead, ``<id>_a``, ``<id>_b`` and ``<id>_c``, sized by
+    :func:`ulp_shares` so that the three-term sum on each cell differs by
+    one unit in the last place between the file's order and the reverse.
+    That is the construction that makes the bitwise criterion of
+    ``tests/rnf/applied_field_check.py`` test the accumulation order and
+    not merely the accumulation; its docstring explains why a two-way
+    split cannot.
+
+    Returns the per-source shares that were written, in file order.
     """
     import netCDF4
     import numpy as np
+    parts = ("_a", "_b", "_c") if ulp else ("_a", "_b")
     with netCDF4.Dataset(source_path) as src, netCDF4.Dataset(path, "w") as dst:
         src.set_auto_maskandscale(False)
         dst.set_auto_maskandscale(False)
@@ -277,7 +344,14 @@ def split_file(path, source_path, share=1.0/3.0):
         area = {int(s): float(a) for s, a in zip(src["target_source"][:],
                                                  src["target_cell_area"][:])}
         flux = np.asarray(src["runoff_flux"][0], dtype="f8")
-        n = 2*len(ids)
+        shares = []
+        for k in range(len(ids)):
+            if ulp:
+                shares.extend(ulp_shares(float(flux[k]), area[k], ulp))
+            else:
+                shares.extend((float(flux[k])*share,
+                               float(flux[k])*(1.0 - share)))
+        n = len(parts)*len(ids)
         strlen = max(len(i) for i in ids) + 2
         dst.createDimension("time", None)
         dst.createDimension("source", n)
@@ -286,26 +360,111 @@ def split_file(path, source_path, share=1.0/3.0):
         dst.createVariable("time", "f8", ("time",))[:] = [0.0]
         dst["time"].setncatts({k: src["time"].getncattr(k)
                                for k in src["time"].ncattrs()})
-        names = [i + s for i in ids for s in ("_a", "_b")]
+        names = [i + s for i in ids for s in parts]
         dst.createVariable("source_id", "S1", ("source", "id_strlen"))[:] = \
             np.array([list(x.ljust(strlen)) for x in names], dtype="S1")
         dst.createVariable("target_source", "i4", ("target",))[:] = np.arange(n)
         dst.createVariable("target_cell", "i4", ("target",))[:] = \
-            [cell[k] for k in range(len(ids)) for _ in (0, 1)]
+            [cell[k] for k in range(len(ids)) for _ in parts]
         frac = dst.createVariable("target_fraction", "f8", ("target",))
         frac[:] = 1.0
         frac.units = "1"
         ar = dst.createVariable("target_cell_area", "f8", ("target",))
-        ar[:] = [area[k] for k in range(len(ids)) for _ in (0, 1)]
+        ar[:] = [area[k] for k in range(len(ids)) for _ in parts]
         ar.units = "m2"
         out = dst.createVariable("runoff_flux", "f8", ("time", "source"))
-        out[0, :] = [flux[k]*s for k in range(len(ids))
-                     for s in (share, 1.0 - share)]
+        out[0, :] = shares
         out.units = "m3 s-1"
+    return shares
+
+
+#: Time axis of the file :func:`sparse_file` writes with ``timed``: daily
+#: records from the calendar start date of ``lab_sea/input``
+#: (1 January 1979 00:00), on the model's own calendar, which is what
+#: makes such a file valid for these runs.
+TIMED_UNITS = "days since 1979-01-01 00:00:00"
+TIMED_CALENDAR = "gregorian"
+TIMED_PERIOD = 86400.0
+
+
+def timed_axis(dst, nrec, period=TIMED_PERIOD, repeat="none", first=0.0,
+               units=TIMED_UNITS, calendar=TIMED_CALENDAR, bounds=True,
+               monthly=False, drop=()):
+    """Give an open file a valid timed axis, in place of its constant one.
+
+    ``nrec`` records ``period`` seconds apart from ``first`` (in the units
+    of the axis), with ``time_bnds`` centred on them, and the three global
+    attributes that say so. With ``monthly`` the sampling is ``monthly``
+    and the records are the midpoints of consecutive calendar months from
+    the month ``first`` falls in, with their months as bounds. The flux of
+    record 1 is repeated into every record, so the field the model applies
+    does not depend on which record it picks.
+
+    This is the valid file the time refusals of :func:`cases` each break
+    in one place. It is written rather than committed because the
+    violations are what the cases are about, not the data.
+
+    ``drop`` names global attributes to leave out, for a case whose
+    violation is a **missing** attribute. They are dropped here rather
+    than deleted afterwards by the case's ``edit``, because netCDF4
+    does not persist the deletion of an attribute that was set earlier
+    in the same session with variable data written in between:
+    measured, ``delncattr`` left ``mitgcm_time_sampling`` absent in
+    session and present on disk, and the case then exercised the wrong
+    refusal.
+    """
+    import datetime as dt
+    import numpy as np
+    day = 86400.0
+    for name in drop:
+        if name in dst.ncattrs():
+            dst.delncattr(name)
+    flux = np.asarray(dst["runoff_flux"][0], dtype="f8")
+    atts = {k: dst["time"].getncattr(k) for k in dst["time"].ncattrs()}
+    atts.update(units=units, calendar=calendar, bounds="time_bnds")
+    if monthly:
+        base = dt.datetime(1979, 1, 1) + dt.timedelta(days=first)
+        edges = []
+        year, month = base.year, base.month
+        for _ in range(nrec + 1):
+            edges.append((dt.datetime(year, month, 1)
+                          - dt.datetime(1979, 1, 1)).total_seconds() / day)
+            year, month = (year + (month == 12), month % 12 + 1)
+        times = [0.5 * (edges[k] + edges[k + 1]) for k in range(nrec)]
+        pairs = [(edges[k], edges[k + 1]) for k in range(nrec)]
+        sampling, period_att = "monthly", None
+    else:
+        step = period / day
+        times = [first + k * step for k in range(nrec)]
+        pairs = [(t - 0.5 * step, t + 0.5 * step) for t in times]
+        sampling, period_att = "fixed", period
+    # ``time`` is the unlimited dimension of the file, so writing nrec
+    # values to it grows the axis and the flux with it.
+    dst["time"][:] = times
+    dst["time"].setncatts(atts)
+    if bounds:
+        if "nv" not in dst.dimensions:
+            dst.createDimension("nv", 2)
+        bnd = dst.createVariable("time_bnds", "f8", ("time", "nv"))
+        bnd[:] = np.array(pairs, dtype="f8")
+        bnd.units = units
+        bnd.calendar = calendar
+    else:
+        dst["time"].delncattr("bounds")
+    dst["runoff_flux"][:] = np.tile(flux, (nrec, 1))
+    if "mitgcm_time_sampling" not in drop:
+        dst.setncattr("mitgcm_time_sampling", sampling)
+    if "mitgcm_time_repeat" not in drop:
+        dst.setncattr("mitgcm_time_repeat", repeat)
+    if period_att is not None and "mitgcm_time_period" not in drop:
+        dst.setncattr("mitgcm_time_period", np.float64(period_att))
+    elif "mitgcm_time_period" in dst.ncattrs():
+        dst.delncattr("mitgcm_time_period")
 
 
 def sparse_file(path, edit=None, skip=(), retype=None, many_sources=0,
-                many_targets=0, wet_cell=0, split_from=None):
+                many_targets=0, wet_cell=0, split_from=None, split_ulp=None,
+                timed=None):
     """Write a sparse runoff file at ``path``, derived from the valid one.
 
     Every dimension, variable and attribute of ``SPARSE`` is copied except
@@ -318,12 +477,12 @@ def sparse_file(path, edit=None, skip=(), retype=None, many_sources=0,
     on one tile. With ``many_targets`` it is a synthetic file with one source
     and that many target entries, all on ``wet_cell`` with equal fractions.
     With ``split_from`` it is the file of :func:`split_file`, in which two
-    sources feed each cell of that file.
+    sources feed each cell of that file, or three with ``split_ulp``.
     """
     import netCDF4
     import numpy as np
     if split_from:
-        split_file(path, split_from)
+        split_file(path, split_from, ulp=split_ulp)
         return
     with netCDF4.Dataset(SPARSE) as src, netCDF4.Dataset(path, "w") as dst:
         src.set_auto_maskandscale(False)
@@ -365,6 +524,8 @@ def sparse_file(path, edit=None, skip=(), retype=None, many_sources=0,
                                      fill_value=fill)
             out.setncatts(atts)
             out[:] = var[:]
+        if timed:
+            timed_axis(dst, **timed)
         if edit:
             edit(dst)
 
@@ -462,9 +623,10 @@ def cases(data_pkg, data_exf, info=None):
     one_init = "RNF_INIT_FIXED: detected       1 fatal error(s)"
     bound = size_bound("RNF_nSrcTile")
 
-    def file_case(name, stderr, stderr_any=(), stop=stop_init, **nc_kw):
+    def file_case(name, stderr, stderr_any=(), stop=stop_init, rnf=None,
+                  **nc_kw):
         return {"name": name,
-                "files": {"data.pkg": pkg_on, "data.rnf": rnf_bad},
+                "files": {"data.pkg": pkg_on, "data.rnf": rnf or rnf_bad},
                 "nc": {"bad.nc": nc_kw},
                 "stderr": list(stderr), "stderr_any": list(stderr_any),
                 "stdout": [], "stop": stop, "forbid": forbid_file}
@@ -477,6 +639,29 @@ def cases(data_pkg, data_exf, info=None):
     def set_att(**atts):
         def edit(ds):
             ds.setncatts(atts)
+        return edit
+
+    def set_bnd(record, side, value):
+        """Move one bound of one record (1-based record, 1 or 2 side)."""
+        def edit(ds):
+            ds["time_bnds"][record - 1, side - 1] = value
+        return edit
+
+    def del_var_att(var, att):
+        """Drop an attribute of a variable, not of the file."""
+        def edit(ds):
+            ds[var].delncattr(att)
+        return edit
+
+    def bnds_1d():
+        """Write a time_bnds with one dimension instead of (time, nv).
+
+        Used with ``bounds: False``, which leaves the variable out, so
+        this one is the only time_bnds in the file.
+        """
+        def edit(ds):
+            ds.createVariable("time_bnds", "f8", ("time",))[:] = \
+                np.zeros(len(ds.dimensions["time"]))
         return edit
 
     def scale_var(name, index, factor):
@@ -540,11 +725,107 @@ def cases(data_pkg, data_exf, info=None):
                   ["RNF: grid size mismatch: the file has mitgcm_grid_nx,ny =",
                    one_init],
                   edit=set_att(mitgcm_grid_nx=np.int32(info["nx"] + 1))),
+        # The time handling of RNF_TIME_SETUP: each of these breaks one
+        # rule of a valid time axis. All but the first start from the
+        # valid timed file of ``timed_axis``, so the case is the one
+        # violation and not an accident of the constant file.
         file_case("time_sampling",
-                  ['mitgcm_time_sampling = "fixed" cannot be read yet',
-                   "RUNOFF-005", one_init],
-                  edit=set_att(mitgcm_time_sampling="fixed",
-                               mitgcm_time_period=86400.0)),
+                  ['mitgcm_time_sampling = "yearly" is not supported',
+                   'has no pkg/exf mode', one_init],
+                  edit=set_att(mitgcm_time_sampling="yearly")),
+        # The schema marks mitgcm_time_sampling required, so a file
+        # without it says nothing about how to read its records; the
+        # reader must not fall back to a guess.
+        file_case("time_sampling_missing",
+                  ["the file has no global attribute"
+                   " mitgcm_time_sampling", one_init],
+                  timed={"nrec": 3, "drop": ("mitgcm_time_sampling",)}),
+        # "constant" sampling with more than one record: the reader
+        # would apply record 1 for ever and silently ignore the rest.
+        file_case("constant_many_records",
+                  ['"constant" sampling but the file has', "record(s)",
+                   one_init],
+                  timed={"nrec": 3},
+                  edit=set_att(mitgcm_time_sampling="constant")),
+        # A time variable with no units at all. Distinct from
+        # time_units_bad, which has units the reader cannot parse.
+        file_case("time_units_missing",
+                  ["the variable time has no attribute units", one_init],
+                  timed={"nrec": 3},
+                  edit=del_var_att("time", "units")),
+        # A reference date with a seventh number: a fraction of a
+        # second or a time-zone offset, neither of which the reader
+        # applies, so it is refused rather than dropped.
+        file_case("ref_date_numbers",
+                  ["must be YYYY-MM-DD[ hh:mm[:ss]]; it has", "number(s)",
+                   one_init],
+                  timed={"nrec": 3,
+                         "units": "days since 1979-01-01 00:00:00.5"}),
+        # A time_bnds that is not (time, nv): the reader takes the
+        # repeat cycle from the first and last bound pair, which such a
+        # variable does not have.
+        file_case("bnds_not_2d",
+                  ["time_bnds must have the dimensions (time, nv)",
+                   one_init],
+                  timed={"nrec": 3, "repeat": "annual", "bounds": False},
+                  edit=bnds_1d()),
+        file_case("time_repeat",
+                  ['mitgcm_time_repeat = "biennial" is not "none" or'
+                   ' "annual"', one_init],
+                  timed={"nrec": 3},
+                  edit=set_att(mitgcm_time_repeat="biennial")),
+        file_case("time_period_missing",
+                  ['"fixed" sampling needs mitgcm_time_period > 0', one_init],
+                  timed={"nrec": 3},
+                  edit=del_att("mitgcm_time_period")),
+        file_case("time_units_bad",
+                  ['time:units = "fortnights since 1979-01-01 00:00:00" is'
+                   ' not understood', one_init],
+                  timed={"nrec": 3,
+                         "units": "fortnights since 1979-01-01 00:00:00"}),
+        # Carry-forward of RUNOFF-002: a reference date before the
+        # pkg/cal reference date (15 October 1582) must not be handed to
+        # pkg/cal. The constant files carry 0001-01-01, which is why a
+        # constant file's time axis is never read at all; a timed one
+        # that carries it has to say its start date in data.rnf instead.
+        file_case("ref_date_before_cal",
+                  ["precedes the", "pkg/cal reference date 15821015",
+                   "RNF_startDate1/RNF_startDate2", one_init],
+                  timed={"nrec": 3,
+                         "units": "days since 0001-01-01 00:00:00"}),
+        file_case("calendar_mismatch",
+                  ['calendar "360_day" of the time axis is not the'
+                   ' calendar of this run', one_init],
+                  timed={"nrec": 3, "calendar": "360_day"}),
+        file_case("calendar_unknown",
+                  ['calendar "julian" of the time axis is not one of',
+                   one_init],
+                  timed={"nrec": 3, "calendar": "julian"}),
+        file_case("clim_no_bounds",
+                  ['a "fixed" climatology (mitgcm_time_repeat = "annual")'
+                   ' needs', "time_bnds: its span is the repeat cycle",
+                   one_init],
+                  timed={"nrec": 3, "repeat": "annual", "bounds": False}),
+        # The cycle has to hold exactly one record per period: a longer
+        # one wraps onto a record the file does not have and a shorter
+        # one never reaches the last records.
+        file_case("cycle_not_records",
+                  ["repeat cycle", "is not the record count times the"
+                   " period", one_init],
+                  timed={"nrec": 3, "repeat": "annual"},
+                  edit=set_bnd(3, 2, 3.5)),
+        file_case("month_not_twelve",
+                  ["a monthly climatology needs 12 records; the file has",
+                   "record k is calendar month k", one_init],
+                  timed={"nrec": 3, "repeat": "annual", "monthly": True}),
+        # A monthly climatology is January to December in pkg/exf, which
+        # ignores the start date for period -12, so a file starting in
+        # another month would be read with every record shifted.
+        file_case("clim_not_january",
+                  ["record 1 of a monthly climatology is dated",
+                   "has", "to be in January", one_init],
+                  timed={"nrec": 12, "repeat": "annual", "monthly": True,
+                         "first": 40.0}),
         file_case("missing_variable",
                   ["RNF: looking for the required variable target_fraction "
                    "failed", "NetCDF: Variable not found"],
@@ -641,6 +922,41 @@ def cases(data_pkg, data_exf, info=None):
                    "one number"],
                   stop="ABNORMAL END: S/R RNF_NC_ATT_REAL",
                   edit=marker("missing_value", "9999.", 9999.0)),
+        # RNF_startTime is the override for a run without pkg/cal; with
+        # pkg/cal the start time comes from the file or from
+        # RNF_startDate1/2, as it does for a dense exf field
+        # (pkg/exf/exf_getffield_start.F).
+        file_case("start_time_with_cal",
+                  ["RNF_startTime cannot be set with pkg/cal (useCAL=T)",
+                   "RNF_startDate1/RNF_startDate2", one_init],
+                  timed={"nrec": 3},
+                  rnf=DATA_RNF.format("bad.nc").replace(
+                      " &\n", "  RNF_startTime = 0.,\n &\n")),
+        # A non-repeating series that ends before the run does: at the
+        # first step the bracket already needs record 2 of a one-record
+        # file. The header is valid, so this is refused where the record
+        # is read and not at init.
+        file_case("record_out_of_range",
+                  ["record", "is outside the", "record(s) of bad.nc",
+                   "the series does not cover the model time"],
+                  stop=stop_flux,
+                  timed={"nrec": 1}),
+        # A yearly set with a repeat cycle, which exf does not allow
+        # (pkg/exf/exf_check.F refuses useExfYearlyFields with a repeat
+        # period). This case exists because the limit recorded for it in
+        # round 0 -- that the _YYYY file is opened before the check, so
+        # the guard is unreachable -- was false: the file of the start
+        # year exists, so it opens normally and the guard fires. It runs
+        # on the committed yearly set-up, not on a generated file,
+        # because what is broken is a data.rnf combination and not the
+        # file (review B of RUNOFF-005, correction round 1).
+        {"name": "yearly_repcycle",
+         "copy_from": "input.rnof_sp_yearly",
+         "copy": {name: None for name in ("data", "data.cal", "data.exf")},
+         "files": {"data.pkg": pkg_on, "data.rnf": DATA_RNF_YEARLY},
+         "stderr": ["RNF_TIME_SETUP: RNF: RNF_useYearlyFiles=.TRUE. allows"
+                    " no repeat cycle", one_init],
+         "stdout": [], "stop": stop_init, "forbid": forbid_file},
     ]
     # The flux is read in RNF_INIT_VARIA, after RNF_CHECK has passed; the
     # flux sums are printed only if the whole record was accepted.
@@ -703,6 +1019,22 @@ def cases(data_pkg, data_exf, info=None):
          "normal_end": True, "stderr": [], "stdout": stdout_ok,
          "summary": {"RNF_nSrcFile": "14", "RNF_nTgtFile": "14",
                      "RNF_nTgtOwned": "14"},
+         "flux_sum": info["flux_sum"], "digits": (DENSE_REF, 13, 99),
+         "stop": "ABNORMAL END", "forbid": no_error},
+        # Three sources on every cell, sized by ulp_shares so that the
+        # three-term sum is order-sensitive. Here that only asserts that
+        # a three-way split still gives the dense run: the one-ulp
+        # difference the sizing creates is far below any digit
+        # threshold. What tests the order itself is the bitwise case
+        # order_sensitive_sum of tests/rnf/applied_field_check.py, which
+        # uses the same generator.
+        {"name": "three_sources_one_cell",
+         "copy_from": DENSE_INPUT, "copy": dense,
+         "files": {"data.pkg": pkg_on, "data.rnf": rnf_bad},
+         "nc": {"bad.nc": {"split_from": CELLS, "split_ulp": ULP_SHARE}},
+         "normal_end": True, "stderr": [], "stdout": stdout_ok,
+         "summary": {"RNF_nSrcFile": "21", "RNF_nTgtFile": "21",
+                     "RNF_nTgtOwned": "21"},
          "flux_sum": info["flux_sum"], "digits": (DENSE_REF, 13, 99),
          "stop": "ABNORMAL END", "forbid": no_error},
     ]

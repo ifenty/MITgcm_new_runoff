@@ -22,12 +22,23 @@ with the field the file asks for, cell by cell, in float64:
    after ``EXF_GETFFIELDS`` -- and so after ``RNF_EXF_RUNOFF`` has put
    ``RNF_vflx`` into ``runoff`` -- and before ``EXF_MAPFIELDS``. The dump
    is therefore the field the model goes on to apply;
-2. the expected field is rebuilt here, independently of the model, as
+2. the expected field is rebuilt here as
    ``sum_s flux_s * frac_{s,c} / rA(c)`` from the sparse NetCDF file and
    the ``RAC.data`` of that same run. The terms are summed in the file's
    own table order, which is the order ``RNF_FIELDS_LOAD`` accumulates
    them in, so the two agree to the last bit and not merely to a
-   tolerance;
+   tolerance. With more than one time record the source flux is rebuilt
+   from the two records and the weight the model reported for that step
+   (``RNF_FIELDS_LOAD``'s trace, :func:`record_trace`), so a timed case
+   is compared against what it actually applied. Taking the records
+   from the model is deliberate and bounded: it makes this check exact
+   for every time mode without a second Python model of pkg/exf's
+   record selection, and it means the check cannot see a wrong *choice*
+   of record -- only a wrong use of the records chosen. The choice is
+   checked against pkg/exf itself by
+   ``tests/rnf/timing_field_check.py`` (dense run against sparse run,
+   same case, every step) and against the exf conventions modelled in
+   Python by ``tests/runoff/lab_sea_runoff_timing_check.py``;
 3. the two are compared on every cell of the global layout. The check
    reports extra cells (the model applies runoff where the file asks for
    none), missing cells (the file asks for runoff the model does not
@@ -38,31 +49,26 @@ A one-cell move shows up at once as one extra cell and one missing cell,
 with a relative deviation of 1, while the total ``sum(applied * rA)``
 still equals ``sum(flux)`` exactly.
 
-**What the enrolled cases do not exercise.** The bitwise criterion rests
-on the accumulation order: where several target entries feed one cell,
-the reconstruction has to add the terms in the file's table order, which
-is the order ``RNF_FIELDS_LOAD`` adds them in. Both committed sparse
-files have at most **one** entry per cell (lab_sea 7 entries on 7 cells,
-cs32 1189 on 1189), so no enrolled case ever sums more than one term and
-none of them would notice if the order were wrong. The premise was
-measured separately instead: on a file with three entries on one cell
-whose smallest term is 0.3 ulp of the running sum, the model reproduces
-the file-order sum bitwise while the reverse-order sum differs by exactly
-1 ulp, with no extra and no missing cell (review A of RUNOFF-033,
-lab_sea serial, 2026-10-05). So the order premise is true and
-``--rtol 0`` is necessary rather than merely safe -- a tolerance would
-hide precisely that 1 ulp. The nearest enrolled coverage is
-``refusal_check.py``'s ``two_sources_one_cell``, at two terms, and
-two-term addition is order-insensitive anyway.
-
-That measurement was a scratch file that **nothing re-runs**, so what it
-closed is the correctness question, not the regression coverage. If a
-later change reordered how ``RNF_INIT_FIXED`` builds the per-tile
-lists, the premise licensing ``--rtol 0`` would be void and all four
-enrolled cases would still pass bitwise, because none of them sums two
-terms into one cell. A permanent multi-entry case is filed against
-RUNOFF-005; ``refusal_check.py::split_file`` already generates
-multi-entry files at run time, so it needs no new committed input.
+**The accumulation order is held by one case.** The bitwise criterion
+rests on it: where several target entries feed one cell, the
+reconstruction has to add the terms in the file's table order, which is
+the order ``RNF_FIELDS_LOAD`` adds them in. Neither committed sparse
+file can exercise that -- both have at most **one** entry per cell
+(lab_sea 7 entries on 7 cells, cs32 1189 on 1189) -- so the
+``order_sensitive_sum`` case generates a file that does, with
+``refusal_check.split_file(..., ulp=ULP_SHARE)``: every source of the
+per-cell file becomes three that share its cell, the two smaller ones
+sized at 0.35 units in the last place of the first term each. One such
+term rounds away and the pair does not, so the file-order sum and the
+reversed sum differ by exactly one ulp
+(``refusal_check.ulp_shares`` explains the window, and why two
+sub-sources could not do it: a two-term floating-point sum is
+commutative and would pass whatever the order). The case asserts that
+one-ulp difference on **every** run before it accepts the forward
+comparison, so it cannot decay into a vacuous pass, and it is what
+would notice a later reordering of how ``RNF_INIT_FIXED`` builds the
+per-tile lists. It is also why ``--rtol`` defaults to 0: a tolerance
+would hide precisely that ulp.
 
 Each case runs the existing binary of its experiment through
 ``experiment_run_no_compile.sh``; nothing is compiled here. Build it first
@@ -103,16 +109,26 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from refusal_check import (ROOT, VERIF, add_to_namelist, kill_run,  # noqa: E402
-                           read_file, replace_line)
+from refusal_check import (CELLS, ROOT, ULP_SHARE, VERIF,  # noqa: E402
+                           add_to_namelist, kill_run, read_file,
+                           replace_line, split_file)
 
 PREFIX = "input.rnfapply_"
 BUILD = "build_esx"
 STREAM = "rnfApply"
-# Only this name, with a 10-digit iteration, is in scope for the dumps of
-# the stream below. Anything else matching the glob is reported, never
-# silently taken as a dump (LL-008).
-DUMP_NAME = re.compile(r"^" + STREAM + r"\.(\d{10})\.data$")
+
+
+def dump_name(stream):
+    """Pattern of the only file name in scope as a dump of ``stream``.
+
+    The name with a 10-digit iteration, and nothing else: anything else
+    matching the wider glob of :func:`dumps` is reported, never silently
+    taken as a dump (LL-008).
+    """
+    return re.compile(r"^" + re.escape(stream) + r"\.(\d{10})\.data$")
+
+
+DUMP_NAME = dump_name(STREAM)
 
 #: The cases, named explicitly: this check never discovers an experiment.
 #: ``data_from`` is the input directory holding the ``data`` the case runs
@@ -126,17 +142,63 @@ DUMP_NAME = re.compile(r"^" + STREAM + r"\.(\d{10})\.data$")
 #: check of ``RNF_INIT_FIXED`` can see the move. For cs32 that is entry
 #: 1035, cell 5247 -> 5248, which crosses the facet 2/3 boundary: the very
 #: move the digit oracle accepts with 10 of 10 digits (RUNOFF-033).
+#: ``min_records`` is the number of distinct record selections the run
+#: has to make; 1 for a constant file, more for a timed one, so a timed
+#: case cannot pass while applying one record for ever.
+#: ``rnf_set`` adds settings to the case's ``data.rnf``, and
+#: ``generate`` names a function that writes the sparse file the case
+#: reads into the scratch input directory, replacing the committed one
+#: in both the model's input and the comparison.
+#: ``order_sensitive`` asks the comparison to prove, on every run, that
+#: reversing the accumulation order changes the reconstruction.
 CASES = (
     {"name": "lab_sea", "experiment": "lab_sea",
      "input": "input.rnof_sp_const", "data_from": "input.rnof_sp_const",
-     "mpi": (0, 2), "control_entry": 0},
+     "mpi": (0, 2), "control_entry": 0, "min_records": 1},
     {"name": "cs32", "experiment": "global_ocean.cs32x15",
      "input": "input.rnof_sp_icedyn", "data_from": "input.icedyn",
-     "mpi": (0, 4), "control_entry": 1035},
+     "mpi": (0, 4), "control_entry": 1035, "min_records": 1},
+    # A timed file: 40 daily records over a 32-day run, so the model
+    # moves through records and weights and the reconstruction has to
+    # follow it.
+    {"name": "lab_sea_daily", "experiment": "lab_sea",
+     "input": "input.rnof_sp_daily", "data_from": "input.rnof_sp_daily",
+     "mpi": (0, 2), "control_entry": 0, "min_records": 30},
+    # The direct check of hold-exact: with RNF_holdRecord the weight is
+    # exactly 1 or exactly 0, so every dump has to be a value of the
+    # file and not a combination of two. The reconstruction applies the
+    # same rule, so a model that interpolated anyway would differ by the
+    # whole weighted difference of two records, which for this file is
+    # tens of per cent (measured 5.1e-1 by tests/rnf/timing_field_check
+    # on the same case).
+    {"name": "lab_sea_hold", "experiment": "lab_sea",
+     "input": "input.rnof_sp_daily", "data_from": "input.rnof_sp_daily",
+     "mpi": (0, 2), "control_entry": 0, "min_records": 30,
+     "rnf_set": {"RNF_holdRecord": ".TRUE."}},
+    # The permanent order-sensitive accumulation case (RUNOFF-005). The
+    # file is generated: every source of the per-cell file becomes three
+    # that share its cell, sized so that the three-term sum differs by
+    # one unit in the last place between the file's order and the
+    # reverse. ``order_sensitive`` makes the case assert that difference
+    # before it accepts the bitwise comparison, so it cannot pass
+    # vacuously if the sizing ever stops working.
+    {"name": "order_sensitive_sum", "experiment": "lab_sea",
+     "input": "input.rnof_sp_const", "data_from": "input.rnof_sp_const",
+     "mpi": (0, 2), "control_entry": 0, "min_records": 1,
+     "generate": "split", "order_sensitive": True,
+     # three entries feed every cell here, so moving one of them leaves
+     # the cell it came from still fed by the other two: the control's
+     # signature is the cell gained, not a cell lost
+     "control_missing": False},
 )
 
 #: Name of the perturbed file the control makes the model read.
 CONTROL_FILE = "moved_target.nc"
+#: Name of the file a ``generate`` case writes and reads.
+GENERATED_FILE = "generated.nc"
+#: Tolerance of the applied-volume invariant, which is not bitwise: see
+#: where it is used.
+VOLUME_RTOL = 1.0e-12
 
 DATA_DIAGNOSTICS = """# Cell-exact applied-runoff oracle of
 # tests/rnf/applied_field_check.py: dump the exf runoff field the model
@@ -227,7 +289,7 @@ def read_mds(run_dir, name, iteration=None):
     return field.astype(np.float64), (nx, ny)
 
 
-def dumps(run_dir):
+def dumps(run_dir, stream=STREAM):
     """Return the iterations of the stream's dumps, and anything unexpected.
 
     The glob is deliberately wider than the name the stream writes: a file
@@ -239,15 +301,16 @@ def dumps(run_dir):
     ``.meta`` on its own -- would otherwise be neither counted nor
     reported, which would quietly lower the number of dumps compared.
     """
+    pattern = dump_name(stream)
     iterations, strays = [], []
-    for path in sorted(glob.glob(os.path.join(run_dir, STREAM + "*"))):
+    for path in sorted(glob.glob(os.path.join(run_dir, stream + "*"))):
         base = os.path.basename(path)
-        if base.endswith(".meta") and DUMP_NAME.match(base[:-5] + ".data"):
+        if base.endswith(".meta") and pattern.match(base[:-5] + ".data"):
             if os.path.isfile(path[:-5] + ".data"):
                 continue
             strays.append(base + " (no matching .data)")
             continue
-        match = DUMP_NAME.match(base)
+        match = pattern.match(base)
         if match:
             iterations.append(match.group(1))
         else:
@@ -255,7 +318,79 @@ def dumps(run_dir):
     return iterations, strays
 
 
-def expected_field(path, rac, ncells):
+def record_trace(run_dir):
+    """Return what ``RNF_FIELDS_LOAD`` reported per forcing step.
+
+    ``{iteration: (rec0, year0, rec1, year1, fac)}``, parsed from the
+    trace ``RNF_FIELDS_LOAD`` prints when ``RNF_debugLev`` is at least
+    ``debLevC`` (3), which :func:`write_input` sets. The iteration is the
+    one the forcing was loaded at; the dump of the same field is labelled
+    one iteration later (see :func:`dump_iteration`).
+
+    **What this does and does not establish.** Taking the records from
+    the model makes this check exact for any time mode without a second
+    Python model of pkg/exf's record selection, but it means the check
+    cannot see a wrong *choice* of record -- only a wrong use of the
+    records chosen: a wrong weight applied to them, a wrong target cell,
+    a wrong fraction, a wrong accumulation order, a wrong area. The
+    choice is checked elsewhere, against pkg/exf itself rather than
+    against any model of it: ``tests/rnf/timing_field_check.py`` compares
+    the applied field of a sparse run with that of a dense run of the
+    same case at every step, and
+    ``tests/runoff/lab_sea_runoff_timing_check.py`` compares this same
+    trace with the exf timing conventions it models from the dense
+    case's ``data.exf``.
+    """
+    trace = {}
+    text = read_file(run_dir, "output.txt") or ""
+    for match in re.finditer(
+            r"RNF_FIELDS_LOAD: it=\s*(-?\d+), rec0=\s*(-?\d+),"
+            r" yr0=\s*(-?\d+), rec1=\s*(-?\d+), yr1=\s*(-?\d+),"
+            r" t=\s*(\S+), fac=\s*(\S+)", text):
+        trace[int(match.group(1))] = (
+            int(match.group(2)), int(match.group(3)), int(match.group(4)),
+            int(match.group(5)), float(match.group(7)))
+    return trace
+
+
+def dump_iteration(iteration):
+    """Forcing iteration of the dump labelled ``iteration``: the same one.
+
+    ``FORWARD_STEP`` loads the forcing at ``myIter = nIter0 + iLoop - 1``
+    and then raises the counter to ``nIter0 + iLoop`` before
+    ``DO_THE_MODEL_IO`` writes the dump, so the label could have been one
+    iteration ahead of the field. It is not, for a snapshot stream:
+    ``DIAGNOSTICS_WRITE`` labels a stream of negative frequency with
+    ``wrIter = myIter - 1`` and ``wrTime = myTime - deltaTClock``
+    precisely "to be consistent with state-variable time-step"
+    (``pkg/diagnostics/diagnostics_write.F``, the ``freqSec.LT.0``
+    branch). The two offsets cancel, so the dump labelled N carries the
+    field loaded at iteration N. Measured on
+    ``lab_sea/input.rnof_sp_const``: 48 dumps labelled 1 to 48 against
+    forcing iterations 1 to 48, with ``timeStepNumber = 1`` in the first
+    ``.meta``.
+    """
+    return int(iteration)
+
+
+def record_flux(path, record, nsrc):
+    """Return one time record of ``runoff_flux``, as float64."""
+    import netCDF4
+    import numpy as np
+    with netCDF4.Dataset(path) as ds:
+        ds.set_auto_maskandscale(False)
+        n = ds.dimensions["time"].size
+        if not 1 <= record <= n:
+            raise ValueError(f"{path}: record {record} is outside the {n} "
+                             f"record(s) of the file")
+        flux = np.asarray(ds["runoff_flux"][record - 1], dtype=np.float64)
+    if flux.size != nsrc:
+        raise ValueError(f"{path}: record {record} has {flux.size} sources, "
+                         f"not {nsrc}")
+    return flux
+
+
+def expected_field(path, rac, ncells, records=None, reverse=False):
     """Return the runoff field the sparse file asks for, in m/s.
 
     ``sum_s flux_s * frac_{s,c} / rA(c)``, accumulated over the target
@@ -263,25 +398,32 @@ def expected_field(path, rac, ncells):
     of ``RNF_INIT_FIXED`` are built in and therefore the order
     ``RNF_FIELDS_LOAD`` adds the terms in. Each term is
     ``(flux * frac) / rA`` in float64, as the Fortran writes it, so a
-    correct model reproduces this array to the last bit.
+    correct model reproduces this array to the last bit. With ``reverse``
+    the same terms are added in the opposite order, which is how a case
+    proves that its own construction is order-sensitive.
 
-    That the order matters is measured, not assumed: on a file with three
-    entries on one cell, the model reproduces the file-order sum bitwise
-    while the reverse-order sum differs by exactly 1 ulp with no extra
-    and no missing cell (review A of RUNOFF-033, lab_sea serial,
-    2026-10-05). It is also the reason ``--rtol`` defaults to 0: a
-    tolerance would hide exactly that. Neither committed file exercises
-    it -- both have at most one entry per cell -- so no enrolled case
-    sums more than one term; see the module docstring.
+    **The record.** ``records`` is ``(rec0, year0, rec1, year1, fac)`` as
+    ``RNF_FIELDS_LOAD`` reported it for the step, and the source flux is
+    rebuilt the way that routine does:
 
-    **One record only.** The reconstruction reads ``runoff_flux[0]`` and
-    the caller compares every dump against it. That is correct while the
-    reader accepts a single constant record, which is what
-    ``RNF_INIT_FIXED`` enforces today, and it is fail-safe: a model that
-    applied a different record would disagree. Time records arrive with
-    RUNOFF-005 and this function then has to select per dump.
+    * ``fac == 1``: record ``rec0`` alone, with no arithmetic;
+    * ``fac == 0``: record ``rec1`` alone (this is hold-exact selecting
+      the later record);
+    * otherwise ``fac*flux(rec0) + (1-fac)*flux(rec1)``.
 
-    Returns the field and the sum of the fluxes of the file, which the
+    The years select the file of a yearly set, ``<base>_YYYY.nc``. With
+    ``records`` left out, record 1 is used with weight 1, which is what a
+    file of one constant record applies at every step.
+
+    That the accumulation order matters is not assumed: the
+    ``order_sensitive_sum`` case is built by ``refusal_check.ulp_shares``
+    so that reversing the order changes the result by exactly one unit in
+    the last place, and that case asserts the change on every run before
+    it accepts the forward comparison. It is also the reason ``--rtol``
+    defaults to 0: a tolerance would hide exactly that. The two committed
+    files cannot exercise it -- both have at most one entry per cell.
+
+    Returns the field and the sum of the fluxes of the record, which the
     applied volume ``sum(applied * rA)`` has to equal.
     """
     import netCDF4
@@ -291,13 +433,33 @@ def expected_field(path, rac, ncells):
         source = np.asarray(ds["target_source"][:]).astype(int)
         cell = np.asarray(ds["target_cell"][:]).astype(int)
         frac = np.asarray(ds["target_fraction"][:]).astype(np.float64)
-        flux = np.asarray(ds["runoff_flux"][0], dtype=np.float64)
+        nsrc = ds.dimensions["source"].size
+    rec0, year0, rec1, year1, fac = records or (1, 0, 1, 0, 1.0)
+    flux0 = record_flux(year_file(path, year0), rec0, nsrc)
+    if fac == 1.0:
+        flux = flux0
+    else:
+        flux1 = record_flux(year_file(path, year1), rec1, nsrc)
+        flux = flux1 if fac == 0.0 else fac * flux0 + (1.0 - fac) * flux1
     if cell.min() < 0 or cell.max() >= ncells:
         raise ValueError(f"{path}: target_cell outside 0..{ncells - 1}")
     field = np.zeros(ncells, dtype=np.float64)
-    for k in range(cell.size):
+    order = range(cell.size - 1, -1, -1) if reverse else range(cell.size)
+    for k in order:
         field[cell[k]] += flux[source[k]] * frac[k] / rac[cell[k]]
     return field, float(flux.sum())
+
+
+def year_file(path, year):
+    """Path of the file of ``year`` in a yearly set (``year`` 0: ``path``).
+
+    ``<base>_YYYY.nc``, as ``RNF_FILE_NAME`` builds it: a trailing
+    ``.nc`` of the name configured is replaced, not kept.
+    """
+    if not year:
+        return path
+    base = path[:-3] if path.endswith(".nc") else path
+    return f"{base}_{year:04d}.nc"
 
 
 def move_one_target(source_path, path, entry):
@@ -413,18 +575,47 @@ def write_input(case, input_dir):
             fh.write(new)
         os.chmod(prep, os.stat(prep).st_mode | stat.S_IXUSR | stat.S_IXGRP
                  | stat.S_IXOTH)
-    with open(os.path.join(input_dir, "data.rnf")) as fh:
-        return rnf_file(fh.read())
+    # The record trace of RNF_FIELDS_LOAD is what names the record each
+    # dump applied, so it has to be on (debLevC = 3). It changes no
+    # value: the routine only prints.
+    path = os.path.join(input_dir, "data.rnf")
+    with open(path) as fh:
+        rnf = fh.read()
+    for name, value in dict(case.get("rnf_set") or {},
+                            RNF_debugLev="3").items():
+        line = f"  {name} = {value},"
+        rnf = (replace_line(rnf, name, line) if re.search(
+            r"(?mi)^\s*%s\s*=" % re.escape(name), rnf)
+            else add_to_namelist(rnf, "RNF_PARM01", line))
+    with open(path, "w") as fh:
+        fh.write(rnf)
+    return rnf_file(rnf)
 
 
-def compare(run_dir, sparse_path, iterations):
+def compare(run_dir, sparse_path, iterations, order_sensitive=False):
     """Compare every dump in ``run_dir`` with the field the file asks for.
 
     Returns a dictionary with one entry per dumped iteration plus the
     totals: ``extra`` and ``missing`` cell counts, the largest relative
     deviation, whether every dump was bitwise equal, how many applied
     values were not finite, and the applied volume against the sum of the
-    fluxes.
+    fluxes of the record each dump applied.
+
+    The expected field is rebuilt per dump from the records
+    ``RNF_FIELDS_LOAD`` reported for that step
+    (:func:`record_trace`), so a run with many time records is compared
+    against what it actually applied rather than against one record.
+    ``records_applied`` lists the distinct ``(rec0, year0, rec1, year1)``
+    brackets seen, which is how a caller can require that the run really
+    did move through its records. The weight is deliberately not part of
+    that key: it changes at every step of an interpolating run, so
+    counting it would make the criterion vacuous.
+
+    With ``order_sensitive`` the reconstruction is also made with the
+    target entries added in the opposite order, and
+    ``order_sensitive_ulps`` reports how many units in the last place the
+    two differ by, over the dumps. A case that asks for this and gets 0
+    is not testing the accumulation order at all.
 
     A non-finite applied value is turned into an infinite relative
     deviation before the maximum is taken. Left as a NaN it would lose
@@ -435,13 +626,42 @@ def compare(run_dir, sparse_path, iterations):
     import numpy as np
     rac, shape = read_mds(run_dir, "RAC")
     ncells = rac.size
-    expect, flux_sum = expected_field(sparse_path, rac, ncells)
-    want_nonzero = int(np.count_nonzero(expect))
+    trace = record_trace(run_dir)
     result = {"cells": ncells, "shape": list(shape), "dumps": len(iterations),
-              "nonzero_expected": want_nonzero, "flux_sum": flux_sum,
+              "nonzero_expected": 0, "flux_sum": None,
               "extra": 0, "missing": 0, "max_rel": 0.0, "bitwise": True,
-              "nonfinite": 0, "worst": None, "volume": [], "per_dump": []}
+              "nonfinite": 0, "worst": None, "volume": [], "per_dump": [],
+              "records_applied": [], "order_sensitive_ulps": 0,
+              "traced": len(trace)}
+    seen = []
     for iteration in iterations:
+        step = dump_iteration(iteration)
+        if trace and step not in trace:
+            raise ValueError(f"no RNF_FIELDS_LOAD trace for iteration "
+                             f"{step}, the forcing step of dump {iteration}; "
+                             f"{len(trace)} steps traced")
+        records = trace.get(step)
+        expect, flux_sum = expected_field(sparse_path, rac, ncells, records)
+        if order_sensitive:
+            other, _ = expected_field(sparse_path, rac, ncells, records,
+                                      reverse=True)
+            diff = np.abs(other - expect)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                ulps = np.where(expect != 0.0,
+                                diff / np.abs(np.nextafter(
+                                    expect, np.inf) - expect), 0.0)
+            result["order_sensitive_ulps"] = max(
+                result["order_sensitive_ulps"], int(round(float(ulps.max()))))
+        # The record pair and its two file years, without the weight: the
+        # weight changes at every step of an interpolating run, so
+        # counting it would make the number of "record selections" the
+        # number of steps and the min_records criterion vacuous.
+        key = list(records[:4]) if records else None
+        if key not in seen:
+            seen.append(key)
+        result["nonzero_expected"] = max(result["nonzero_expected"],
+                                         int(np.count_nonzero(expect)))
+        result["flux_sum"] = flux_sum
         applied, got_shape = read_mds(run_dir, STREAM, iteration)
         if got_shape != shape:
             raise ValueError(f"{STREAM}.{iteration} has shape {got_shape}, "
@@ -461,17 +681,19 @@ def compare(run_dir, sparse_path, iterations):
         result["missing"] += missing
         result["nonfinite"] += nonfinite
         result["bitwise"] = result["bitwise"] and bitwise
-        result["volume"].append(volume)
+        result["volume"].append((volume, flux_sum))
         if float(rel[worst]) > result["max_rel"]:
             result["max_rel"] = float(rel[worst])
             result["worst"] = {"iteration": iteration, "cell": worst,
                                "applied": float(applied[worst]),
-                               "expected": float(expect[worst])}
+                               "expected": float(expect[worst]),
+                               "records": records}
         result["per_dump"].append(
             {"iteration": iteration, "extra": extra, "missing": missing,
-             "bitwise": bitwise, "nonfinite": nonfinite,
+             "bitwise": bitwise, "nonfinite": nonfinite, "records": records,
              "nonzero_applied": int(np.count_nonzero(applied)),
              "volume": volume})
+    result["records_applied"] = seen
     return result
 
 
@@ -510,6 +732,25 @@ def check_case(case, nproc, timeout, keep, rtol, min_dumps, control=False):
             raise ValueError(f"RNF_file {rnf_name!r} of "
                              f"{case['input']}/data.rnf does not resolve to "
                              f"a file ({committed})")
+        if case.get("generate"):
+            # The case reads a file generated from the committed one,
+            # and the comparison asks for that same generated file.
+            generated = os.path.join(input_dir, GENERATED_FILE)
+            if case["generate"] == "split":
+                result["generated"] = {
+                    "from": os.path.relpath(CELLS, ROOT),
+                    "sub_sources_per_source": 3,
+                    "ulp_share": ULP_SHARE,
+                    "fluxes": split_file(generated, CELLS, ulp=ULP_SHARE)}
+            else:
+                raise ValueError(f"unknown generator {case['generate']!r}")
+            committed = generated
+            path = os.path.join(input_dir, "data.rnf")
+            with open(path) as fh:
+                text = replace_line(fh.read(), "RNF_file",
+                                    f"  RNF_file = '{GENERATED_FILE}',")
+            with open(path, "w") as fh:
+                fh.write(text)
         if control:
             # The model reads the perturbed file; the comparison keeps
             # asking for the committed one.
@@ -545,11 +786,34 @@ def check_case(case, nproc, timeout, keep, rtol, min_dumps, control=False):
                             f"field (found {len(iterations)}); fewer is not "
                             f"evidence")
             return result
-        result.update(compare(run_dir, committed, iterations))
+        result.update(compare(run_dir, committed, iterations,
+                              case.get("order_sensitive", False)))
         result["sparse_file"] = os.path.relpath(committed, ROOT)
         if result["nonzero_expected"] == 0:
             problems.append("the file to ask for runoff on at least one "
                             "cell (it asks for none: nothing is compared)")
+        if result["traced"] < result["dumps"]:
+            problems.append(f"a RNF_FIELDS_LOAD record trace for every dump "
+                            f"({result['traced']} steps traced, "
+                            f"{result['dumps']} dumps): without it the "
+                            f"expected field cannot name the record the "
+                            f"model applied (needs RNF_debugLev >= 3)")
+            result["unusable"] = True
+            return result
+        if len(result["records_applied"]) < case.get("min_records", 1):
+            problems.append(
+                f"at least {case['min_records']} distinct record selections "
+                f"over the run (found {len(result['records_applied'])}: "
+                f"{result['records_applied']}): a run that never changes "
+                f"record cannot show that the right record is applied")
+        if case.get("order_sensitive") \
+                and result["order_sensitive_ulps"] < 1:
+            problems.append(
+                f"the reconstruction to change when its terms are reversed "
+                f"(it changes by {result['order_sensitive_ulps']} units in "
+                f"the last place): this case exists to hold the"
+                f" accumulation order of rnf_fields_load.F, and a sum that "
+                f"is order-insensitive would pass it whatever that order is")
         for dump in result["per_dump"]:
             if dump["nonzero_applied"] == 0:
                 problems.append(f"every dump to apply runoff somewhere "
@@ -567,15 +831,22 @@ def check_case(case, nproc, timeout, keep, rtol, min_dumps, control=False):
             # Inverted: the move has to be seen, on every dump, as the one
             # cell gained and the one cell lost. Mass is still conserved,
             # which is exactly why the digit oracle cannot see this.
-            if not all(d["extra"] >= 1 and d["missing"] >= 1
+            # A case whose file sends several entries to one cell loses no
+            # cell when one of them moves -- its siblings still feed the
+            # cell it left -- so there the signature is the cell gained
+            # and the value changed, and ``control_missing`` says so.
+            want_missing = case.get("control_missing", True)
+            if not all(d["extra"] >= 1
+                       and (d["missing"] >= 1 or not want_missing)
                        for d in result["per_dump"]):
                 problems.append(
                     f"the moved target to show up on every dump as an "
-                    f"extra and a missing cell (found "
-                    f"{result['extra']} extra and {result['missing']} "
-                    f"missing over {result['dumps']} dumps): the check "
-                    f"cannot see a one-cell move, so a pass of it means "
-                    f"nothing")
+                    f"extra"
+                    + (" and a missing cell" if want_missing else " cell")
+                    + f" (found {result['extra']} extra and "
+                      f"{result['missing']} missing over {result['dumps']} "
+                      f"dumps): the check cannot see a one-cell move, so a "
+                      f"pass of it means nothing")
             if result["max_rel"] <= rtol:
                 problems.append(f"a relative deviation above {rtol:g} "
                                 f"(found {result['max_rel']:.3e})")
@@ -588,11 +859,22 @@ def check_case(case, nproc, timeout, keep, rtol, min_dumps, control=False):
             problems.append(f"a relative deviation of at most {rtol:g} "
                             f"(found {result['max_rel']:.3e} at "
                             f"{result['worst']})")
-        for volume in result["volume"]:
-            if volume != result["flux_sum"]:
+        for volume, flux_sum in result["volume"]:
+            # Volume conservation is a physical invariant held to
+            # round-off, not a bitwise identity: the applied volume is
+            # sum_c (sum_s flux_s*frac/rA(c))*rA(c), and dividing by a
+            # cell area and multiplying it back is not exact in
+            # floating point. It happens to be exact on the constant
+            # lab_sea and cs32 files and was asserted exactly until
+            # RUNOFF-005; on the daily file it is off by one unit in
+            # the last place (measured 2026-10-05), so the criterion is
+            # now VOLUME_RTOL. The bitwise criterion that matters, on
+            # the field itself, is unchanged at --rtol 0 above.
+            if abs(volume - flux_sum) > VOLUME_RTOL * abs(flux_sum):
                 problems.append(f"the applied volume to equal the sum of "
-                                f"the fluxes ({result['flux_sum']!r}); "
-                                f"found {volume!r}")
+                                f"the fluxes of the record applied "
+                                f"({flux_sum!r}) to {VOLUME_RTOL:g} "
+                                f"relative; found {volume!r}")
                 break
         return result
     except ValueError as err:

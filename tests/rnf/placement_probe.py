@@ -88,11 +88,32 @@ PREFIX = "input.rnfprobe_"
 BUILD = "build_esx"
 RNF_H = os.path.join(ROOT, "MITgcm", "pkg", "rnf", "RNF.h")
 
+#: Name of the probe file, deliberately absent in step 1 of a probe run.
+PROBE_FILE = "probe.nc"
+
 DATA_RNF = """# Sparse runoff package parameters: the placement probe
  &RNF_PARM01
-  RNF_file = 'probe.nc',
+  RNF_file = '{0}',
  &
-"""
+""".format(PROBE_FILE)
+
+#: Step 1 of a probe run omits the probe file, so ``RNF_INIT_FIXED`` has
+#: to stop in ``RNF_NC_ERROR`` while opening it, and this is how that is
+#: recognised.
+#:
+#: **Matched as a pattern naming the file, not as a fixed sentence.** The
+#: message embeds the file name, because ``RNF_FILE_NAME`` can resolve
+#: ``RNF_file`` to ``<base>_YYYY.nc`` and a reader that cannot say
+#: *which* file it failed to open is of little use (RUNOFF-005). It used
+#: to read "opening the file failed" and this check tested that literal;
+#: when RUNOFF-005 reworded it, every probe run returned at step 1 with
+#: 0 probes and map None, and all four runs including the negative
+#: control reported FAIL. The pattern below still pins the two things
+#: that matter -- the routine that refused and the file it refused on --
+#: while leaving the sentence free to change.
+OPEN_FAILED = re.compile(
+    r"RNF_INIT_FIXED: RNF: opening \S*" + re.escape(PROBE_FILE)
+    + r" failed")
 DATA_EXCH2 = """# exch2 I/O layout of the placement probe
  &W2_EXCH2_PARM01
   W2_mapIO = {0},
@@ -364,9 +385,10 @@ def probe_layout(map_io, nproc, timeout, keep, shift=0):
         # 1. no probe file yet: the model writes the topology and stops
         run_dir, _, timed_out = run_model(input_name, nproc, timeout)
         errors = read_file(run_dir, "STDERR.0000") or ""
-        if timed_out or "RNF_INIT_FIXED: RNF: opening the file failed" not in errors:
-            problems.append("the run without a probe file to stop at the "
-                            "opening of the file")
+        if timed_out or not OPEN_FAILED.search(errors):
+            problems.append(f"the run without a probe file to stop at the "
+                            f"opening of {PROBE_FILE} (no line matching "
+                            f"{OPEN_FAILED.pattern!r} in STDERR.0000)")
             return result
         topo = read_topology(run_dir, nproc)
         result["map"] = topo["map"]

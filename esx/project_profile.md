@@ -37,9 +37,13 @@ This is the scientific contract agents read. Executable paths and commands are i
     runoff file, and adjoint tests. These are in [long-term goals](../long_term_goals.md).
     Phase 1 must not design them out.
 - Completion criteria for this deployment:
-  - Sparse runoff reproduces the dense-path results to round-off on
+  - Sparse runoff reproduces the dense-path results on
     `global_ocean.cs32x15` (`input.icedyn`, `input.seaice`) and on the new lab_sea
-    cases, single-process and MPI.
+    cases, single-process and MPI — but **by the instrument appropriate to each
+    case**, revised 2026-10-05 on RUNOFF-005 measurements (below). For a constant
+    record the dense reference itself is the oracle. For a *timed* case it is the
+    applied-field and record-selection comparison, because the digit threshold is
+    unachievable there in principle: see the tolerance rationale.
   - The hold-exact mode passes its direct check.
   - All no-change experiments still pass.
   - The MITgcm contribution checks pass (below).
@@ -109,9 +113,39 @@ This is the scientific contract agents read. Executable paths and commands are i
   Code stays TAF-friendly because exf runoff is a control variable in ECCO setups.
   There are no statistical estimands.
 - Acceptable error, oracle uncertainty and tolerance rationale:
-  - **Dense-vs-sparse oracles:** match the reference `output.txt` to the
-    `compare_results.sh` / testreport digit threshold. The expected difference is
-    round-off from `flux·frac/rA` versus the precomputed dense m/s value.
+  - **Dense-vs-sparse oracles, constant record:** match the dense reference
+    `output.txt` to the `compare_results.sh` / testreport digit threshold. The
+    expected difference is round-off from `flux·frac/rA` versus the precomputed
+    dense m/s value. `lab_sea/input.rnof_sp_const` and
+    `cs32/input.rnof_sp_icedyn` meet this; their references are byte copies of
+    their dense twins, so these two cases carry the whole-model-response
+    cross-path evidence.
+  - **Dense-vs-sparse oracles, timed cases:** the digit threshold is
+    **unachievable in principle** and is not the instrument. Measured on
+    RUNOFF-005 (2026-10-05) and confirmed independently by review A: the
+    dense-versus-sparse forcing difference is at most **1 ulp** (max 2.0e-16, with
+    ~88% of values bitwise identical and identical non-zero cell sets in every
+    record), yet lab_sea amplifies that round-off seed so `cg2d_init_res` reaches
+    only 4, 16, 3, 16 and 4 matching digits for daily, month, month1, clim and
+    yearly against the 10 required. Review A's decisive check: perturbing every
+    `runoff_flux` by exactly one ulp and changing nothing else collapses the same
+    case from 16 digits to 4 — so the figure is amplification, not a defect.
+    - `month` and `clim` do in fact meet the digit criterion, at 16 digits, being
+      numerically identical to their dense runs in every monitor variable. Only
+      `daily`, `month1` and `yearly` cannot.
+    - The instrument for the timed cases is therefore
+      `tests/rnf/timing_field_check.py` (the dense run's applied `EXFroff` against
+      the sparse run's, cell by cell at every step, 1e-12, measured 3.7e-16 to
+      4.3e-16) together with
+      `tests/runoff/lab_sea_runoff_timing_check.py` (record choice against pkg/exf's
+      own conventions, 0 of 49-1465 steps disagreeing). Each timed case also carries
+      its **own** sparse-path reference as a regression guard; that reference is not
+      a cross-path test, and it is labelled as such in the matrix.
+    - **Known weakness of the replacement:** the digit oracle compared the whole
+      model response; this chain compares the runoff field and the record choice. A
+      `pkg/rnf` side effect outside the exf `runoff` array specific to the timed
+      path would be invisible to all three instruments. That coverage survives only
+      in the two constant cases above.
   - **Fraction sum:** within 1e-6.
   - **No-change experiments:** must be identical.
 - Invalid input, unsupported cases and required failure behavior: stop at init

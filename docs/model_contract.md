@@ -8,11 +8,16 @@
 >
 > **Implemented (RUNOFF-004):** the initialization of "Model behavior" below
 > (items 1 to 8, in `pkg/rnf/rnf_init_fixed.F`, `rnf_readparms.F` and
-> `rnf_check.F`) and the volume flux of "Each time step" for a file with one
-> constant record (`rnf_init_varia.F`, `rnf_fields_load.F`,
-> `rnf_exf_runoff.F`). A file with any other time sampling is refused. Not
-> implemented: time records and interpolation, temperature, salinity,
-> tracers, and the yearly files. The source routines and their tests are
+> `rnf_check.F`) and the volume flux of "Each time step"
+> (`rnf_init_varia.F`, `rnf_fields_load.F`, `rnf_exf_runoff.F`).
+> **Implemented (RUNOFF-005):** the time handling of that volume flux
+> (`rnf_time_setup.F`, `rnf_getrec.F`) — constant, a fixed period with or
+> without a repeat cycle, a monthly climatology, consecutive calendar
+> months, `_YYYY` yearly files, exf-style interpolation and hold-exact —
+> with record selection delegated to the `pkg/exf` routine of each mode.
+> Not implemented: temperature, salinity and tracers; `yearly` *sampling*
+> (one record per calendar year) is refused rather than mapped, because exf
+> has no such mode. The source routines and their tests are
 > listed in [the code map](code_map.md), the tests and their limits in
 > [the qualification matrix](verification_matrix.md).
 
@@ -60,16 +65,33 @@ onto ocean cells is done offline. The Python converter
 - **Format:** a CF-style `time` variable (`units = "days since …"`, with a
   `calendar` attribute), as numpy `datetime64` writes.
 - **Sampling:** constant, repeating (climatology) or non-repeating, at hourly,
-  daily, monthly (calendar months) or yearly intervals.
+  daily or monthly (calendar months) intervals. Yearly *intervals* — one record
+  per calendar year — are **refused**: exf has no such mode and schema 1.0 puts
+  a yearly record's `time` at the midpoint of its year, so mapping it needs its
+  own code, which is not written (`rnf_time_setup.F`).
 - **Timing settings:** runtime settings (start date, period, repeat cycle) come
   from file attributes or from the package namelist `data.rnf`. **`data.rnf`
-  overrides the file.**
-- **Yearly files:** with `RNF_useYearlyFiles`, a name ending in `_YYYY` is chosen
-  by model year with the exf naming routine
-  (`pkg/exf/exf_getyearlyfieldname.F`).
+  overrides the file.** The file's side is the normative CF axis
+  (`mitgcm_time_sampling`, `mitgcm_time_period`, `mitgcm_time_repeat`,
+  `time:units`, `time:calendar`, `time`, `time_bnds`), not the converter's
+  `exf_*` provenance attributes, which the reader does not read.
+- **Repeating series:** the cycle of a fixed-period climatology is the span of
+  `time_bnds`, and it is anchored on the real date record 1 carries, so it
+  wraps exactly as a dense run with the same `runoffRepCycle` does and drifts
+  against calendar years at every leap year. Anchoring on a nominal calendar
+  year instead is a different answer once a leap day has intervened.
+- **Yearly files:** with `RNF_useYearlyFiles`, `RNF_file` is the base name of a
+  `<base>_YYYY.nc` set (a trailing `.nc` of the name given is replaced), chosen
+  by the model year exf's own record selection returns. This differs from exf's
+  dense naming, which appends `_YYYY` to a name without an extension
+  (`pkg/exf/exf_getyearlyfieldname.F`). Yearly files need `pkg/cal`.
 - **Interpolation:** set in `data.rnf` (`RNF_holdRecord`), either exf-style
   linear interpolation between the bracketing records or holding each record's
-  value exactly for its interval.
+  value exactly for its interval. The interval of hold-exact is the record's
+  own time up to the next record's for a fixed period — so a yearly-file
+  record at 1 January 00:00, which is the start of its bounds, is held over
+  that day — and the calendar month for the two monthly modes, which is not
+  the nearer of the two mid-month times the interpolation brackets with.
 - **One set of record weights:** flux, temperature, salinity and every tracer
   use the same records and the same weights at each step.
 

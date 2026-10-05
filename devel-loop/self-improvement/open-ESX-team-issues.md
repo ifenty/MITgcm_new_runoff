@@ -274,3 +274,39 @@ Digest a normalized structural form instead of `ast.dump` output — e.g. an exp
 
 ### Expected Effect
 No reviewer spends a must-fix item, or a wrong diagnosis, on an accurate report again, and a stale report cannot pass merely because the checking host's Python matches the sealing host's. Direction: reviewer must-fix items attributable to the documentation-contract toolchain rather than to the work under review go to zero. The qualitative invariant: the inventory digest depends on the source tree, not on the interpreter that reads it.
+
+## 🔴 PROPOSED: doc_contract stale returns a truncated hits list that reads as complete
+
+**Date Identified**: 2026-10-05  12:40
+**Status**: Proposed
+**UUID**: TEAM-DOCCONTRACT-STALE-HITS-TRUNCATION-001
+**Category**: tool_ergonomics
+**Severity**: Medium
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-005/assessment.md
+**Anchors**: tools/esx/doc_contract.py:stale_lines; devel-loop/documentation_contract.md
+
+### Issue
+`stale_lines` returns `{'lines': len(hits), 'hits': hits[:limit], 'truncated': max(len(hits)-limit, 0)}` with `limit=200`. The total and the truncation count are both reported, but the returned `hits` list is the natural thing to count and carries nothing at the point of use that says it is partial. Counting entries of `hits` rather than reading `lines` understates a sweep silently, by up to the cap.
+
+### Evidence
+RUNOFF-005, 2026-10-05. Measured on the tree at closure, with a figures row of `12` over this project's inventory: **`lines` 335, `hits` returned 200, `truncated` 135**, and all 200 returned hits carrying the figure (trivially, every row being that row). Excluding `MITgcm/` the true count is **191**. Review A, review B and Arch each measured 335 and 191 independently, by three separate routes; Arch's run also reproduced 200 returned and 135 truncated under the default cap, which is the mechanism itself.
+
+The figure that reached the contract was **199**, and it is now accounted for exactly. It is **not** "the returned hits that carry the figure" — for a single-row probe *all* 200 do, because `stale_lines` sets each hit's `figure` from its own row. It is the capped list **minus the paragraph's own self-reference**: exactly one of the 200 returned hits is `devel-loop/documentation_contract.md:172`, the sentence being written, which contains a literal `12` and is correctly not an "unrelated" line. 200 − 1 = **199**. Review A derived this and Arch reproduced it independently.
+
+So the count was of `hits[:200]`, not of the matches — and the author also, reasonably, excluded a self-reference. A defensible count of the wrong population. Three retellings of the arithmetic were wrong before this one (336/136 for the totals, then "199 of the returned hits carry the figure"), which is itself evidence for how easily this return shape is misread.
+
+Review A's sharper statement of the defect, which supersedes the framing above: the trap is not merely that `hits` is capped. It is that **`lines` and `hits` answer different questions inside one returned dict**, at the same call site, with `truncated` present but easy to skip. Same category as TEAM-DOCCONTRACT-AST-DUMP-DIGEST-001: a tool whose output invites a reading it does not support.
+
+The 199 reached permanent prose in `devel-loop/documentation_contract.md`, in the paragraph that teaches agents that a clean sweep is evidence about the figures table and not about the document. It survived a reviewer pass and was caught only because review A re-measured a figure it had no specific reason to doubt. It also could not be protected by the mechanism it described: a `199` figures row is exactly the bare-number row that paragraph warns against enrolling.
+
+### Potential Impact
+Silent understatement of a documentation sweep, in a tool whose output is used to decide whether a document still describes the code. The artefact looks like a plausible measurement, so it does not announce itself. The same tool already carries a separate blind spot (TEAM-DOCCONTRACT-AST-DUMP-DIGEST-001), and both were found by a reviewer re-measuring something that looked settled rather than by the tool reporting a problem.
+
+### Proposed Fix
+Make the partial list self-describing so that counting it cannot be mistaken for a total. Options, in rough order of preference: return a sentinel or wrapper type for a truncated list so `len()` of it is obviously not the answer; or name the key `hits_sample` when `truncated > 0`; or have the CLI print the total adjacent to every listing. Independently, add a sentence to `devel-loop/documentation_contract.md` warning that the listing is capped — the implementer proposed exactly this and correctly declined to write it, because the authorised change was one clause.
+
+### Acceptance Criteria
+A caller that counts the returned listing of a sweep with more than `limit` hits either gets the true total or cannot obtain a number that looks like one. Reproduce the RUNOFF-005 case: a figures row matching 335 lines under a cap of 200 must not yield a usable 199. The existing `lines` and `truncated` keys keep their meanings, and `doc_contract.py check` and `stale` keep their exit statuses.
+
+### Expected Effect
+A figure derived from a sweep listing is either right or visibly unavailable. Direction: occurrences of an understated sweep count reaching a committed document go to zero. The qualitative invariant: no return value of this tool can be counted to produce a plausible wrong total.

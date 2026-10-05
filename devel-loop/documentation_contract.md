@@ -165,6 +165,25 @@ deliberately when it quotes the old value as history and says so. `seal` reports
 how many such lines remain; the count is advisory. Briefs built with `brief.py`
 include the same list, and the reviewer checks it.
 
+**A clean sweep covers the tokens you listed and nothing else.** The matcher
+takes each `old` literally, so it finds a figure only in the form the table
+spells it. Two consequences, both measured on RUNOFF-005:
+
+- **A count written as a word is invisible to a digit row.** A row `12` does not
+  match the word "twelve"; it matched hundreds of unrelated lines in this
+  repository and none of the two stale counts that were spelled "twelve" and
+  "eighteen" in prose. A word row does match the word, so enter the form the
+  prose actually uses — and where a figure appears both ways, enter both.
+- **A bare number word is too generic to be useful.** A row `twelve` flags every
+  legitimate "twelve monthly records" as well. Make the `old` a phrase specific
+  to the claim, such as `twelve time-axis cases`. Such a row usually matches
+  nothing once the text is fixed; that is its value, as a guard against the
+  figure coming back.
+
+So the sweep being clean is evidence about the table, not about the document. Two
+conflicting counts of one set survived a clean sweep on RUNOFF-005 because
+neither was in the table in the form the prose used.
+
 The draft reports how many judgments it `reused`. The implementer drafts and
 seals the plan from the live source and gives each blank judgment its own reason;
 do not refill a plan by copying reasons from an earlier one. Review changes

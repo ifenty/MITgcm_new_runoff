@@ -875,7 +875,10 @@ sampling with linear interpolation and returns one set
 - hold-exact, which selects the record whose interval contains the model time.
   For monthly records this is the calendar month, which is not the same as the
   nearer of two mid-month times;
-- yearly sampling, for which exf has no mode (recorded in RUNOFF-005);
+- `yearly` sampling (one record per calendar year), for which exf has no
+  mode: refused by `RNF_TIME_SETUP` rather than approximated, since schema 1.0
+  puts its `time` at the midpoint of the year and mapping that needs its own
+  code (RUNOFF-005, with an enrolled refusal case);
 - the `constant` case, read once in `RNF_INIT_VARIA`.
 
 **One set of weights.** `RNF_FIELDS_LOAD` calls `RNF_GETREC` once per step and
@@ -888,8 +891,12 @@ time axis and attributes and are overridden by `data.rnf` (decision 10).
 Converting a CF date needs `pkg/cal`; without `useCAL` the namelist values in
 seconds are required.
 
-**Consequence for issues.** RUNOFF-005 implements `RNF_GETREC`, hold-exact and
-yearly mapping. RUNOFF-029 follows from the single set of weights and tests it.
+**Consequence for issues.** RUNOFF-005 implemented this as `RNF_TIME_SETUP`
+(the file's time axis and the `data.rnf` overrides, resolved into exf's
+period, start time and repeat cycle), `RNF_GETREC` (which calls the exf
+routine of each mode, and hold-exact) and `RNF_FILE_NAME` (the `_YYYY` name).
+Yearly *sampling* is refused instead of mapped, as above; yearly
+*files* of a fixed-period series work, through exf's own wrap. RUNOFF-029 follows from the single set of weights and tests it.
 RUNOFF-022 relies on `first` being true at the first step of a run: with
 `useCAL` it is set from the model start time (`pkg/exf/exf_getffieldrec.F:94`,
 `101`), and without `pkg/cal` from `myIter = nIter0`
@@ -1063,13 +1070,18 @@ are listed in [the code map](code_map.md).
    The same routine reads `mitgcm_grid_nx` and `mitgcm_grid_ny`.
 6. **The file is opened and closed by each routine that reads it**
    (`RNF_INIT_FIXED`, `RNF_NC_READ_FLUX`), so that `RNF_INIT_VARIA` can be
-   called more than once. RUNOFF-005 decides how the file stays open for
-   time records.
+   called more than once. RUNOFF-005 kept that: a record read opens and
+   closes the file it needs, which is also what lets a yearly set be read
+   without holding several files open. The cost is one open per record
+   change, not per step, because the two record buffers are tagged with
+   what they hold.
 7. **Source ids are read from the file when a message needs one**, so no
    array has the length of the source dimension and none stores ids per tile.
-8. **Time handling asked for in `data.rnf` is refused for now.**
-   `RNF_useYearlyFiles` and an `RNF_period` other than 0 stop the run with a
-   message that names RUNOFF-005, as does a file that is not `constant`.
+8. **Time handling** (RUNOFF-005): `RNF_TIME_SETUP` resolves the file's time
+   axis and the `data.rnf` overrides into `RNF_recPeriod`, `RNF_recStart` and
+   `RNF_recCycle`, and `RNF_GETREC` hands those to the pkg/exf routine of the
+   mode. A `constant` file's time axis is not read at all, because its
+   reference date (`0001-01-01`) precedes pkg/cal's own (`15821015`).
 9. **Defaults of `RNF_SIZE.h` (decision 9):** `RNF_nSrcTile` 2000,
    `RNF_nTgtTile` 10000, `RNF_nBuf` 1000.
 10. **The fraction sums are computed only when every table entry was

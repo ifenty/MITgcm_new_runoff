@@ -36,6 +36,11 @@
     "MITgcm/verification/lab_sea/input.rnof_month",
     "MITgcm/verification/lab_sea/input.rnof_month1",
     "MITgcm/verification/lab_sea/input.rnof_sp_const",
+  "MITgcm/verification/lab_sea/input.rnof_sp_clim",
+  "MITgcm/verification/lab_sea/input.rnof_sp_daily",
+  "MITgcm/verification/lab_sea/input.rnof_sp_month",
+  "MITgcm/verification/lab_sea/input.rnof_sp_month1",
+  "MITgcm/verification/lab_sea/input.rnof_sp_yearly",
     "MITgcm/verification/lab_sea/input.rnof_yearly"
   ],
   "output_paths": [
@@ -145,6 +150,9 @@
         "lab_sea",
         "input.rnof_sp_const"
       ],
+      ["{python}", "tests/rnf/applied_field_check.py", "--case", "lab_sea_daily"],
+      ["{python}", "tests/rnf/applied_field_check.py", "--case", "order_sensitive_sum"],
+      ["{python}", "tests/rnf/timing_field_check.py", "--case", "daily", "--case", "clim_long"],
       [
         "tests/mitgcm_oracle.sh",
         "global_ocean.cs32x15",
@@ -331,6 +339,26 @@
         "-mpi",
         "2"
       ],
+      ["tests/mitgcm_oracle.sh", "lab_sea", "input.rnof_sp_daily"],
+      ["tests/mitgcm_oracle.sh", "lab_sea", "input.rnof_sp_daily", "-mpi", "2"],
+      ["tests/mitgcm_oracle.sh", "lab_sea", "input.rnof_sp_month"],
+      ["tests/mitgcm_oracle.sh", "lab_sea", "input.rnof_sp_month", "-mpi", "2"],
+      ["tests/mitgcm_oracle.sh", "lab_sea", "input.rnof_sp_month1"],
+      ["tests/mitgcm_oracle.sh", "lab_sea", "input.rnof_sp_month1", "-mpi", "2"],
+      ["tests/mitgcm_oracle.sh", "lab_sea", "input.rnof_sp_clim"],
+      ["tests/mitgcm_oracle.sh", "lab_sea", "input.rnof_sp_clim", "-mpi", "2"],
+      ["tests/mitgcm_oracle.sh", "lab_sea", "input.rnof_sp_yearly"],
+      ["tests/mitgcm_oracle.sh", "lab_sea", "input.rnof_sp_yearly", "-mpi", "2"],
+      ["{python}", "tests/rnf/applied_field_check.py", "--case", "lab_sea_daily"],
+      ["{python}", "tests/rnf/applied_field_check.py", "--case", "lab_sea_daily", "--mpi", "2"],
+      ["{python}", "tests/rnf/applied_field_check.py", "--case", "lab_sea_hold"],
+      ["{python}", "tests/rnf/applied_field_check.py", "--case", "lab_sea_hold", "--mpi", "2"],
+      ["{python}", "tests/rnf/applied_field_check.py", "--case", "order_sensitive_sum"],
+      ["{python}", "tests/rnf/applied_field_check.py", "--case", "order_sensitive_sum", "--mpi", "2"],
+      ["{python}", "tests/rnf/timing_field_check.py", "--case", "daily", "--case", "month", "--case", "month1"],
+   ["{python}", "tests/rnf/timing_field_check.py", "--case", "clim", "--case", "yearly"],
+      ["{python}", "tests/rnf/timing_field_check.py", "--case", "daily", "--case", "clim_long", "--control"],
+      ["{python}", "tests/rnf/timing_field_check.py", "--mpi", "2", "--case", "daily", "--case", "clim_long"],
       [
         "{python}",
         "tests/runoff/lab_sea_runoff_timing_check.py"

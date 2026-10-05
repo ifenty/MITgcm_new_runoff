@@ -415,3 +415,43 @@ Carry forward (Arch, 2026-10-04): `docs/verification_matrix.md` still says "the 
 ### Gate acceptance
 
 Accepted by `loop_gate.py --check-done` at 2026-10-05T09:41:55.227466+00:00 for iteration 2026-10-05T05:47:20.935406+00:00. Closed the zero-margin gap RUNOFF-004 left in the only configured test guarding placement. Part 1: tests/rnf/applied_field_check.py dumps the exf runoff field the model actually applies (EXFroff snapshot, float64) and compares it cell by cell against an independent float64 reconstruction of sum_s flux*frac/rA from the sparse file and the run's own RAC.data; bitwise exact on lab_sea (1 and 2 processes) and cs32 (1 and 4), and demonstrated FAILING on a perturbed input, with a permanent inverted control. Enrolled as four scientific-suite commands. Part 2: rnf_init_fixed.F refuses a target whose target_lon/target_lat is not its cell's centre, by great-circle distance against 0.5*MIN(dxF,dyF) of that cell, counted into the existing nErrTgt so one tile's observation stops every rank. Review B then found the refusal failed OPEN on a non-finite coordinate while reporting that it ran, and build-dependently; both it and the pre-existing target_cell_area comparison are now fail-closed, with target_coords_nan as the 35th refusal case. That left the schema declaring valid a file the model halts on, closed by new checker rule T09 (level E) on non-finite target_cell_area/target_lon/target_lat.
+
+## 🟢 RESOLVED: Sparse runoff time handling: interpolation, hold-exact, repeat cycles, yearly files
+
+**Date Identified**: 2026-09-29T21:30:00Z
+**Date Resolved**: 2026-10-05T19:36:22.236864+00:00
+**Status**: Resolved
+**UUID**: RUNOFF-005
+**Anchors**: MITgcm/pkg/exf/exf_getffieldrec.F::<module>; MITgcm/pkg/exf/exf_getyearlyfieldname.F::<module>
+
+### Issue or research question
+Read only the bracketing records each step, applying CF time with `data.exf` overrides. Support exf-style linear interpolation and hold-exact, calendar months, the climatology wrap, and `_YYYY` file switching.
+
+### Evidence
+Design decisions from the project owner, recorded in `esx/project_profile.md` and `docs/model_contract.md` (2026-09-29). No code exists yet.
+
+From RUNOFF-001 review round 1 (Richard B, 2026-09-30): schema 1.0 puts yearly-sampled `time` at the bound midpoint. exf has no yearly-midpoint mode (exf_set_fld.F branches only on fldPeriod -12, -1 or > 0), and Gregorian year midpoints are 365.5/365.5/365 days apart, so the reader must map yearly records itself. A fixed fldPeriod works only on noleap and 360_day calendars.
+
+### Scientific or engineering impact
+Time off-by-one errors at month or year boundaries are a main scientific risk.
+
+### Proposed action and acceptance
+Acceptance: the lab_sea daily, monthly, monthly-repeating and yearly cases match their dense references (single-process and MPI), and the hold-exact direct check passes.
+
+Carry forward from RUNOFF-002 (converter):
+- **Gregorian fixed-period climatology:** the reader must anchor the repeat cycle at the file's real dates (package design decision 7), not at a nominal year. Read the nominal way, the lab_sea clim file departs from exf from 1980-02-29 by up to 2.2% of peak, and the 50-day oracle cannot tell the difference. Add a longer test.
+- **Constant files** carry a reference date of 0001-01-01 Gregorian, before the pkg/cal reference date of 1582-10-15. The reader must not pass it to cal.
+- **cs32 (no pkg/cal):** times are seconds of model time on a 360_day file calendar; do not demand a calendar match without cal.
+- **Yearly files:** records sit at the start of their bounds (1 January 00:00); define hold-exact behaviour.
+- **No multi-cell source in the timed oracles:** only the lab_sea const case has one, because gendata.py gives each cell its own phase. Add a group-coherent timed case.
+- **Not expressible in schema 1.0:** a repeat cycle that is not one calendar year, and yearly files that are not a whole number of periods. A schema 1.1 attribute would fix this if ever needed.
+
+Unblocked 2026-10-04: RUNOFF-004 closed (sparse reader, per-tile lists, placement by the `mdsio_read_field.F` arithmetic, `GLOBAL_SUM` fraction check and the exf volume flux; fork `610d4cbaf`, final verification receipt `2e11b06d`, all 33 scientific commands passing). Note the reader accepts **one constant record only**: `rnf_init_fixed.F:199-217` stops the run for `RNF_useYearlyFiles` or any `RNF_period` other than 0, naming RUNOFF-005.
+
+Carry forward from RUNOFF-033 (review A, correction round 1, 2026-10-05): **own a permanent order-sensitive accumulation case.** `tests/rnf/applied_field_check.py` compares the applied field bitwise (`--rtol 0`), and that criterion is licensed by the premise that `rnf_fields_load.F:75-77` accumulates in the sparse file's table order. Review A measured the premise true on the real binary — three entries of one source on one cell with fractions `(1.0, d, d)` where **both** small terms are 0.3 ulp of the first, giving forward vs reversed differing by exactly 1 ulp — but **no enrolled case exercises it**: both committed files have at most one target entry per cell (lab_sea 7 on 7, cs32 1189 on 1189), so none of the four enrolled oracle cases ever sums more than one term. A reorder of the per-tile list construction in `RNF_INIT_FIXED` (chunk-wise, sorted by source, or tile-local) would void the premise and **all four cases would still pass bitwise**.
+
+This issue is the right home because it makes multi-record live and will touch `RNF_FIELDS_LOAD` itself. Review A also corrected the cost estimate: this needs **no new committed input file**. `tests/rnf/refusal_check.py::split_file` already generates a multi-entry file at run time from the committed one (each source becomes `<id>_a`/`<id>_b`, flux split, fraction 1 on a shared cell), and its docstring already says it "is what exercises the accumulation of `rnf_fields_load.F`". Extend that split from two sub-sources to **three**, sizing the two smaller sub-sources so each contributes 0.3 ulp of the first term. **The pair sum is what makes it order-sensitive, not either term alone** (review A, correction round 2): `fl(t1 + 0.3u) = t1` twice over, but `fl((0.3u + 0.3u) + t1) = t1 + u`. Two sub-sources would give a two-term sum, and two-term floating-point addition is commutative — the case would not be order-sensitive at all and would pass vacuously, which is the exact failure this issue exists to prevent. Verify order-sensitivity directly before enrolling it: reverse the terms in the reconstruction and require the bitwise result to change. Acceptance: the case is order-sensitive by construction (reversing the terms changes the bitwise result), it passes on the current reader, and it is enrolled so the suite would notice a future reorder.
+
+### Gate acceptance
+
+Accepted by `loop_gate.py --check-done` at 2026-10-05T19:36:22.236864+00:00 for iteration 2026-10-05T09:47:34.718995+00:00. Sparse runoff time handling: all five modes (constant, fixed period, monthly climatology -12, monthly -1, yearly files) plus hold-exact. New RNF_TIME_SETUP resolves the file's normative CF axis and the data.rnf overrides into exf's period, start time and repeat cycle; new RNF_GETREC delegates every mode to its pkg/exf routine rather than reimplementing record selection, so sparse = dense is structural and not coincidental; RNF_FIELDS_LOAD keeps two tagged record buffers, reads only records with non-zero weight and preserves its table-order accumulation. The two refusals that named this issue are gone. Six lab_sea sparse cases, three new or extended checks, and the refusal suite grown 35 -> 54 with every new guard demonstrated firing. Eleven must-fix items across three correction rounds, NONE a code defect: the time handling was correct in all five modes from the first dispatch, and every correction was to a claim about it.

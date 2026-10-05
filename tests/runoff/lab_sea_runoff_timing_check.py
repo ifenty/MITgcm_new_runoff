@@ -1,18 +1,39 @@
 #!/usr/bin/env python3
-"""Check the runoff that pkg/exf applied in the lab_sea dense ``input.rnof_*`` runs.
+"""Check the runoff timing of the lab_sea ``input.rnof_*`` runs, dense and sparse.
 
-**Scope: the dense pkg/exf path only.** The model of this script is the exf
-record machinery: it reads the ``runoff*`` settings of a case's ``data.exf``
-and predicts which records of a dense ``runoffFile`` exf holds at each
-monitor time and with which weights. A case that takes its runoff from
-``pkg/rnf`` instead (``data.rnf`` and ``useRNF``, with a blank ``runoffFile``)
-matches the ``input.rnof_*`` glob but cannot be judged by that model: its
-``EXF_MONITOR`` writes no ``exf_runoff_*`` statistics, because exf writes
-them only for a dense file. Such a case is reported as ``SKIP``, with the
-reason, and counts as neither a pass nor a failure (:func:`sparse_case`).
-``lab_sea/input.rnof_sp_const`` is the one skipped today; the timing check of
-the sparse path, which has to model ``pkg/rnf`` record selection, comes with
-RUNOFF-005.
+The model of this script is the pkg/exf record machinery: it reads the
+``runoff*`` settings of a case's ``data.exf`` and predicts which records
+of a dense ``runoffFile`` exf holds at a given date and with which
+weights. It judges two kinds of case with it.
+
+**Dense cases** (a ``runoffFile``, no ``pkg/rnf``) are judged on the
+``exf_runoff_*`` monitor statistics: the predicted field is compared with
+the four statistics the model printed, at every monitor time. This is
+what qualifies the model of the conventions itself.
+
+**Sparse cases** (``data.rnf`` and ``useRNF``, with a blank
+``runoffFile``) have no such monitor to compare: exf writes
+``exf_runoff_*`` only for a dense file (``exf_monitor.F``) and
+``pkg/rnf`` publishes no monitor of its own yet (RUNOFF-015). They are
+judged instead on the record selection itself, which is the question
+RUNOFF-005 is about: at every forcing step, the two records and the
+weight that ``RNF_FIELDS_LOAD`` reported in its trace are compared with
+the two records and the weight the exf conventions give for the same
+model time, taken from the **dense twin** of the case
+(``input.rnof_sp_daily`` against ``input.rnof_daily``;
+:func:`check_sparse_case`). So a sparse case passes when the sparse
+reader chooses what pkg/exf would choose, step by step, over the whole
+run. A sparse case with no dense twin is reported as ``SKIP``, with the
+reason, and counts as neither a pass nor a failure --
+``lab_sea/input.rnof_sp_const`` is the one skipped, a constant record
+converted from ``input.rnof_const``, whose dense case has no timing to
+compare.
+
+What a sparse verdict here does **not** cover is the field those records
+produce. That is ``tests/rnf/applied_field_check.py``, which compares the
+applied field with the one the file asks for, bitwise, and
+``tests/rnf/timing_field_check.py``, which compares it cell by cell with
+a dense run of the same case.
 
 For every dense ``MITgcm/verification/lab_sea/input.rnof_<X>`` case the
 script reads
@@ -53,14 +74,18 @@ forcing tests" section of ``MITgcm/verification/lab_sea/README.md``):
   record 1 being the month of the runoff start date (``exf_getmonthsrec.F``).
 
 One line is printed per case, ending with the range of the interpolation
-weight of the later record over the monitor times (``--json`` also lists the
-records held and the records with non-zero weight at those times). The
+weight of the later record over the times judged (``--json`` also lists the
+records held and the records with non-zero weight at those times, and for a
+sparse case the first few disagreements). The
 ``input.rnof_daily`` and ``input.rnof_yearly`` runs print the monitor every
 12 h, so the weights 0, 0.5 and (in the yearly case) the year-wrap weight all
-occur. The exit status is non-zero when a statistic
+occur; a sparse case is judged at every forcing step, so its weights cover
+the whole interval. The exit status is non-zero when a dense statistic
 differs by more than the tolerance (1e-12 relative to the largest runoff
-value), when a run directory or its monitor output is missing, or when no
-dense case is found; a skipped sparse case alone cannot make the run pass.
+value), when a sparse case disagrees with pkg/exf about a record or by more
+than ``WEIGHT_TOLERANCE`` about a weight, when a run directory or its output
+is missing, when a sparse run left no usable record trace, or when no dense
+or no sparse case is found; a skipped case alone cannot make the run pass.
 
 Usage (numpy is the only dependency)::
 
@@ -85,6 +110,18 @@ NX, NY = 20, 16            # global grid (code/SIZE.h)
 YG0, DY = 46.0, 2.0        # ygOrigin and delY in degrees (input/data)
 TOLERANCE = 1.0e-12        # relative to the largest expected runoff value
 STATS = ("max", "min", "mean", "sd")
+# The sparse verdict compares the interpolation weight pkg/rnf reported
+# with the one the exf conventions give. The model prints 17 significant
+# digits, so the only error left is how the two compute the same ratio of
+# calendar intervals; 1e-12 is far below the 1/24 a one-hour error in a
+# daily record would give, and below the 2e-4 of a one-minute error.
+WEIGHT_TOLERANCE = 1.0e-12
+# A sparse case that reported fewer record lines than this did not leave a
+# usable trace (RNF_debugLev below 3), which is a failure and not a pass
+# over no samples.
+MIN_TRACE = 10
+# Disagreeing steps reported in detail; the count is kept separately.
+EXAMPLES = 5
 
 
 def namelist_value(text, key, default=None):
@@ -105,6 +142,16 @@ def to_date(date1, date2):
     d1, d2 = int(date1), int(date2)
     return dt.datetime(d1 // 10000, d1 // 100 % 100, d1 % 100,
                        d2 // 10000, d2 // 100 % 100, d2 % 100)
+
+
+def calendar_start(directory):
+    """Calendar start date of a case: its ``data.cal``, or ``input``'s."""
+    path = os.path.join(directory, "data.cal")
+    if not os.path.exists(path):
+        path = os.path.join(LAB, "input", "data.cal")
+    text = open(path).read()
+    return to_date(namelist_value(text, "startDate_1"),
+                   namelist_value(text, "startDate_2", "0"))
 
 
 def month_middle(year, month):
@@ -268,8 +315,7 @@ def sparse_case(directory):
     Such a case names a sparse runoff file in ``data.rnf`` and switches the
     package on with ``useRNF`` in ``data.pkg``; its ``runoffFile`` is blank,
     so ``EXF_MONITOR`` writes no ``exf_runoff_*`` statistics at all
-    (``exf_monitor.F``) and the dense model of this script has nothing to
-    compare. The six dense cases have neither file setting.
+    (``exf_monitor.F``). The six dense cases have neither file setting.
     """
     if os.path.exists(os.path.join(directory, "data.rnf")):
         return True
@@ -281,6 +327,144 @@ def sparse_case(directory):
         if value is not None and value.strip().upper().startswith(".T"):
             return True
     return False
+
+
+def dense_twin(directory):
+    """Dense ``input.rnof_<X>`` whose timing a sparse case must reproduce.
+
+    The sparse cases are named after the dense ones they convert:
+    ``input.rnof_sp_daily`` against ``input.rnof_daily``. Returns the path
+    if it exists, else ``None`` -- a sparse case with no dense twin cannot
+    be judged by this script, because the exf settings of the twin's
+    ``data.exf`` are the conventions it compares against.
+    """
+    name = os.path.basename(directory)
+    if not name.startswith("input.rnof_sp_"):
+        return None
+    twin = os.path.join(LAB, "input.rnof_" + name[len("input.rnof_sp_"):])
+    return twin if os.path.isdir(twin) else None
+
+
+def record_trace(path):
+    """Records ``RNF_FIELDS_LOAD`` reported, from a model standard output.
+
+    Returns a list of ``(model time, (year0, rec0), (year1, rec1), weight
+    of the later record)``, one entry per forcing step, in the order the
+    run printed them. ``pkg/rnf`` prints this line at every step when
+    ``RNF_debugLev`` is at least ``debLevC`` (3), which the committed
+    ``input.rnof_sp_*`` cases set; the weight it prints is the weight of
+    the *earlier* record, so it is turned round here to match
+    :meth:`Case.bracket`.
+
+    The first line of a run is printed twice, by ``RNF_INIT_VARIA`` and
+    by the first step, both for the start time; duplicates are harmless
+    because each entry is judged on its own.
+    """
+    with open(path, errors="replace") as handle:
+        text = handle.read()
+    out = []
+    for m in re.finditer(
+            r"RNF_FIELDS_LOAD: it=\s*(-?\d+), rec0=\s*(-?\d+),"
+            r" yr0=\s*(-?\d+), rec1=\s*(-?\d+), yr1=\s*(-?\d+),"
+            r" t=\s*(\S+), fac=\s*(\S+)", text):
+        out.append((float(m.group(6)),
+                    (int(m.group(3)), int(m.group(2))),
+                    (int(m.group(5)), int(m.group(4))),
+                    1.0 - float(m.group(7))))
+    return out
+
+
+def check_sparse_case(directory, suffix):
+    """Compare the records ``pkg/rnf`` selected with the exf conventions.
+
+    The sparse path has no ``exf_runoff_*`` monitor to compare -- exf
+    writes those only for a dense ``runoffFile`` (``exf_monitor.F``) and
+    ``pkg/rnf`` publishes no monitor of its own yet (RUNOFF-015) -- so
+    what is compared here is the record selection itself: at every
+    forcing step of the run, the two records and the weight that
+    ``RNF_FIELDS_LOAD`` reported, against the two records and the weight
+    :meth:`Case.bracket` derives from the **dense** twin's ``data.exf``
+    under the pkg/exf conventions this script already models and which
+    its six dense cases qualify against the model's own monitor.
+
+    That makes the sparse verdict exactly "the sparse reader picks the
+    records and weights pkg/exf would", at every step of the run, which
+    is the question RUNOFF-005 is about. What it does not compare is the
+    field those records produce; that is
+    ``tests/rnf/applied_field_check.py`` (bitwise, against the file) and
+    ``tests/rnf/timing_field_check.py`` (cell by cell, against a dense
+    run of the same case).
+    """
+    name = os.path.basename(directory)
+    result = {"case": name, "run": "output_esx_%s%s" % (name, suffix),
+              "ok": False, "sparse": True}
+    output = os.path.join(LAB, result["run"], "output.txt")
+    if not os.path.exists(output):
+        result["message"] = "missing run output %s" % output
+        return result
+    twin = dense_twin(directory)
+    if twin is None:
+        result["message"] = ("no dense input.rnof_<X> twin: the exf timing "
+                             "conventions to compare against are the twin's")
+        return result
+    result["dense_twin"] = os.path.basename(twin)
+    case = Case(twin)
+    result["mode"] = case.mode()
+    trace = record_trace(output)
+    if len(trace) < MIN_TRACE:
+        result["message"] = (
+            "the run reported %d RNF_FIELDS_LOAD record lines, fewer than "
+            "the %d this check needs (RNF_debugLev must be at least 3)"
+            % (len(trace), MIN_TRACE))
+        return result
+    base = calendar_start(directory)
+    held, weighted, wmin, wmax = set(), set(), 1.0, 0.0
+    # ``bad`` keeps at most EXAMPLES of them, so the count has to be kept
+    # separately: reporting the length of the example list as the count
+    # would say "5 of 769 steps disagree" for a run in which every step
+    # does, which is what a one-day shift of the start date produces.
+    worst, nbad, bad = 0.0, 0, []
+    try:
+        for seconds, got0, got1, got_w in trace:
+            date = base + dt.timedelta(seconds=seconds)
+            r0, r1, w = case.bracket(date)
+            held.update([r0, r1])
+            weighted.add(r0 if w < 1.0 else r1)
+            if w > 0.0:
+                weighted.add(r1)
+            wmin, wmax = min(wmin, w), max(wmax, w)
+            # The weight of a record that contributes nothing is not
+            # observable: with w == 0 the model applies record 0 alone
+            # and need not even read record 1, so only the record that
+            # carries the weight is compared then.
+            same = (got0 == r0) if w < 1.0 else True
+            if w > 0.0:
+                same = same and got1 == r1
+            if not same or abs(got_w - w) > WEIGHT_TOLERANCE:
+                nbad = nbad + 1
+                worst = max(worst, abs(got_w - w))
+                if len(bad) < EXAMPLES:
+                    bad.append({"time": seconds, "date": str(date),
+                                "model": [got0, got1, got_w],
+                                "exf": [list(r0), list(r1), w]})
+    except (ValueError, IndexError, OSError) as exc:
+        result["message"] = "cannot evaluate the records: %s" % exc
+        return result
+    result.update(
+        samples=len(trace), first=str(base + dt.timedelta(
+            seconds=trace[0][0])), last=str(base + dt.timedelta(
+                seconds=trace[-1][0])),
+        records_held=sorted(held), records_with_weight=sorted(weighted),
+        weight_min=wmin, weight_max=wmax, disagreements=nbad,
+        disagreement_examples=bad, worst_weight_error=worst)
+    result["ok"] = nbad == 0
+    result["message"] = (
+        "%d of %d steps disagree with pkg/exf; largest weight error %.1e; "
+        "weight of the later record %.3f..%.3f over the forcing steps"
+        % (nbad, len(trace), worst, wmin, wmax))
+    if bad:
+        result["message"] += "; first: %s" % (bad[0],)
+    return result
 
 
 def check_case(directory, suffix, weights):
@@ -344,16 +528,25 @@ def main():
     suffix = "_mpi%d" % args.mpi if args.mpi else ""
     directories = sorted(glob.glob(os.path.join(LAB, "input.rnof_*")))
     weights = area_weights()
-    # A sparse case matches the glob but the dense model cannot judge it:
-    # name it and the reason, and count it as neither pass nor fail.
-    skipped = [{"case": os.path.basename(d),
-                "reason": "sparse runoff case (data.rnf, useRNF): its runoff"
-                          " comes from pkg/rnf and this check models the"
-                          " dense pkg/exf path only; the sparse timing check"
-                          " comes with RUNOFF-005"}
-               for d in directories if sparse_case(d)]
-    dense = [d for d in directories if not sparse_case(d)]
-    results = [check_case(d, suffix, weights) for d in dense]
+    # A sparse case matches the glob and is judged on its record trace,
+    # not on the monitor it does not write. One that has no dense twin
+    # to take the exf conventions from is reported as a skip, with the
+    # reason, and counts as neither a pass nor a failure.
+    dense, sparse, skipped = [], [], []
+    for d in directories:
+        if not sparse_case(d):
+            dense.append(d)
+        elif dense_twin(d) is None:
+            skipped.append({
+                "case": os.path.basename(d),
+                "reason": "sparse runoff case with no dense input.rnof_<X>"
+                          " twin: the pkg/exf timing conventions this check"
+                          " compares against are read from the twin's"
+                          " data.exf, and there is none to read"})
+        else:
+            sparse.append(d)
+    results = [check_case(d, suffix, weights) for d in dense] \
+        + [check_sparse_case(d, suffix) for d in sparse]
     for r in results:
         print("%-4s %-18s %-24s %4s samples  %s .. %s  %s" % (
             "PASS" if r["ok"] else "FAIL", r["case"], r.get("mode", "-"),
@@ -361,15 +554,17 @@ def main():
             r["message"]))
     for s in skipped:
         print("SKIP %-18s %s" % (s["case"], s["reason"]))
-    if not results:
-        print("FAIL no dense input.rnof_* case found under %s (%d skipped)"
-              % (LAB, len(skipped)))
+    if not dense or not sparse:
+        print("FAIL no %s input.rnof_* case found under %s (%d skipped)"
+              % ("dense" if not dense else "sparse", LAB, len(skipped)))
     if args.json:
         os.makedirs(os.path.dirname(os.path.abspath(args.json)), exist_ok=True)
         with open(args.json, "w") as f:
-            json.dump({"tolerance": TOLERANCE, "run_suffix": suffix,
+            json.dump({"tolerance": TOLERANCE,
+                       "weight_tolerance": WEIGHT_TOLERANCE,
+                       "run_suffix": suffix,
                        "results": results, "skipped": skipped}, f, indent=1)
-    return 0 if results and all(r["ok"] for r in results) else 1
+    return 0 if dense and sparse and all(r["ok"] for r in results) else 1
 
 
 if __name__ == "__main__":

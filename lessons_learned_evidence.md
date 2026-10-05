@@ -192,3 +192,44 @@ A measurement establishes that code is correct now. A test establishes that it s
 - When a fix touches sibling call sites, enrol a case per site, not per fix.
 - When a guard sits behind an earlier check, ask what reverting the earlier check would do to the later one's coverage.
 - State plainly in the record when a measurement closed a *correctness* question but not *regression coverage*, and file the permanent case rather than letting the measurement stand in for it.
+
+## LESSON: Replace an unachievable criterion by measurement, and record what the replacement does not cover [LL-010]
+
+**Date Identified**: 2026-10-05T13:30:00Z
+**Confidence**: supported
+
+### Lesson and applicability
+Two failure modes meet here. An acceptance criterion that cannot be met invites quietly redefining it — most easily by generating the reference from the code under test, which converts a cross-path oracle into a reproducibility check while leaving every surface reading unchanged. And the claim "this criterion is unachievable" is itself a claim, which can be wrong in either direction: too broad (it holds for some cases) or unfounded (a defect is hiding behind it). Both are resolved the same way, by measuring rather than arguing — and the replacement's blind spot must be written into the governing contract, not only into the test that implements it.
+
+### Evidence
+- **The criterion.** RUNOFF-005's stated acceptance was that the timed lab_sea sparse cases match their dense references to the `compare_results.sh` digit threshold. Measured: `cg2d_init_res` reached only 4, 16, 3, 16 and 4 matching digits for daily, month, month1, clim and yearly against the 10 required.
+- **The decisive measurement, by review A.** Independently of the implementer, it capped the dense-vs-sparse forcing difference offline at **at most 1 ulp** (max 2.0e-16, ~88% of values bitwise identical, identical non-zero cell sets in every record). Then it ran one case twice from the same binary — unperturbed, and with every `runoff_flux` moved by exactly one float64 ulp, nothing else different: **16 digits, then 4.** A 1-ulp forcing perturbation alone reproduces the figure attributed to the dense/sparse difference. The criterion is therefore unachievable in principle for any implementation computing `flux·frac/rA` in float64 rather than reading a precomputed float32 m/s, and a masked defect is excluded.
+- **The claim was too broad, and measurement caught that too.** `month` and `clim` are numerically identical to their dense runs in *every* monitor variable — 16 digits. They meet the original criterion. Only three of five cases needed the replacement; the implementer had generalised to five.
+- **What the replacement does not cover, stated because a reviewer insisted:** the digit oracle compared the whole model response; the replacement compares the applied runoff field and the record choice. A `pkg/rnf` side effect outside the exf `runoff` array specific to the timed path would be invisible to all three instruments, and a self-referential reference would be content. That coverage survives only in the two constant cases, whose references remain byte copies of their dense twins.
+- **Where it had to be written.** `esx/project_profile.md` — the governing contract — still stated the superseded oracle as both the tolerance rationale and a completion criterion, and was *outside* the documentation inventory precisely because it was unchanged, so no disposition would have flagged it. It is also what a later agent or the closure gate consults. Review A required it there, not only in the matrix.
+- **Cost of getting this wrong:** the five own-references are sharply sensitive to the sparse path (a 1-ulp change is 16 → 4 digits FAIL), so they are not weak tests — they are simply not *cross-path* tests. Had the substitution gone unlabelled, the project would have retained a criterion that reads as dense-vs-sparse agreement and measures something else.
+
+### Correction
+- Measure the impossibility before accepting it, by the smallest-perturbation test; then check whether it holds for every case or only some.
+- Label a self-referential reference as one, in the governing contract and in the upstream-facing documentation, with what it does and does not establish.
+- Keep the cross-path instrument wherever it still works — here, the two constant cases — and say that is where it survives.
+
+## LESSON: Establish build provenance before trusting a figure, and bytes before reusing evidence [LL-011]
+
+**Date Identified**: 2026-10-05T15:10:00Z
+**Confidence**: supported
+
+### Lesson and applicability
+Two forms of the same error. A test figure carries no information unless the binary that produced it postdates the source it is supposed to be testing — and the tempting shortcut, "the change was comment-only so the behaviour is identical", answers a different question: it establishes behaviour, not the provenance of the number. Symmetrically, a reviewer reusing its own earlier evidence must show that the bytes that evidence depended on are unchanged, and a comparison of reference *sets* will not do it, because a newly-cited file is indistinguishable from a modified one.
+
+### Evidence
+- **The figure.** RUNOFF-005 reported `refusal_check.py --mpi 2` at 54 of 54. Checking mtimes, the implementer found `lab_sea/build_esx_mpi2/mitgcmuv` at 05:18, predating its own 08:56 edit to `rnf_time_setup.F`. The edit was comment-only, so the behaviour was in fact identical — but the number had been produced by a binary that could not have contained the change. It rebuilt rather than argue the premise: 11 digits PASS, binary at 10:05:43, and the figure re-measured to 54 of 54 on a binary postdating all source. Review B then verified both halves independently — the mtime ordering (both binaries now after the 08:56:41 newest source) and a fresh sealed execution of the contested command on the 10:05:43 binary.
+- **It was caught unprompted.** Nothing in the brief asked for mtimes. The implementer checked them *before* running, having been told that a 4-of-4 from a stale build is worth less than nothing because it displaces the real result.
+- **The reviewer's symmetric error.** Review B's round-3 reuse argument diffed the reference-hash maps of two sealed reports and reported an empty changed set. In round 4 the same method flagged `MITgcm/pkg/rnf/rnf_init_fixed.F` as changed, contradicting "no Fortran moved" — it had been newly *cited* by two new dispositions, not modified. Round 3's conclusion was correct and its basis was not. The defensible form it adopted: separate added, removed and moved, then confirm bytes with `git diff --quiet a81f290f0 -- pkg/rnf/` and compare the live sha256 against the `source` component the report records.
+- **Why it bit here and not earlier:** `placement_probe.py` runs through `experiment_run_no_compile`, so it never rebuilds. A probe reporting on a stale binary is silent about the staleness by construction.
+- **Cost of being wrong:** a figure from a stale build is worse than a missing figure, because it occupies the place where the real measurement would have gone and reads as coverage. In this issue the stale figure happened to be correct; nothing about the report distinguished that from the case where it is not.
+
+### Correction
+- State build and source mtimes beside any figure that depends on a compiled binary, and check the ordering before the run.
+- Rebuild rather than argue from the nature of the change.
+- To reuse earlier evidence, confirm the bytes it rests on with a direct diff against a named commit; never infer it from a comparison of reference sets.

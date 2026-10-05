@@ -215,8 +215,12 @@ record is one contiguous hyperslab. Stored as float (32-bit) or double.
 | `mitgcm_time_period` | double | R if `fixed` | Record spacing in seconds, e.g. 3600 or 86400. |
 | `mitgcm_time_repeat` | string | O | `none` (default) or `annual`: the records are a climatology. A `monthly` climatology repeats every model calendar year; a `fixed`-period climatology repeats with a cycle equal to the span of its bounds (§7). |
 
-`data.rnf` settings override every timing attribute above. Exact parameter names
-are defined in RUNOFF-005.
+`data.rnf` settings override every timing attribute above:
+`RNF_period` (0, seconds, −12, −1), `RNF_repCycle` (seconds),
+`RNF_startDate1`/`RNF_startDate2` (with `pkg/cal`),
+`RNF_startTime` (seconds, without `pkg/cal`) and
+`RNF_useYearlyFiles`, which no attribute can carry.
+`RNF_TIME_SETUP` resolves the two together (RUNOFF-005).
 
 ### 4.2 Grid description (recommended, not read)
 
@@ -306,10 +310,23 @@ that the calendar is written explicitly.
   calendar year (no fixed repeat cycle). A `fixed`-period climatology repeats
   with a cycle equal to the span of its bounds (first start to last end), so a
   daily climatology built on a leap nominal year repeats every 366 days; on a
-  Gregorian model calendar that fixed cycle drifts against calendar years, and
-  the reader (RUNOFF-005) documents this.
-  How `time` maps to model time when `pkg/cal` is not compiled is decided in
-  RUNOFF-005.
+  Gregorian model calendar that fixed cycle drifts against calendar years.
+  **The reader anchors the cycle on the file's real dates**
+  (RUNOFF-005): it takes the cycle from the span of the bounds and the
+  model time of record 1 from the real date that record carries,
+  through `EXF_GETFFIELD_START`, and `EXF_GetFFieldRec` then wraps the
+  elapsed time modulo the cycle. That is what a dense run with the same
+  `runoffRepCycle` does, so the drift is the same drift. Anchoring on a
+  nominal calendar year instead agrees with it only until a leap day has
+  intervened: on the lab_sea climatology the four nominal readings measured
+  in `tests/rnf/timing_field_check.py::_nominal_fields` differ from exf by
+  up to 2.2% of the peak runoff, the first three parting from it on
+  1981-01-01 00:00, 1980-12-16 03:00 and 1980-02-15 23:00 and the fourth
+  depending on the model's start year. Case `clim_long` of that file is the
+  one that separates all four.
+  Without `pkg/cal`, `time` is model time in seconds counted from the
+  reference date of its units, no date is converted and the file's
+  calendar is not compared with the model's, because there is none.
 - **Checking several files (`X01`):** files are compared in the order given, so
   pass them in time order. Their calendars must map to the same MITgcm calendar
   (§6.3). "Identical tables" means every variable without a `time` dimension,
