@@ -3,7 +3,8 @@
 > **Status: reviewed design (RUNOFF-010, two independent reviews, approved
 > 2026-10-03); implementation in progress (skeleton: RUNOFF-012; static read,
 > placement, file checks and the volume flux of a constant record:
-> RUNOFF-004).** This is
+> RUNOFF-004; time handling: RUNOFF-005; the temperature, salinity and
+> tracer tendency terms and the reads they need: RUNOFF-013).** This is
 > the decision record for RUNOFF-010. Every statement about existing MITgcm
 > behavior was read from the live source in `MITgcm/` (branch `new_runoff`) and
 > carries a `file:line` citation. Nothing here was established by running the
@@ -1099,14 +1100,85 @@ are listed in [the code map](code_map.md).
     `rnf_init_fixed.F:808-813`. So the run never continues on a path where
     the sums were skipped: a skipped check is always accompanied by a stop
     for the entry that caused it.
-11. **A property in the file that is not applied yet is reported, not
-    dropped silently (decisions 3 and 4).** `RNF_INIT_FIXED` walks the
-    variables of the file and prints a warning for each
-    `runoff_temperature`, `runoff_salinity` and `runoff_ptracer_*` it finds,
-    naming RUNOFF-013. Without it the volume would enter at the ambient
-    temperature and at salinity 0 with no word in the log. The ptracer
-    names are therefore not matched to `PTRACERS_names` yet, and
-    `RNF_useTemp`, `RNF_useSalt` and `RNF_usePtracers` have no effect.
+11. **The time series of the file are found once, at init (decisions 3
+    and 4).** `RNF_NC_SERIES`, called by `RNF_INIT_FIXED` with the file
+    open, walks the variables and records which of `runoff_temperature`,
+    `runoff_salinity` and `runoff_ptracer_*` the file has and this run
+    uses (`RNF_hasTemp`, `RNF_hasSalt`, `RNF_nTrUse`, `RNF_trNam`,
+    `RNF_trPtr` in `RNF.h`), matching each tracer name to
+    `PTRACERS_names`. It raises the `RNF_INIT_FIXED` error count for a
+    name that matches none, for one that matches more than one, for
+    tracer variables in a run without pkg/ptracers, for a name longer
+    than `RNF_idLen` or empty, and for more tracers than `RNF_nTr`;
+    `RNF_useTemp`, `RNF_useSalt` and `RNF_usePtracers` of `data.rnf`
+    make a series be treated as absent, with a line in the log per
+    variable. `RNF_SUMMARY` reports all of it, so a run never looks as
+    if it carried a property it did not. This replaces the warning-only
+    walk of RUNOFF-004, which named this issue.
+12. **One reader per series, one open per record (decisions 3, 4
+    and 7).** `RNF_NC_READ_FLUX` keeps its name and its messages but now
+    fills a whole record buffer — flux, temperature, salinity and every
+    tracer — in one open of the file, and takes the buffer index instead
+    of an array. Each series is read by `RNF_NC_READ_ONE`, which carries
+    the per-series missing-value policy: a missing value is refused for
+    every series except the temperature, where it is recorded in
+    `RNF_bufTvld` and leaves that source out of `(mT)` and `m_T`. A
+    missing value is also stored as 0, so that a fill value cannot
+    propagate as a NaN through a sum that is multiplied by a zero flag.
+13. **The dense property fields are accumulated beside the volume flux,
+    in the same loop and the same order (decision 3).** `RNF_LOAD_AT`
+    (the renamed body of `RNF_FIELDS_LOAD`) adds `w = flux·frac/rA` to
+    `RNF_vflx` exactly as before — the statement is unchanged, because
+    `tests/rnf/applied_field_check.py` compares that sum bitwise — and
+    the property sums `m_T`, `(mT)`, `(mS)` and `(mC_n)` use a second
+    expression of the same value. They are accumulated in volume-flux
+    units and scaled by `rhoConstFresh` in one pass at the end, as
+    `RNF_mflx` is. No division by the total flux is made anywhere: the
+    tendency terms use the sums, so a cell with zero flux needs no
+    special case.
+14. **The time level is decided in one place (decision 3, "Time
+    level").** The tendency routines read a second set of dense fields,
+    `RNF_ap*`, and need not know which time level they hold.
+    `RNF_FIELDS_LOAD` keeps that set at the current step, except in
+    branch N without `staggerTimeStep` (`RNF_lagFlds`), where it holds
+    the previous step: zero at the first step of a run from iteration 0,
+    the previous call's fields at a later step, and, at the first step of
+    a restart, fields evaluated from the records at `myTime − deltaTClock`
+    by a second call of `RNF_LOAD_AT` that prints no record trace. Which
+    level each set holds is tracked by iteration number and not by model
+    time, because `myTime − deltaTClock` of one step need not be bitwise
+    the `myTime` of the step before it. **No verification experiment runs
+    that branch** (cs32 has `staggerTimeStep`, lab_sea a linear free
+    surface), so the lagged path, including its refusal of a restart
+    whose previous step precedes the first record, has no enrolled case
+    (RUNOFF-017).
+15. **Only the diagnostics of the applied terms are registered
+    (decision 8).** RUNOFF-013's acceptance needs the package's own
+    record of what it added, so `rnf_diagnostics_init.F` registers
+    `RNFgT`, `RNFgS` and `RNFtrNN`, filled inside
+    `RNF_TENDENCY_APPLY_T`, `_S` and `_PTR` at the level and with the
+    reference each term used. The input-only fields, `RNFheat`,
+    `RNFsalt` and the monitor are left to RUNOFF-015. Decision 8 lists
+    `RNFheat` and `RNFsalt` as two-dimensional, which has to be settled
+    with their fill: a 2-D diagnostic may be filled once per step and
+    tile, while these terms are computed at one level per column and
+    that level is `kSurfC(i,j)` under an ice shelf. The three registered
+    here are three-dimensional, which is how decision 8 lists `RNFgT`
+    and `RNFgS`, so the question does not arise for them.
+16. **`RNF_nTr` is 5, not 1.** One runoff tracer was enough while none
+    was read. Each one costs two record buffers of `RNF_nSrcTile` per
+    tile and two dense per-tile fields, so the bound is not free; a file
+    with more stops the run and the message prints the number it has.
+17. **The exf cancellation does not depend on `exf_outscal_hflux`
+    (decision 3).** `RNF_CHECK` refuses `exf_outscal_sflux ≠ 1` because
+    exf multiplies the whole `sflux`, runoff included, by it when it
+    builds `EmPmR` (decision 2). The heat side needs no such refusal:
+    `EXF_MAPFIELDS` scales `Qnet` by `exf_outscal_hflux` first
+    (`pkg/exf/exf_mapfields.F:100-114`) and adds the heat content of
+    precipitation, runoff and evaporation to the result afterwards
+    (`175-195`), so the runoff term that cancels the model's own
+    `temp_EvPrRn` term is unscaled whatever that factor is. Read from
+    the source, not measured.
 
 ## Points that differ from earlier project records
 

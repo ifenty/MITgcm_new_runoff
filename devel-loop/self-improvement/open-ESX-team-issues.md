@@ -310,3 +310,115 @@ A caller that counts the returned listing of a sweep with more than `limit` hits
 
 ### Expected Effect
 A figure derived from a sweep listing is either right or visibly unavailable. Direction: occurrences of an understated sweep count reaching a committed document go to zero. The qualitative invariant: no return value of this tool can be counted to produce a plausible wrong total.
+
+## 🔴 PROPOSED: loop_gate --check-start cannot pass in a correction round, and both escape hatches corrupt the record
+
+**Date Identified**: 2026-10-05  21:30
+**Status**: Proposed
+**UUID**: TEAM-LOOPGATE-CHECKSTART-CORRECTION-ROUND-001
+**Category**: workflow_integrity
+**Severity**: Medium
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
+**Anchors**: tools/esx/loop_gate.py:Gate._check_start; tools/esx/doc_contract.py:navigate
+
+### Issue
+`--check-start` compares the orientation receipt recorded at `--prepare` against the current working tree. That is the right check at the start of an iteration. But it is bound to the *prepare-time* receipt, so once any work has legitimately changed an oriented target — i.e. in every correction round — it can never pass again, and the gate's own remedy text does not fit the situation it is printing for.
+
+The remedy it prints is: "resume the same arch, inspect every changed target, navigate again (`doc_contract.py navigate --issue <id> --reuse-args <receipt> --use <fresh explanation>`)". Navigating again does **not** clear it: the gate keeps reading the prepare-time receipt, so a fresh orientation receipt has no effect on the comparison. Measured on RUNOFF-013 correction round 1: a full `navigate` produced receipt `945ed7db…` and the subsequent `--check-start` still reported the identical six changes against receipt `565747ab…`.
+
+That leaves only the two documented alternatives, and both falsify the record:
+- `--late-reason` "validates the orientation as recorded at `--prepare` and marks the receipt **late**". For RUNOFF-013 the gate had actually passed **on time** — receipt `421b6104…`, `validated_at 2026-10-05T19:43:25.513937Z`, 1.4 s after the start record at `…:24.139854Z`, before any work began. Using `--late-reason` would overwrite an honest on-time receipt with one asserting the gate was skipped, and closeout reports that field.
+- `--prepare` resets the iteration, destroying the round-0 and review history.
+
+`loop_lifecycle.py rebind-receipt` does not apply: it re-points a prepared closeout at a later matching **final verification** receipt, not the start orientation.
+
+### Evidence
+RUNOFF-013, 2026-10-05. The implementer hit this first and refused both escape hatches on the grounds that each corrupts a record, proceeded on the existing on-time receipt, and referred the matter up. Arch independently reproduced the whole chain: `--check-start` blocked with six changed targets, all six verified as legitimate products of round 0 and round 1 (`docs/code_map.md#pipeline`, `rnf_tendency_apply.F`, `rnf_fields_load.F`, `tests/rnf/refusal_check.py::cases`, `docs/package_design.md`, `docs/model_contract.md`); a fresh full `navigate` accepted and receipted; `--check-start` then blocked again, byte-identically, still citing the prepare-time receipt.
+
+Note that `--next` does **not** ask for `--check-start` at this point (it asks to finish the iteration and run `--check-done`), so the condition does not block closeout. It blocks any attempt to re-establish authorization mid-issue, which is exactly what an agent dispatched into a correction round is told to do.
+
+Collateral finding: the brief that dispatched the round told the implementer to run `loop_gate.py --check-start --issue RUNOFF-013 --agent bob`. Those flags **do not exist** — `--check-start` takes no issue or agent, and `--owner` belongs to `--prepare`. The gate is Arch's over Arch's own orientation and is not a per-agent permission check. The implementer measured this rather than guessing, and said so. This is the second interface in one session that a brief cited without verifying (the first being the role-file path `.claude/ESX-team/BOB.md`, which does not exist; role files are `.claude/agents/*.md`).
+
+### Potential Impact
+An agent that follows the gate's printed remedy reaches a state where the only ways forward are to falsify an honest receipt or to destroy review history. A conscientious agent stalls and escalates, costing a round; a less careful one marks a punctual gate as late, which silently degrades every later audit of whether authorization preceded work. Because the false field is "late", the corruption is in precisely the signal the gate exists to protect.
+
+### Proposed Fix
+Separate "was authorization in place before work began" from "is the current orientation fresh". The first is a historical fact and is already recorded correctly by the start receipt; it should not be recomputed against a tree that has legitimately moved. The second is what a correction round needs, and a freshly accepted `navigate` receipt should satisfy it. Concretely: have `--check-start` accept the most recent orientation receipt for the issue, not only the prepare-time one, and distinguish a *stale-orientation* refusal (clearable by navigating) from a *skipped-gate* refusal (which is what `--late-reason` is for). Correct the remedy text so it does not prescribe an action that cannot work. Keep `--late-reason` for the case it was built for: a gate genuinely not run before the work.
+
+### Acceptance Criteria
+In an iteration whose start receipt validated before the first edit, after round-0 work has changed oriented targets, a fresh accepted `navigate` makes `--check-start` pass **without** marking the receipt late and **without** resetting the iteration. An iteration whose gate genuinely was skipped still cannot pass without `--late-reason`. The on-time/late field of an existing receipt is never overwritten by a later run. Reproduce the RUNOFF-013 case end to end as the regression test.
+
+### Expected Effect
+A correction round can re-establish orientation honestly. Direction: receipts marked late because the tool offered no honest alternative go to zero. The qualitative invariant: no gate requires falsifying a record in order to proceed.
+
+## 🔴 PROPOSED: navigate --reuse-args refuses when the changed target is the orientation's own declared map
+
+**Date Identified**: 2026-10-05  21:30
+**Status**: Proposed
+**UUID**: TEAM-DOCCONTRACT-NAVIGATE-REUSE-MAP-001
+**Category**: tool_ergonomics
+**Severity**: Medium
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
+**Anchors**: tools/esx/doc_contract.py:navigate
+
+### Issue
+`navigate --reuse-args` reloads the map, targets and documents of a prior orientation receipt. It refuses if a changed target lies "outside the original orientation's declared targets and documents" — but it tests membership against `targets` and `documents` only, and the **map** is stored in a third field, `map`. So when the thing that changed is the orientation's own `--map` section, the tool reports that section as outside its own declared scope and sends the caller to a full `navigate` to re-declare, by hand, the identical arguments it already holds on disk.
+
+### Evidence
+RUNOFF-013 correction round 1, 2026-10-05. Orientation receipt `565747ab…` records `map = "docs/code_map.md#pipeline"`, four `targets` and two `documents`. `docs/code_map.md#pipeline` changed during round 0. `navigate --reuse-args` refused with: `changed targets lie outside the original orientation's declared targets and documents: ["docs/code_map.md#pipeline"]; the dependency slice moved beyond what was read`. The slice had not moved: that section is the receipt's own `map`. Re-running as a full `navigate` with `--map docs/code_map.md#pipeline` and the same four targets was accepted (receipt `945ed7db…`).
+
+**Hit a second time in the next round, by a different agent, and a third by a reviewer.** The implementer hit it in correction round 2 with the changed target being its own declared `docs/code_map.md#verification-routes`, and review B hit it in both rounds 1 and 2 on `#pipeline`. Four independent reproductions across three agents and two rounds; review B noted that this is evidence for raising the severity above Low, and it is raised here on that basis. Every occurrence cleared by re-declaring the identical arguments the receipt already held.
+
+### Potential Impact
+Low and self-announcing — the refusal is loud and the workaround is mechanical. The cost is a wasted turn plus the risk that an agent retyping four `--target` arguments by hand drops or mistypes one, which converts an ergonomic nuisance into a real narrowing of what was read. The code map is also the single most likely document to change on an issue that touches it, so this triggers on exactly the common case.
+
+### Proposed Fix
+Include the receipt's `map` in the membership set the changed-target check tests against, so a change confined to the declared map section is reusable. Keep the genuine case — a change to a map section that was *not* the declared one — refusing as it does now.
+
+### Acceptance Criteria
+With an orientation declaring `--map docs/code_map.md#X`, a change confined to section `X` is accepted by `--reuse-args` with a fresh `--use`. A change to `docs/code_map.md#Y`, not declared, still refuses. Reproduce the RUNOFF-013 case as the regression test.
+
+### Expected Effect
+Re-orienting after a round that edited the declared map section costs one command instead of two, with no hand-retyped target list. The qualitative invariant: `--reuse-args` accepts whatever the receipt itself declared.
+
+## 🔴 PROPOSED: doc_inventory omits every project record document, so the ledgers, lessons and assessments get no stale sweep and no disposition
+
+**Date Identified**: 2026-10-05  23:55
+**Status**: Proposed
+**UUID**: TEAM-DOCINVENTORY-LEDGER-UNINVENTORIED-001
+**Category**: coverage_gap
+**Severity**: Medium
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
+**Anchors**: tools/esx/doc_inventory.py:paths; devel-loop/documentation_contract.md
+
+### Issue
+`doc_inventory.paths` returns 355 paths. `esx/project_profile.md`, `CLAUDE.md`, `esx/project.json` and all of `docs/` are in it. **Every project record document is outside it** — the eleven enumerated under Evidence plus the whole `devel-loop/self-improvement/assessments/` tree. They are prose documents that make claims about the code, and none receives a `doc_contract.py stale` sweep or a disposition row in a sealed documentation report. So a figure in any of them can go stale with no mechanism able to notice, and an issue can be closed without anything having checked that its own ledger entry still describes the code. (The two first noticed, and the ones that make the cost concrete, are `open_issues.md` and `long_term_goals.md`; do not read the pair as the boundary — that mistake is the subject of the fourth Evidence paragraph.)
+
+`open_issues.md` is the issue ledger — the document the loop reads to choose work and the one an agent reads to learn what an issue is for. It is edited on most issues. It appears in neither of RUNOFF-013's sealed reports (45 dispositions in round 0, 52 in round 1) despite being modified in both.
+
+### Evidence
+RUNOFF-013, 2026-10-05. Two agents found the two halves independently and neither half was written down before this entry.
+
+The implementer found the `open_issues.md` half while fixing a different stale statement: a stale "76 statements" figure in `open_issues.md` was invisible to the sweep because the file is not inventoried at all. It reported this as a retrospective item and did not file it.
+
+Review B then measured the boundary directly rather than taking it on report: 355 inventoried paths, with `esx/project_profile.md`, `CLAUDE.md`, `docs/verification_matrix.md` and `esx/project.json` inside, and `open_issues.md` and `long_term_goals.md` outside. It checked `devel-loop/self-improvement/open-ESX-team-issues.md`, `docs/verification_matrix.md` and `esx/project_profile.md` and confirmed the gap is recorded in none of them. The `long_term_goals.md` half is review B's alone.
+
+**This entry originally described the gap as those two files, and that was wrong — it is a class.** Review B measured the full boundary in correction round 2 and Arch reproduced the count independently: **every tracked project record document is outside the inventory.** All eleven of `README.md` (the repository-root one; `devel-loop/self-improvement/README.md` *is* inventoried), `closed_issues.md`, `current_status.md`, `lessons_learned.md`, `lessons_learned_evidence.md`, `old_lessons_learned.md`, `long_term_goals.md`, `open_issues.md`, `devel-loop/self-improvement/open-ESX-team-issues.md`, `devel-loop/self-improvement/closed-ESX-team-issues.md` and `devel-loop/self-improvement/process_changelog.md`, plus every file under `devel-loop/self-improvement/assessments/`. (The `ESX-team-local/` install backups are excluded deliberately: deployment snapshots, legitimately out of documentation scope.) Re-derived independently in correction round 3 by differencing `doc_inventory.paths` against `git ls-files`: 355 inventoried, 77 tracked `.md`, 34 of them outside, 19 `ESX-team-local/` backups and 4 assessments removed, leaving exactly these eleven. Two of those matter especially — `lessons_learned.md`, whose LL-005/LL-009/LL-011 are quoted in every brief, and this ledger itself, so the record of the gap is inside the gap.
+
+**It is not theoretical.** Review B ran the issue's own 27-row figures table by hand over all of them: **8 hits in 5 files**, of which only `open_issues.md` was covered by the hand check the first version of the disclosure prescribed. One — **`closed_issues.md:350`** — was carrying in the present tense the same two stale tokens that had been a must-fix in `esx/project_profile.md` two rounds earlier, uncorrected, because nothing named the file. Everything else was labelled history or self-reference.
+
+**The count is scope-bound and self-referential, so quote it with its scope and its snapshot.** Re-measured at the correction-round-3 seal with the same table, after the `closed_issues.md:350` correction: **7 hits in 5 files** over the tracked record documents, and **8 in 6** once this issue's own still-untracked `assessments/2026-10-05-runoff-013/assessment.md` is counted. Of those eight, **four are this disclosure quoting its own subject matter** — three in this entry and one in the assessment — three are labelled history (`lessons_learned.md:31` and `lessons_learned_evidence.md:226` on RUNOFF-005's "54 of 54", `open_issues.md:74` on the dead `file:line`), and one is `closed_issues.md:350`, now corrected and labelled. Writing the disclosure therefore moves the count — it moved twice inside correction round 3, as these very paragraphs were rewritten — which is why the fix below must be a mechanical enumeration of the boundary and not a hand count of hits: a count over these files measures how much has been written about the gap at least as much as it measures the gap.
+
+This is the companion of TEAM-DOCCONTRACT-STALE-HITS-TRUNCATION-001 and the second blind spot of the same sweep found on the same issue. The first is that a clean sweep is evidence about the *figures table*, not about the document (a statement survives if no row is spelled the way the prose spells it). This one is sharper, because no table row can help: a document outside the inventory is not swept at all, so there is no wording that would have caught it.
+
+### Potential Impact
+The documents least protected by the contract are the project's own records: what it is *for*, what is still open, what it has already learned, and what it has already closed. A stale ledger entry misdirects issue selection and misinforms every agent dispatched against it; a stale `lessons_learned.md` propagates a wrong lesson into every brief that quotes it; a stale `closed_issues.md` leaves a superseded claim standing as the project's account of finished work. Because the sweep reports clean, all of them read as checked. The failure is invisible in exactly the way the documentation contract exists to prevent — and the under-scoped first version of the disclosure reproduced that failure at one level up, giving a reader confidence about two files while nine went unchecked.
+
+### Proposed Fix
+Add the project record documents to `doc_inventory.paths` so they receive sweeps and dispositions like any other project prose. If some are deliberately excluded — a plausible argument for the ledgers, whose entries are superseded by design rather than kept current — then say so **as a class, with the measured membership**, in `devel-loop/documentation_contract.md` and wherever the project states what the sweep covers, so an agent reading a clean sweep knows what it does not cover. Silence is the defect; either resolution is acceptable. Naming a subset is a third outcome and is worse than either, because it converts an unknown gap into a confident wrong boundary.
+
+### Acceptance Criteria
+For **every** tracked project prose document, either `doc_contract.py stale` visits it and a sealed report can carry a disposition for it, or the documentation contract names it out of scope with the reason — with no document in neither category. Enumerating the boundary must be mechanical rather than a hand-maintained list, so a newly added record document cannot land silently outside both. Reproduce the RUNOFF-013 case twice over: the stale "76 statements" figure in `open_issues.md` must be findable by the mechanism or provably outside it by a written rule, and the same must hold for `closed_issues.md:350`, which the first, two-file version of the disclosure left unchecked. The existing 355 inventoried paths keep their dispositions either way.
+
+### Expected Effect
+No project prose is both unswept and undeclared. Direction: documents that are neither inventoried nor disclosed as uninventoried go to zero. The qualitative invariant: a clean sweep's scope is written down, so "clean" cannot be read as "complete" by mistake.

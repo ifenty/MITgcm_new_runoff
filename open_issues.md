@@ -71,7 +71,7 @@ Design (RUNOFF-010, docs/package_design.md): decision 3 gives the term `[(mT) �
 
 Unblocked 2026-10-04: RUNOFF-004 closed (sparse reader, per-tile lists, placement by the `mdsio_read_field.F` arithmetic, `GLOBAL_SUM` fraction check and the exf volume flux; fork `610d4cbaf`, final verification receipt `2e11b06d`, all 33 scientific commands passing). Note the reader accepts **one constant record only**: `rnf_init_fixed.F:199-217` stops the run for `RNF_useYearlyFiles` or any `RNF_period` other than 0, naming RUNOFF-005.
 
-Scope moved in from RUNOFF-004 (Arch, 2026-10-04): **refusing a tracer name with no matching ptracer** belongs here. The RUNOFF-004 reader reads no tracer, temperature or salinity variable, so there is no name to match against `PTRACERS_names`; a variable present in the file is warned about per variable and not applied (`rnf_init_fixed.F:382-408`). Both RUNOFF-004 reviewers ruled the deferral legitimate because no value is silently wrong. This issue's acceptance already names the refusal; `docs/runoff_schema.md` §3.5 and `esx/project_profile.md` now mark it as arriving here.
+Scope moved in from RUNOFF-004 (Arch, 2026-10-04): **refusing a tracer name with no matching ptracer** belongs here. **As recorded at RUNOFF-004, describing the code as it then stood:** the reader read no tracer, temperature or salinity variable, so there was no name to match against `PTRACERS_names`; a variable present in the file was warned about per variable and not applied (`rnf_init_fixed.F:382-408`). Both RUNOFF-004 reviewers ruled the deferral legitimate because no value is silently wrong. This issue's acceptance already names the refusal; `docs/runoff_schema.md` §3.5 and `esx/project_profile.md` now mark it as arriving here. **Implemented 2026-10-05 (RUNOFF-013):** the warning walk of that paragraph no longer exists; the matching and its refusals are in `RNF_NC_SERIES` (`MITgcm/pkg/rnf/rnf_nc_utils.F`), so the `rnf_init_fixed.F:382-408` citation above describes only the RUNOFF-004-era code. This line was found by hand, because `open_issues.md` is outside `doc_inventory.paths` and receives no stale sweep (see [the documentation contract](devel-loop/documentation_contract.md), `TEAM-DOCINVENTORY-LEDGER-UNINVENTORIED-001`).
 
 ## UNRESOLVED: Real versus virtual freshwater flux and free-surface options
 
@@ -172,6 +172,12 @@ Carry forward from RUNOFF-005 (reviews A and B, correction round 4, 2026-10-05):
 
 Also from review A, cheap and unrelated: anchor `placement_probe.OPEN_FAILED`'s basename (require a path separator or start-of-field before `probe.nc`) so the pattern cannot match a file merely ending in it. Unreachable today because `PROBE_FILE` has one definition driving both `DATA_RNF` and the matcher; purely a tightening.
 
+Carry forward from RUNOFF-013 (correction round 1, 2026-10-05) — **three `RNF_NC_SERIES` items, one of them closed by measurement rather than by code:**
+
+1. **A duplicate `RNF_trPtr` check is NOT needed: the condition is unreachable.** Review B proposed guarding against two runoff-tracer variables mapped to the same ptracer, of which the `iRnf` loop of `RNF_TENDENCY_APPLY_PTR` silently keeps the last. The "keeps the last" half is true, but the premise is not: `RNF_NC_SERIES` trims the variable name with `ILNBLNK`, which treats **only the literal space** as blank (`eesupp/src/utils.F:123-152`), so two *distinct* NetCDF names can collide on the trimmed name only through a trailing blank, and **NetCDF refuses one** — creating `runoff_ptracer_dye ` fails with `NetCDF: Name contains illegal characters` (measured 2026-10-05, netCDF4 1.7.4, libnetcdf 4.10.0). The one route that rule leaves open closes itself: a trailing **NUL** is accepted but collapsed to the same stored name, after which the duplicate name is refused with `NetCDF: String match to name in use` (same measurement, correction round 2). Distinct names therefore trim to distinct tracer names, which match distinct `PTRACERS_names` entries or none (two equal entries give `nMatch ≥ 2`, itself a refusal), so `RNF_trPtr` cannot hold a duplicate. Recorded here so the suggestion is not re-filed; the `iRnf` loop stays as defence in depth. Do **not** attach the `PTRACERS_num ≥ 2` condition to this item — that belongs to the two-matching-names refusal below.
+2. **The two `RNF_NC_SERIES` refusals that still have no case**, both needing another build: a name matching more than one `PTRACERS_names` entry (needs `PTRACERS_num ≥ 2`) and the `#else /* ALLOW_PTRACERS */` branch for a model compiled without pkg/ptracers. Three siblings were enrolled in correction round 1 (`ptracer_name_empty`, `ptracer_name_long`, `ptracer_too_many`), each measured passing on the committed build and failing on a mutant with its guard weakened, and correction round 2 added their at-the-bound counterfactuals (`ptracer_name_min`, `ptracer_name_max`, `ptracer_count_max`), which hold the guards back from `.GE.`; these two refusals are what is left.
+3. **A missing value of `runoff_salinity` or of a tracer** still drives no case, so the per-series naming of that message is unmeasured for those two series even though six flux cases run the same code path. See the matrix refusal row.
+
 Carry forward from RUNOFF-033 (review A, correction round 2, 2026-10-05): **enrol a non-finite `target_cell_area` case.** Commit `016fdee5d` made the same one-token NaN fail-open fix at **two** sibling comparison sites in `rnf_init_fixed.F` — the cell-centre check and the pre-existing `target_cell_area` check — but only the first got a permanent case (`target_coords_nan`). The existing `cell_area` case is `scale_var("target_cell_area", 0, 1.01)`, a **finite** error, and the coordinate check is reached only *after* the area check passes, so reverting the area comparison to `.GT.` would leave **both** existing cases green and no configured command would notice. The behaviour is correct today — review A measured `area_nan` refused with exit 1 in correction round 1 — and `T09-cell-area-nan` covers the checker side, so what is missing is regression coverage of the model-side backstop, which exists precisely for files that never went through `MITgcmutils.runoff.check`. One line closes it: a `file_case` with `set_var("target_cell_area", 0, float("nan"))` expecting the message the model already prints, `target_cell_area differs from the cell area rA`, confirmed by review A's round-1 probe. See LL-009.
 
 Carry forward from RUNOFF-004 (review B, correction round 1, 2026-10-04): add the **cross-rank global-count oracle**. `tests/rnf/refusal_check.py::judge` asserts that a tile-local refusal message appears in *some* rank's `STDERR` and that each rank emits one `STOP` line, but it never asserts the **value** of the `GLOBAL_SUM_INT`-ed count, and `sparse_info` always selects a land cell in the western half, i.e. rank 0 — so the zero-local/non-zero-global case has no case. Review B wrote and ran the two that distinguish a correct reduction from a lucky one, on 2 MPI ranks: `land_rank1_only`, where rank 0 owns no refused target and prints no detail line yet still prints `1 refused target(s) on all processes` and stops, and `land_both_ranks`, where each rank sees 1 locally yet both print `2`. Both passed, with no hang. Fold them into `refusal_check.py` and assert the summed value. Its receipt is `devel-loop/loop_state/scratch/ab74b9af824d5b71c/richard_refusal_mpi2.json`; the same run also covered four refusal paths that had no case (`RNF_period` set in `data.rnf`, schema major version 2.0, `constant` sampling with two records, and `runoff_flux` with its dimensions transposed). Low priority: the mechanism is proven by execution and unchanged since. Note the scratch receipt is git-ignored and local to this machine, so re-derive the cases from the description rather than relying on the file surviving.
@@ -265,11 +271,10 @@ LLC is a main production grid (2 km target); mapping errors there are a top risk
 ### Proposed action and acceptance
 Acceptance: either a runnable LLC test with sparse runoff and budget checks, or a documented, owner-visible blocker with the exact missing input.
 
-## BLOCKED: Pickup/restart reproducibility with sparse runoff
+## UNRESOLVED: Pickup/restart reproducibility with sparse runoff
 
 **Date Identified**: 2026-10-02T22:30:00Z
-**Status**: Blocked
-**Blocked-By**: RUNOFF-005 — needs the time handling
+**Status**: Unresolved
 **UUID**: RUNOFF-022
 **Anchors**: MITgcm/model/src/the_model_main.F::<module>
 
@@ -286,6 +291,8 @@ Production runs always restart; record state must be re-derived correctly.
 Acceptance: continuous vs restarted runs identical to the digit threshold for daily, monthly and yearly modes.
 
 Synchronous restart case (RUNOFF-010 review, 2026-10-03): add a restart without `staggerTimeStep` in nonlinear-free-surface, real-freshwater mode across a record boundary, with temperature present; the first step after the restart needs the package fields at `myTime − deltaT` (docs/package_design.md, decision 3, time level).
+
+Unblocked 2026-10-05: RUNOFF-005 closed (sparse time handling, all five modes plus hold-exact; fork `a81f290f0`, final verification receipt `6e2a5194`, all 57 scientific commands passing). Record selection is delegated to the `pkg/exf` routines themselves, and the suite measures 0 of 49/769/1465/1465/1201 forcing steps disagreeing with `pkg/exf`, largest weight error 0.0e+00.
 
 ## BLOCKED: Thread, MPI and tile-layout independence (do_tst_2+2)
 
@@ -423,7 +430,7 @@ Acceptance: tr_out diff clean; 2+2 clean; checklist complete.
 
 **Date Identified**: 2026-10-02T22:30:00Z
 **Status**: Blocked
-**Blocked-By**: RUNOFF-005 — builds on the flux time handling
+**Blocked-By**: RUNOFF-013 — needs the temperature, salinity and tracer series to exist before their time modes can be exercised
 **UUID**: RUNOFF-029
 **Anchors**: MITgcm/pkg/exf/exf_getffieldrec.F::<module>
 
@@ -438,6 +445,8 @@ Mismatched record selection between flux and T/S would mix the wrong properties.
 
 ### Proposed action and acceptance
 Acceptance: lab_sea cases per mode with T/S/tracers; direct timing checks extended to all series.
+
+Reconsidered 2026-10-05 on RUNOFF-005's closure. The flux time handling this issue was waiting on is done, but its stated acceptance is "lab_sea cases per mode with T/S/tracers; direct timing checks extended to all series" — and no T, S or tracer series is read or applied yet. The genuine dependency is therefore RUNOFF-013, not RUNOFF-005, and it is re-blocked on that rather than left blocked on a closed issue. What RUNOFF-005 does supply is the pattern to extend: `RNF_GETREC` delegates each mode to its `pkg/exf` routine, so a second series needs the same delegation rather than its own record logic, and `tests/runoff/lab_sea_runoff_timing_check.py` already compares the model's own record trace against the exf conventions at every forcing step — extending it to a second series is the shape of this issue's check.
 
 ## UNRESOLVED: exf range check stops point-source runoff above 1e-6 m/s
 
@@ -500,7 +509,7 @@ Add a surface-level option to all three tools: `--surface-level top|bottom|kSurf
 
 **Date Identified**: 2026-09-29T21:30:00Z
 **Status**: Blocked
-**Blocked-By**: RUNOFF-005 — needs sparse time handling for the 12-record file; and RUNOFF-013 — needs the runoff-temperature tendency term for the cell-by-cell check
+**Blocked-By**: RUNOFF-013 — the cell-by-cell runoff-temperature comparison needs the tendency term; the 12-record volume oracle and the no-`pkg/cal` coverage below are actionable now
 **UUID**: RUNOFF-006
 **Anchors**: MITgcm/pkg/exf/exf_mapfields.F::<module>; tests/mitgcm_oracle.sh::<module>
 
@@ -526,6 +535,11 @@ Carry forward from RUNOFF-005 (review B, correction rounds 1-2, 2026-10-05). Thr
 3. **`timing_field_check.py --min-discrimination` could tighten from 5e-3 to about 2e-2.** Review B's sealed runs passed at 2.1e-2 on both the rejected 1980-12-01 span and the committed 1981-12-01 one, so the floor has about 4.3x slack. A tighter floor would warn earlier if a future span change eroded the discrimination — which is the failure RUNOFF-005 hit once already, when the chosen span turned out blind to the likeliest wrong anchoring. The right home is whichever issue next touches that span.
 
 Reconsidered 2026-10-04 on RUNOFF-004's closure, which satisfied both of this issue's original dependencies (the reader, and the RUNOFF-002 converter). **Half of this issue's acceptance is already met:** RUNOFF-004 created `global_ocean.cs32x15/input.rnof_sp_icedyn` (record 1 of `core_rnof_1_cs32.bin` as one constant record, 1189 one-cell sources) and it matches the dense `results/output.icedyn.txt` at 11 matching digits single-process **and** `-mpi 4`, which is the "volume-only cases match their dense references, single-process and -mpi 4" criterion. Review A also proved the exch2 placement bijective over all 6144 cells with per-process counts 321+443+151+274. What remains is therefore narrower than the original scope: the **12-record** file (`input.rnof_sparse/runoff_sparse.nc`), which needs RUNOFF-005, and the **cell-by-cell runoff temperature** check, which needs RUNOFF-013's tendency term. Re-blocked on those two rather than left blocked on a closed issue. Keep the recorded limit that all 12 cs32 records are identical in time, so this oracle cannot detect a timing error; timing stays with lab_sea.
+
+Reconsidered 2026-10-05 on RUNOFF-005's closure, the second of this issue's two dependencies to close. **Half of what remains is now actionable and half is not, so read the acceptance carefully before starting.**
+- **Actionable now:** the 12-record `input.rnof_sparse/runoff_sparse.nc` oracle on the exch2 volume path, because sparse time handling exists. This also carries the coverage RUNOFF-005 implemented but could not exercise: cs32 has no `pkg/cal`, so its times are seconds of model time on a 360_day file calendar, and the entire no-`pkg/cal` branch of `RNF_TIME_SETUP` — including its three unenrolled refusals at lines 491, 497 and 579 — is reached by no configured command today. A 12-record cs32 file is what reaches it.
+- **Still blocked:** the cell-by-cell runoff-temperature check, which needs RUNOFF-013's tendency term.
+Either split the volume and no-cal half into its own issue so it can be done now, or do it here and do not claim closure until RUNOFF-013 lands. Note the recorded limit that all 12 cs32 records are identical in time, so this oracle cannot detect a timing error — timing stays with lab_sea.
 
 ## BLOCKED: Per-record parallel I/O strategy at 2 km scale
 
@@ -569,6 +583,8 @@ Required for tracer studies (dye, nutrients, isotopes). Wrong reference values b
 ### Proposed action and acceptance
 Acceptance: analytic single-cell tracer budget to 1e-12 relative; a missing tracer in the file adds nothing; an unknown tracer name is refused at init; budget closure (RUNOFF-016) with at least two tracers; no-change runs unchanged.
 
+Carry forward from RUNOFF-013 (review B, correction round 1, 2026-10-05): **a numerical oracle for the tracer term is the main thing RUNOFF-013 leaves here.** RUNOFF-013 enrolled `refusal_check.py --case ptracer_match`, which is the only configured run that reaches `RNF_TENDENCY_APPLY_PTR`; it asserts that the routine runs, that the match is reported (`runoff tracer 1 is runoff_ptracer_dye, applied to ptracer 1`) and that `RNF_nTrUse = 1`, but **nothing compares the number the term applies**. The T and S terms by contrast have two oracles each in `tests/rnf/tendency_term_check.py` (the `RNFgT`/`RNFgS` diagnostic and the two-run `TOTTTEND`/`TOTSTEND` difference). The cheapest route is to extend `tendency_term_check.py`, which already has the machinery: the `RNFtrNN` diagnostic is registered, `PTRACERS_EvPrRn`/`PTRACERS_ref` give the same three reference-value branches as salinity, and the two-run difference needs a `TOTPTEND`-equivalent or the ptracer state dumps. Acceptance as above, plus the `RNFtr01` diagnostic matching the analytic `[(mC) − m·C_ref]·mass2rUnit·D` to 1e-12 relative on at least one case per reference branch.
+
 
 ## UNRESOLVED: test_write_formats cannot type a WRITE item declared in a model header
 
@@ -587,7 +603,9 @@ Found by the implementer during RUNOFF-033 (2026-10-05). Writing the new cell-ce
 Bounded and visible, not silent. The risk is behavioural: an implementer facing a loud refusal will route around the checker, as happened here, so messages that quote model state drift outside its coverage exactly where new refusals are being added.
 
 ### Proposed action and acceptance
-Extend the symbol table to the model headers `pkg/rnf` actually includes (`GRID.h`, `SIZE.h`, `PARAMS.h`, `EEPARAMS.h`), or give it a declared-type override table for named externals. Acceptance: a `WRITE(msgBuf,...)` quoting `xC` or `dxF` directly is typed correctly rather than refused; the existing 76-statement/0-finding result is unchanged; and the negative controls still detect both historical bugs plus an `I` descriptor with a `_RL` item.
+Extend the symbol table to the model headers `pkg/rnf` actually includes (`GRID.h`, `SIZE.h`, `PARAMS.h`, `EEPARAMS.h`), or give it a declared-type override table for named externals. Acceptance: a `WRITE(msgBuf,...)` quoting `xC` or `dxF` directly is typed correctly rather than refused; the existing 140-statement/0-finding result is unchanged; and the negative controls still detect both historical bugs plus an `I` descriptor with a `_RL` item.
+
+Carry forward from RUNOFF-013 (review B, correction round 1, 2026-10-05): **a `diagTitle` length guard, filed here as diagnosability and explicitly not as a detection gap.** `rnf_diagnostics_init.F` writes fixed-width diagnostic names and titles, and `test_write_formats.py` does not check that a title fits its field. Review B measured that the *class* is already caught loudly rather than silently: every runoff experiment sets `useDiagnostics=.TRUE.`, so an overflow aborts all of them, which is the opposite of a silent pass. What is missing is **diagnosability** — the abort does not say which title overflowed — so the value of a guard here is a better message, not new detection. Low priority; size it accordingly, and keep the distinction, because recording it as a detection gap would overstate the risk.
 
 ## UNRESOLVED: doc_contract rejects a Fortran header as a documentation reference
 
@@ -607,3 +625,26 @@ Minor and framework-side. It pushes a judgment's citation away from the prose it
 
 ### Proposed action and acceptance
 Decide whether this is intended. If a reference must resolve to inventoried Markdown, say so in the error message and in the documentation contract. If a commented Fortran header should be citable, treat `path::<module>` the way a disposition target already does. Acceptance: either the refusal names the rule it enforces, or a `RNF.h` citation seals.
+
+## UNRESOLVED: a BUILD_SOURCES entry that does not exist silently narrows the staleness guard
+
+**Date Identified**: 2026-10-06T02:10:00Z
+**Status**: Unresolved
+**UUID**: RUNOFF-036
+**Anchors**: tests/rnf/tendency_term_check.py::newest_source_time; tests/rnf/tendency_term_check.py::build_if_stale
+
+### Issue or research question
+`newest_source_time` walks each `BUILD_SOURCES` entry to decide whether a `--build` binary may be reused. An entry that does not exist contributes nothing and raises nothing: `os.path.isfile` is false and `os.walk` yields `[]`, so the maximum is simply taken over the remaining entries and the build is reported `reused`. A renamed, moved or mistyped path therefore narrows the staleness reference silently, which is the exact LL-011 failure `build_if_stale` exists to prevent.
+
+### Evidence
+RUNOFF-013 correction round 2 (2026-10-05). This is the **third** instance of one class in the same function, each found by a different agent. The first: `os.walk` of a plain file yields nothing, so `MITgcm/pkg/pkg_depend` would have looked like coverage and measured nothing — found by the implementer while fixing review A's finding, and fixed by stat-ing a plain-file entry. The second: `MITgcm/model/inc`, `MITgcm/pkg/ptracers` and `pkg_depend` were absent from the list altogether, so an edit to `PARAMS.h` — where `temp_EvPrRn`, `salt_EvPrRn`, `convertFW2Salt` and `UNSET_RL` are declared, all read by the tendency routines — could not mark any binary stale; found and quantified by review A, fixed in round 2. This third one is review A's: `newest_source_time(extra=<nonexistent path>)` returns the unchanged maximum, `delta 0.000`, with no error.
+
+Review B then supplied the figure that makes it legible: per-entry maxima are `MITgcm/pkg/rnf` at 2026-10-05T16:13:57 and every other entry at 2026-10-04T07:38:32, so **`pkg/rnf` is the entry that sets the maximum.** Losing it to a rename would move the staleness reference back **117 326 s (1 d 8 h 35 m)** and stop the guard from guarding the one directory under active development, while still printing `reused`.
+
+### Scientific or engineering impact
+No current defect: all six entries exist, and both reviewers judged this optional for RUNOFF-013's closure on that basis. The impact is scheduled rather than hypothetical — this package is to be rebased on upstream MITgcm before the PR, and a rebase is exactly when a path is renamed or moved. The failure mode is silent and the tool keeps reporting success, so it would be discovered through a wrong figure rather than through an error.
+
+### Proposed action and acceptance
+Make a missing entry fail loudly, or treat the build as unconditionally stale. Acceptance: `newest_source_time` with a nonexistent entry raises or forces a rebuild rather than returning a smaller maximum; the six current entries still resolve and still produce today's reference (`pkg/rnf/rnf_nc_utils.F`); and the existing plain-file and directory branches are unchanged. Add a negative control that a nonexistent entry is detected, since all three instances of this class were found by perturbing the mechanism and none by inspecting the list.
+
+**The generalisable lesson, worth carrying beyond this function:** a listed entry that looks like coverage and measures nothing is invisible to inspection. Check such a list by measuring the output change when an entry is perturbed, never by reading it.

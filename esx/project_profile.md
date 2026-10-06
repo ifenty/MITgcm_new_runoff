@@ -153,16 +153,64 @@ This is the scientific contract agents read. Executable paths and commands are i
   these:
   - fraction sum out of tolerance
   - target cell on land or off the grid
-  - tracer name with no matching ptracer — **not yet; RUNOFF-013.** The reader
-    does not read tracer variables, so there is no name to match against
-    `PTRACERS_names`. As of RUNOFF-004 a `runoff_temperature`,
-    `runoff_salinity` or `runoff_ptracer_*` variable in the file is detected and
-    warned about per variable, naming RUNOFF-013, and is not applied
-    (`rnf_init_fixed.F:382-408`). Moved here from RUNOFF-004 on 2026-10-04:
-    matching to ptracers belongs with the tendency term that consumes it, and
-    RUNOFF-013's acceptance already names this refusal. Both RUNOFF-004
-    reviewers ruled the deferral legitimate on the merits, with no
-    silently-wrong-value path because no value is read.
+  - tracer name with no matching ptracer — **implemented in RUNOFF-013**, in
+    `RNF_NC_SERIES` (`rnf_nc_utils.F:660`), which stops naming the variable and
+    listing the `PTRACERS_names` of `data.ptracers` it was matched against; a
+    file carrying runoff tracers while `pkg/ptracers` is not in use is a
+    separate stop at `rnf_nc_utils.F:637`. Both line numbers are the enclosing
+    `IF` and resolve against fork commit `6aa841e2e`. Both are measured by
+    execution
+    (`refusal_check.py --case ptracer_unknown --case ptracer_off`, with
+    `ptracer_match` and `ptracer_ignored` as the must-run controls). This entry
+    was moved here from RUNOFF-004 on 2026-10-04 because matching to ptracers
+    belongs with the tendency term that consumes it; the RUNOFF-004-era warning
+    walk it describes was replaced by this refusal and no longer exists.
+    `RNF_NC_SERIES` has five more refusals around the same matching, of which
+    three were enrolled in correction round 1 (`ptracer_name_empty`,
+    `ptracer_name_long`, `ptracer_too_many`, each measured passing on the
+    committed build and failing on a mutant with its guard weakened).
+    Correction round 2 added the complementary **at-the-bound**
+    counterfactuals of those three (`ptracer_name_min` with a 1-character
+    name, `ptracer_name_max` at exactly `RNF_idLen` = 64 and
+    `ptracer_count_max` with exactly `RNF_nTr` = 5 tracer variables): each
+    must get past the guard and be refused by the `usePTRACERS` test that
+    follows it, naming the variable, which is what holds a `.GT.` back from
+    becoming a `.GE.` — the direction a weakened-guard mutant cannot
+    measure. The two refusals that remain unenrolled need another build: a name matching more than one
+    `PTRACERS_names` entry, which needs `PTRACERS_num ≥ 2`, and the branch for
+    a model compiled without `pkg/ptracers` at all.
+    - **Not a gap after all.** Earlier wording here carried, as an optional
+      hardening, "two runoff-tracer variables whose names differ only in
+      trailing blanks, which both match the same ptracer and of which
+      `rnf_tendency_apply.F` keeps the last". The last clause is true — the
+      `iRnf` loop of `RNF_TENDENCY_APPLY_PTR` assigns on every match, so it
+      keeps the last — but the condition is **unreachable**, on three
+      measured legs (the second and third added in correction round 2 from
+      review B's measurements, re-measured here):
+      - `RNF_NC_SERIES` trims the variable name with `ILNBLNK`, which treats
+        **only the literal space** as blank
+        (`MITgcm/eesupp/src/utils.F:123-152`: the scan skips a character only
+        when `string(L:L) .EQ. ' '`). This is the premise the argument needs:
+        any other trailing character stays in the trimmed name, so only a
+        trailing *space* could make two distinct names collide.
+      - NetCDF refuses a trailing space: creating `runoff_ptracer_dye ` fails
+        with `NetCDF: Name contains illegal characters` (measured 2026-10-05,
+        netCDF4 1.7.4, libnetcdf 4.10.0).
+      - A trailing **NUL** is the one remaining route the character rule
+        leaves open, and it closes itself: NetCDF *accepts*
+        `runoff_ptracer_dye\0` but collapses it to the stored name
+        `runoff_ptracer_dye`, after which creating the plain
+        `runoff_ptracer_dye` beside it is refused with `NetCDF: String match
+        to name in use` (same measurement). So the file can hold either name
+        but never both.
+
+      Any two distinct names therefore trim to distinct tracer names, which
+      match distinct `PTRACERS_names` entries or none, so two runoff tracers
+      can never share one ptracer and `RNF_trPtr` can never hold a
+      duplicate. The
+      `PTRACERS_num ≥ 2` condition the old wording attached to this item
+      belongs to the *different* refusal above (a name matching two
+      `PTRACERS_names` entries), not to this one.
   - both a sparse file and a dense `runoffFile` set (they are mutually exclusive)
   - missing required variables
   - grid mismatch (the file's grid-identity check is proposed in RUNOFF-001)

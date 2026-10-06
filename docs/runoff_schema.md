@@ -21,7 +21,7 @@ The file has three kinds of content:
 | Source table | `source` | only `source_id` | one row per source: id, names, notes, location, type |
 | Alias table | `alias` | no | any number of extra names per source |
 | Target table | `target` | yes | one row per (source, cell) pair: source index, cell index, fraction |
-| Time series | `time` × `source` | the flux; temperature, salinity and tracers with RUNOFF-013 (§3.5) | flux, temperature, salinity, tracers |
+| Time series | `time` × `source` | yes | flux, temperature, salinity, tracers |
 
 MITgcm reads only a small, fixed set of variables and attributes, marked
 **model** below. Everything else is for people and tools, and you may add more
@@ -94,17 +94,19 @@ MITgcm reads only a small, fixed set of variables and attributes, marked
 ## 3. Variables
 
 **Req.** is required (R), optional (O), or required under a condition. **Model**
-marks what MITgcm reads. There are three states:
+marks what MITgcm reads. There are two states:
 
-- `yes` — the reader of RUNOFF-004 reads the value and uses it.
+- `yes` — the reader reads the value and uses it.
 - `check` — the reader reads the value only to **validate** it against the
   model's own grid, and never uses it afterwards. Nothing in the model's
   results depends on it; the only thing that depends on it is whether the run
   is refused. `target_lon`/`target_lat` are the only such variables (§3.4),
   and because no stored value is used, the no-packing rule of §1 does not
   reach them: the reader skips the check instead of unpacking.
-- `planned (RUNOFF-013)` — a variable the schema defines and that reader does
-  not read yet (§3.5).
+
+Every variable the schema defines is now in one of those two states: the
+reader of RUNOFF-004 read the flux only, and RUNOFF-013 added the
+temperature, the salinity and the tracers (§3.5).
 
 ### 3.1 Time
 
@@ -173,29 +175,37 @@ record is one contiguous hyperslab. Stored as float (32-bit) or double.
 | Variable | Req. | Model | Units | Missing values |
 |---|---|---|---|---|
 | `runoff_flux` | R | yes | volume flux, [m³ s⁻¹](#61-physical-variables) | **Not allowed.** Any fill value, NaN or Inf is an error, and the model stops. |
-| `runoff_temperature` | O | planned (RUNOFF-013) | [°C](#61-physical-variables) | Allowed: the source will enter at the surface water temperature, the same as when the variable is absent. |
-| `runoff_salinity` | O | planned (RUNOFF-013) | [model salinity units](#61-physical-variables) | Not allowed. If the variable is absent, salinity will be 0. |
-| `runoff_ptracer_<NAME>` | O | planned (RUNOFF-013) | any non-empty ASCII string, which must equal the ptracer's own concentration units | Not allowed. |
+| `runoff_temperature` | O | yes | [°C](#61-physical-variables) | Allowed: that source enters at the reference temperature of the freshwater formulation, which is the ambient temperature of the cell in every build that compiles `ALLOW_ATM_TEMP`, the same as when the variable is absent. |
+| `runoff_salinity` | O | yes | [model salinity units](#61-physical-variables) | Not allowed. If the variable is absent, the salinity is 0. |
+| `runoff_ptracer_<NAME>` | O | yes | any non-empty ASCII string, which must equal the ptracer's own concentration units | Not allowed. |
 
-- **What the model reads today** (`pkg/rnf` after RUNOFF-004): `runoff_flux`
-  only. `RNF_INIT_FIXED` walks the variables of the file and prints a warning
-  for each `runoff_temperature`, `runoff_salinity` and `runoff_ptracer_*` it
-  finds, naming RUNOFF-013
-  (`MITgcm/pkg/rnf/rnf_init_fixed.F:382-408`), so a property in the file is
-  never dropped without a word; it is not read and no value of it reaches the
-  model. The runoff therefore enters at the ambient temperature and adds no
-  salt or tracer, and the `RNF_useTemp`, `RNF_useSalt` and `RNF_usePtracers`
-  switches of `data.rnf` have no effect yet. The "Model" and "Missing values"
-  entries above, and the two rules below, are the contract RUNOFF-013
-  implements: until it lands, a missing temperature, an absent salinity and an
-  unmatched tracer name all behave the same way, namely the property is
-  ignored.
+- **How the model applies them** (`pkg/rnf` after RUNOFF-013): each series is
+  interpolated in time with the one set of record weights the flux uses, and
+  a cell receives the flux-weighted sums over the sources that feed it,
+  `(mT)`, `(mS)` and `(mC_n)` (§3.4, "Target rules"). They enter as tendency
+  terms of the form `[(mX) − m_X·X_ref]·mass2rUnit/(drF·hFacC)` at the target
+  level, where `X_ref` is the property the model's own freshwater formulation
+  has already given this water, so that the model's term, pkg/exf's
+  cancellation of it and the package's term add up to the heat, salt and
+  tracer the source carries ([package design](package_design.md), decision 3
+  for temperature and salinity, decision 4 for tracers).
+  `RNF_INIT_FIXED` reports which series it found, and which ptracer each
+  runoff tracer feeds, in the package summary.
+- **Switching a series off:** `RNF_useTemp`, `RNF_useSalt` and
+  `RNF_usePtracers` of `data.rnf` (all default true) make the reader treat the
+  corresponding variables as absent. It says so per variable in the log, and
+  with `RNF_usePtracers=.FALSE.` the tracer names are not matched to the
+  ptracers either, which is the way to read a file whose tracers this run does
+  not carry.
 - **Passive tracers:** `<NAME>` must equal a `PTRACERS_names` entry in
-  `data.ptracers` (letters, digits and `_`). Any number is allowed. A tracer with
-  no matching ptracer will be fatal in the model once tracer input is read
-  (RUNOFF-013); the reader of RUNOFF-004 reads no tracer variable, so it
-  matches no name and refuses none. Its concentration is per unit volume
-  of runoff water.
+  `data.ptracers` (letters, digits and `_`), compared exactly after trailing
+  blanks are removed. Any number is allowed up to `RNF_nTr` of
+  `MITgcm/pkg/rnf/RNF_SIZE.h` (5 as committed). Its concentration is per unit
+  volume of runoff water. **A name that matches no ptracer stops the run**, as
+  do two matches, a file with tracer variables in a run that does not use
+  pkg/ptracers, and more tracer variables than `RNF_nTr`: an unmatched tracer
+  has no tendency array to be added to, so the water would otherwise arrive
+  without it and nothing in the log would say so.
 - **Recommended variable attributes:** `long_name`, `units`, `comment`. `runoff_flux`
   may carry `standard_name = "water_volume_transport_into_sea_water_from_rivers"`
   when every source is a river.

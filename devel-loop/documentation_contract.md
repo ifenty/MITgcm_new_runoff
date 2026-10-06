@@ -184,6 +184,63 @@ So the sweep being clean is evidence about the table, not about the document. Tw
 conflicting counts of one set survived a clean sweep on RUNOFF-005 because
 neither was in the table in the form the prose used.
 
+**It also covers only inventoried files, and the project's own record documents
+are not among them.** Measured on RUNOFF-013 (2026-10-05): `doc_inventory.paths`
+selects 355 paths here, and **every tracked project record document is outside
+that set** — all eleven of `README.md`, `closed_issues.md`,
+`current_status.md`, `lessons_learned.md`, `lessons_learned_evidence.md`,
+`old_lessons_learned.md`, `long_term_goals.md`, `open_issues.md`,
+`devel-loop/self-improvement/open-ESX-team-issues.md`,
+`devel-loop/self-improvement/closed-ESX-team-issues.md` and
+`devel-loop/self-improvement/process_changelog.md`, plus everything under
+`devel-loop/self-improvement/assessments/`. (The `ESX-team-local/` install
+backups are deliberately excluded from that count; they are deployment
+snapshots. Note that `devel-loop/self-improvement/README.md` *is* inventoried,
+so the repository-root `README.md` in the list above is the only README in it;
+spell these paths in full, because the two `README.md` differ in exactly this
+respect.) So a superseded figure in any of them receives neither a sweep hit
+nor a disposition and has to be checked **by hand** — including in
+`lessons_learned.md`, whose lessons are quoted in every brief, and, recursively,
+in the ledger the framework issue is filed in
+(`TEAM-DOCINVENTORY-LEDGER-UNINVENTORIED-001`).
+
+Treat it as a class, not as a list of the two files someone happened to notice.
+When RUNOFF-013 first wrote this paragraph it named only `open_issues.md` and
+`long_term_goals.md`; a reviewer then ran the issue's own figures table by hand
+over *all* of them and found **8 hits in 5 files**, of which only
+`open_issues.md` was covered by the check the paragraph prescribed. One of the
+others, `closed_issues.md:350`, was carrying in the present tense the same two
+stale tokens that had been a must-fix in `esx/project_profile.md` two rounds
+earlier — uncorrected, because nothing named the file.
+
+**A by-hand count over these files is scope-bound and self-referential. Quote it
+with its scope and its snapshot, and do not treat it as a quantity that can be
+kept current.** Two scopes give two right answers: measured at the RUNOFF-013
+correction-round-3 seal with the same table, **7 hits in 5 files** over the
+*tracked* record documents (`git ls-files`), and **8 in 6** once the issue's own
+still-untracked
+`devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md` is
+counted. A bare total answers neither question. Worse, the total *moves as the
+disclosure is written*, because the ledger entry and the assessment quote the
+superseded tokens as their own subject matter and so become hits: of those eight,
+**four are that self-reference** (three in the ledger, one in the assessment),
+three are labelled history (`lessons_learned.md:31` and
+`lessons_learned_evidence.md:226` on RUNOFF-005's "54 of 54",
+`open_issues.md:74` on a dead `file:line`), and exactly one —
+`closed_issues.md:350` — was ever a live stale claim. Rewriting the three
+paragraphs that discuss the gap moved the figure twice inside one correction
+round. So report the **composition** and the snapshot, read any such count as
+"lines to inspect" rather than "errors found", and make the durable check a
+mechanical enumeration of the boundary instead of a count of hits.
+
+**Prefer a mechanical token when a row is meant as a guard.** Measured on
+RUNOFF-013: of three rows added for one false paragraph, only the one spelling a
+dead `file:line` caught a *reworded* version of the same false claim; the two
+prose-clause rows fired solely on the bytes they were written from. A dead
+citation, a removed symbol or a deleted flag name survives rewording, so it
+guards the claim; a prose clause is a regression test for one sentence. Both are
+legitimate — know which you are writing.
+
 The draft reports how many judgments it `reused`. The implementer drafts and
 seals the plan from the live source and gives each blank judgment its own reason;
 do not refill a plan by copying reasons from an earlier one. Review changes

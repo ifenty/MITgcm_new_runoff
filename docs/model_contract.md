@@ -15,9 +15,18 @@
 > without a repeat cycle, a monthly climatology, consecutive calendar
 > months, `_YYYY` yearly files, exf-style interpolation and hold-exact —
 > with record selection delegated to the `pkg/exf` routine of each mode.
-> Not implemented: temperature, salinity and tracers; `yearly` *sampling*
+> **Implemented (RUNOFF-013):** the temperature, the salinity and the
+> passive tracers — read with the flux (`rnf_nc_utils.F`), spread over the
+> target cells as flux-weighted sums (`rnf_fields_load.F`) and applied as
+> tendency terms at the target level (`rnf_tendency_apply.F`), with the
+> diagnostics of those terms (`rnf_diagnostics_init.F`) and the refusal of
+> a tracer name that matches no ptracer.
+> Not implemented: `yearly` *sampling*
 > (one record per calendar year) is refused rather than mapped, because exf
-> has no such mode. The source routines and their tests are
+> has no such mode; the budget checks over time and over the domain
+> (RUNOFF-016); the input-only diagnostics and the monitor (RUNOFF-015);
+> and the `addMass` path for interior and under-shelf targets (RUNOFF-025).
+> The source routines and their tests are
 > listed in [the code map](code_map.md), the tests and their limits in
 > [the qualification matrix](verification_matrix.md).
 
@@ -192,8 +201,12 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
   `g_X += [ Σ_s m_s·X_s − m·X_ref ] · mass2rUnit / (drF · hFacC)`,
 
   where `X_ref` is the value the model's freshwater formulation has already
-  given to that water. For temperature the sums run only over sources that
-  carry one. "Uniform reference" below is branch U of the package design: the
+  given to that water. For temperature **both** sums run only over the sources
+  that carry one, i.e. `[ Σ_s m_s·T_s − m_T·T_ref ]` with
+  `m_T = Σ_{s: T present} m_s`: a source without a temperature then
+  contributes nothing to the term and enters at `X_ref`, which is what makes
+  the missing value mean "the same as absent".
+  "Uniform reference" below is branch U of the package design: the
   model uses one reference value for the whole surface, which happens when
   `convertFW2Salt ≠ −1` and the run does not combine a real freshwater flux
   with a nonlinear free surface or pressure coordinates. Every other

@@ -40,7 +40,15 @@ There are three kinds of case.
     ``missing_value`` stored as text, which must stop the run and not be
     taken as absent;
   - more sources or more target entries on one tile than ``RNF_nSrcTile`` or
-    ``RNF_nTgtTile``.
+    ``RNF_nTgtTile``;
+  - the runoff tracer series (``RNF_NC_SERIES``, RUNOFF-013): a tracer name
+    that matches no ptracer, tracer variables in a run that does not use
+    pkg/ptracers, a name with nothing after the prefix, a name longer than
+    ``RNF_idLen`` and more tracer variables than ``RNF_nTr``. The last three
+    each have an **at-the-bound** companion (``ptracer_name_min``,
+    ``ptracer_name_max``, ``ptracer_count_max``) in which the guard must stay
+    silent and the run is refused by the *next* test instead -- the direction
+    a weakened-guard mutant cannot measure.
 * **Runs that must end normally**: the positive control (the valid file on
   ``lab_sea/input``; the flux sums that the model prints must equal the sum
   of the file), ``cells_equal_dense`` (the one-source-per-cell file must
@@ -117,6 +125,7 @@ DENSE_REF = "output.rnof_const.txt"
 # strictly between 0.25 and 0.5: see ``ulp_shares``.
 ULP_SHARE = 0.35
 RNF_SIZE = os.path.join(ROOT, "MITgcm", "pkg", "rnf", "RNF_SIZE.h")
+RNF_HEADER = os.path.join(ROOT, "MITgcm", "pkg", "rnf", "RNF.h")
 
 # The process and thread label that MITgcm puts in front of its log lines.
 PID_PREFIX = re.compile(r"^\(PID\.TID \d{4}\.\d{4}\)\s?")
@@ -141,6 +150,37 @@ DATA_RNF_YEARLY = """# Sparse runoff package parameters
   RNF_file = '../input.rnof_yearly/runoff_sparse.nc',
   RNF_useYearlyFiles = .TRUE.,
   RNF_repCycle = 31536000.,
+ &
+"""
+
+# One passive tracer called "dye", for the runoff-tracer cases of
+# RUNOFF-013: a runoff_ptracer_<NAME> variable has to match a
+# PTRACERS_names entry exactly. PTRACERS_num of the build is 1
+# (pkg/ptracers/PTRACERS_SIZE.h), so one is all there is room for.
+# PTRACERS_Iter0 = 1 = nIter0 of lab_sea/input, so the tracer starts
+# from PTRACERS_initialFile (blank: zero) instead of from a
+# pickup_ptracers file, which this set-up has none of.
+DATA_PTRACERS = """# One passive tracer, for the runoff tracer cases
+ &PTRACERS_PARM01
+ PTRACERS_numInUse = 1,
+ PTRACERS_Iter0 = 1,
+ PTRACERS_names(1) = 'dye',
+ PTRACERS_long_names(1) = 'runoff dye',
+ PTRACERS_units(1) = '1',
+ PTRACERS_initialFile(1) = ' ',
+ PTRACERS_diffKh(1) = 0.,
+ PTRACERS_diffKr(1) = 0.,
+ &
+"""
+
+# lab_sea compiles pkg/longstep, which reads this file whenever
+# usePTRACERS is true (model/src/packages_readparms.F:248-249 calls
+# LONGSTEP_READPARMS before PTRACERS_READPARMS, and it stops the run if
+# the file is absent). LS_nIter = 1 is its default: one ptracer step per
+# dynamics step, i.e. no long step.
+DATA_LONGSTEP = """# pkg/longstep defaults, for the runoff tracer cases
+ &LONGSTEP_PARM01
+ LS_nIter = 1,
  &
 """
 
@@ -211,12 +251,19 @@ def add_to_namelist(text, namelist, new_line):
     return "\n".join(lines) + "\n"
 
 
-def size_bound(name):
-    """Return the integer bound ``name`` set in ``pkg/rnf/RNF_SIZE.h``."""
-    with open(RNF_SIZE) as fh:
+def size_bound(name, header=None):
+    """Return the integer bound ``name`` set in a ``pkg/rnf`` header.
+
+    ``header`` defaults to ``RNF_SIZE.h``; the runoff-tracer name-length
+    bound ``RNF_idLen`` lives in ``RNF.h`` instead. Reading the value
+    from the source rather than repeating it keeps a case that quotes it
+    in an expected message from drifting away from the code.
+    """
+    path = header or RNF_SIZE
+    with open(path) as fh:
         match = re.search(rf"PARAMETER\s*\(\s*{name}\s*=\s*(\d+)\s*\)", fh.read())
     if not match:
-        raise ValueError(f"{name} not found in {RNF_SIZE}")
+        raise ValueError(f"{name} not found in {path}")
     return int(match.group(1))
 
 
@@ -558,6 +605,12 @@ def cases(data_pkg, data_exf, info=None):
       matching digits against that reference of lab_sea ``results/``.
     """
     pkg_on = set_package_flags(data_pkg, {"useRNF": ".TRUE."})
+    # With pkg/ptracers in use, for the runoff-tracer cases of
+    # RUNOFF-013. lab_sea compiles ptracers (its code/packages.conf) and
+    # leaves it switched off, so both the "no matching name" refusal and
+    # the "ptracers is not in use" one are reachable with the one binary.
+    pkg_ptr = set_package_flags(data_pkg, {"useRNF": ".TRUE.",
+                                           "usePTRACERS": ".TRUE."})
     rnf_ok = DATA_RNF.format(SPARSE_REL)
     rnf_bad = DATA_RNF.format("bad.nc")
     # Without exf the model must still reach PACKAGES_CHECK: sea ice needs
@@ -621,6 +674,10 @@ def cases(data_pkg, data_exf, info=None):
     stop_init = "ABNORMAL END: S/R RNF_INIT_FIXED"
     forbid_file = after_checks + ["RNF_CHECK: #define ALLOW_RNF"]
     one_init = "RNF_INIT_FIXED: detected       1 fatal error(s)"
+
+    def n_init(count):
+        """The RNF_INIT_FIXED tally line for ``count`` fatal errors."""
+        return f"RNF_INIT_FIXED: detected {count:7d} fatal error(s)"
     bound = size_bound("RNF_nSrcTile")
 
     def file_case(name, stderr, stderr_any=(), stop=stop_init, rnf=None,
@@ -694,6 +751,14 @@ def cases(data_pkg, data_exf, info=None):
                 one(ds)
         return edit
 
+    def add_series(name, value):
+        """Add a (time, source) series, e.g. a runoff tracer (RUNOFF-013)."""
+        def edit(ds):
+            var = ds.createVariable(name, "f8", ("time", "source"))
+            var.units = "1"
+            var[:] = value
+        return edit
+
     # The targets of the last source (three cells), for a negative fraction
     # that the other two hide in a sum of exactly 1.
     last = [k for k, s in enumerate(info["target_source"])
@@ -703,6 +768,12 @@ def cases(data_pkg, data_exf, info=None):
                    "missing value(s) of runoff_flux (not allowed)"]
     stop_flux = "ABNORMAL END: S/R RNF_NC_READ_FLUX"
     tgt_bound = size_bound("RNF_nTgtTile")
+    # The two bounds the runoff-tracer name cases quote in their expected
+    # messages, read from the headers so a case cannot outlive its bound.
+    # RNF_NC_SERIES prints both with the Fortran I6 edit descriptor, which
+    # is the ``:6d`` in the expected strings below.
+    tr_bound = size_bound("RNF_nTr")
+    id_bound = size_bound("RNF_idLen", RNF_HEADER)
 
     out += [
         file_case("cell_negative",
@@ -957,6 +1028,148 @@ def cases(data_pkg, data_exf, info=None):
          "stderr": ["RNF_TIME_SETUP: RNF: RNF_useYearlyFiles=.TRUE. allows"
                     " no repeat cycle", one_init],
          "stdout": [], "stop": stop_init, "forbid": forbid_file},
+        # A runoff tracer whose name matches no ptracer (RUNOFF-013).
+        # There is nothing to add the tracer to, so the water would
+        # arrive without it and nothing in the log would say so; the
+        # run stops instead. The control ptracer_match below has the
+        # same file with the name the ptracer really has, so this
+        # refusal cannot be passing for the mere presence of a tracer
+        # variable.
+        {"name": "ptracer_unknown",
+         "files": {"data.pkg": pkg_ptr, "data.rnf": rnf_bad,
+                   "data.ptracers": DATA_PTRACERS,
+                   "data.longstep": DATA_LONGSTEP},
+         "nc": {"bad.nc": {"edit": add_series("runoff_ptracer_ghost", 1.0)}},
+         "stderr": ["RNF_NC_SERIES: RNF: runoff_ptracer_ghost: no"
+                    " PTRACERS_names entry matches",
+                    "RNF_NC_SERIES: ptracer   1 is called dye", one_init],
+         "stdout": [], "stop": stop_init, "forbid": forbid_file},
+        # The same file in a run that does not use pkg/ptracers at all:
+        # refused for that reason, and named, rather than read and
+        # dropped.
+        {"name": "ptracer_off",
+         "files": {"data.pkg": pkg_on, "data.rnf": rnf_bad},
+         "nc": {"bad.nc": {"edit": add_series("runoff_ptracer_dye", 1.0)}},
+         "stderr": ["RNF_NC_SERIES: RNF: runoff_ptracer_dye: the file has"
+                    " runoff tracers but pkg/ptracers is not in use",
+                    one_init],
+         "stdout": [], "stop": stop_init, "forbid": forbid_file},
+        # The name checks that come before the ptracer matching: a
+        # variable called exactly ``runoff_ptracer_`` leaves no name
+        # after the prefix, and one whose name is longer than
+        # RNF_idLen = 64 would not fit RNF_trNam. Both are reached with
+        # pkg/ptracers switched off, because RNF_NC_SERIES tests the
+        # length before it looks at usePTRACERS, so neither case needs
+        # a second build or a second ptracer. (Correction round 1: the
+        # matrix had recorded all five of these series refusals as
+        # unenrolled with their reachability "read from the source and
+        # not measured"; review B fired three of them by hand and these
+        # two are the first two.)
+        {"name": "ptracer_name_empty",
+         "files": {"data.pkg": pkg_on, "data.rnf": rnf_bad},
+         "nc": {"bad.nc": {"edit": add_series("runoff_ptracer_", 1.0)}},
+         "stderr": ["RNF_NC_SERIES: RNF: runoff_ptracer_: the tracer name"
+                    " after the prefix runoff_ptracer_ is empty",
+                    one_init],
+         "stdout": [], "stop": stop_init,
+         # it must not be refused for one of the later reasons instead,
+         # which would make the case a measurement of those
+         "forbid": forbid_file + ["no PTRACERS_names entry matches",
+                                  "pkg/ptracers is not in use",
+                                  "the tracer name is longer than"]},
+        {"name": "ptracer_name_long",
+         "files": {"data.pkg": pkg_on, "data.rnf": rnf_bad},
+         "nc": {"bad.nc": {"edit": add_series("runoff_ptracer_"
+                                              + "d"*(id_bound + 1), 1.0)}},
+         "stderr": [f"RNF_NC_SERIES: RNF: runoff_ptracer_"
+                    f"{'d'*(id_bound + 1)}: the tracer name is longer"
+                    f" than{id_bound:6d}", one_init],
+         "stdout": [], "stop": stop_init,
+         "forbid": forbid_file + ["no PTRACERS_names entry matches",
+                                  "pkg/ptracers is not in use",
+                                  "the tracer name after the prefix"]},
+        # More runoff tracer variables than RNF_nTr = 5, which is the
+        # capacity of RNF_trNam/RNF_trPtr. The count is taken over every
+        # variable carrying the prefix, after the two name checks and
+        # before the matching, so the refusal does not depend on the
+        # names matching anything -- which is just as well, because with
+        # PTRACERS_num = 1 six matching names are impossible, so no
+        # reachable witness of this bound can be free of companion
+        # errors. With pkg/ptracers switched off each of the six
+        # variables also raises the "not in use" error, so the tally is
+        # 6 + 1 = 7; the capacity message is what this case measures and
+        # the tally is asserted so that the companion errors cannot grow
+        # or vanish unnoticed.
+        {"name": "ptracer_too_many",
+         "files": {"data.pkg": pkg_on, "data.rnf": rnf_bad},
+         "nc": {"bad.nc": {"edit": several(*[
+             add_series(f"runoff_ptracer_t{k:02d}", 1.0)
+             for k in range(tr_bound + 1)])}},
+         "stderr": [f"RNF_NC_SERIES: RNF: RNF_nTr ={tr_bound:6d} is too"
+                    f" small: the file has{tr_bound + 1:6d} runoff"
+                    f" tracer(s)", n_init(tr_bound + 2)],
+         "stdout": [], "stop": stop_init, "forbid": forbid_file},
+        # The complement of the three cases above: the same three
+        # guards **at** the bound, where each must stay silent. A
+        # mutant that weakens a guard cannot test this direction; these
+        # are what hold `.GT.` back from becoming `.GE.` (and
+        # `nTrLen .LT. 1` from `.LT. 2`). One character after the prefix
+        # is the shortest name the empty-name test admits, RNF_idLen
+        # characters the longest the length test admits, and RNF_nTr
+        # variables the most the capacity test admits.
+        #
+        # What makes each one decisive is *which* error it does raise:
+        # with pkg/ptracers switched off, a name that gets past both
+        # name checks reaches the usePTRACERS test (rnf_nc_utils.F:637,
+        # after the checks at :618 and :626) and is refused there,
+        # naming the variable. So the expected message is itself the
+        # proof that control went past the guard under test -- a
+        # `forbid` list alone would also be satisfied by a run that
+        # never reached the matching at all. The first two differ from
+        # `ptracer_name_empty`/`ptracer_name_long` in exactly one
+        # character of the variable name, and nothing else.
+        # (Review B of correction round 1 offered all three; enrolled in
+        # round 2.)
+        {"name": "ptracer_name_min",
+         "files": {"data.pkg": pkg_on, "data.rnf": rnf_bad},
+         "nc": {"bad.nc": {"edit": add_series("runoff_ptracer_d", 1.0)}},
+         "stderr": ["RNF_NC_SERIES: RNF: runoff_ptracer_d: the file has"
+                    " runoff tracers but pkg/ptracers is not in use",
+                    one_init],
+         "stdout": [], "stop": stop_init,
+         "forbid": forbid_file + ["the tracer name after the prefix",
+                                  "the tracer name is longer than",
+                                  "is too small: the file has"]},
+        {"name": "ptracer_name_max",
+         "files": {"data.pkg": pkg_on, "data.rnf": rnf_bad},
+         "nc": {"bad.nc": {"edit": add_series("runoff_ptracer_"
+                                              + "d"*id_bound, 1.0)}},
+         "stderr": [f"RNF_NC_SERIES: RNF: runoff_ptracer_{'d'*id_bound}:"
+                    f" the file has runoff tracers but pkg/ptracers is"
+                    f" not in use", one_init],
+         "stdout": [], "stop": stop_init,
+         "forbid": forbid_file + ["the tracer name after the prefix",
+                                  "the tracer name is longer than",
+                                  "is too small: the file has"]},
+        # Exactly RNF_nTr variables: nTrFile reaches the bound and the
+        # capacity test must not fire. Each of the five raises the "not
+        # in use" error of :637, so the tally is RNF_nTr and not
+        # RNF_nTr + 1 -- which is what distinguishes this case from
+        # `ptracer_too_many` by one error rather than by a wording.
+        {"name": "ptracer_count_max",
+         "files": {"data.pkg": pkg_on, "data.rnf": rnf_bad},
+         "nc": {"bad.nc": {"edit": several(*[
+             add_series(f"runoff_ptracer_t{k:02d}", 1.0)
+             for k in range(tr_bound)])}},
+         "stderr": ["RNF_NC_SERIES: RNF: runoff_ptracer_t00: the file has"
+                    " runoff tracers but pkg/ptracers is not in use",
+                    f"RNF_NC_SERIES: RNF: runoff_ptracer_t{tr_bound - 1:02d}:"
+                    f" the file has runoff tracers but pkg/ptracers is not"
+                    f" in use", n_init(tr_bound)],
+         "stdout": [], "stop": stop_init,
+         "forbid": forbid_file + ["the tracer name after the prefix",
+                                  "the tracer name is longer than",
+                                  "is too small: the file has"]},
     ]
     # The flux is read in RNF_INIT_VARIA, after RNF_CHECK has passed; the
     # flux sums are printed only if the whole record was accepted.
@@ -992,6 +1205,42 @@ def cases(data_pkg, data_exf, info=None):
                      # spherical polar, so the cell-centre check must have
                      # run on this control rather than be skipped
                      "RNF_lonLatChk": "T"},
+         "flux_sum": info["flux_sum"], "stop": "ABNORMAL END",
+         "forbid": no_error},
+        # The control of the two runoff-tracer refusals above: the same
+        # file, with the name the ptracer really has. It must run, report
+        # the match, and apply the term, which is the only case that
+        # reaches RNF_TENDENCY_APPLY_PTR at all. Without it, both
+        # refusals could be refusing every tracer variable and would
+        # still pass.
+        {"name": "ptracer_match",
+         "files": {"data.pkg": pkg_ptr, "data.rnf": rnf_bad,
+                   "data.ptracers": DATA_PTRACERS,
+                   "data.longstep": DATA_LONGSTEP},
+         "nc": {"bad.nc": {"edit": add_series("runoff_ptracer_dye", 2.0)}},
+         "normal_end": True, "stderr": [], "stdout": stdout_ok + [
+             "RNF_SUMMARY: runoff tracer  1 is runoff_ptracer_dye,"
+             " applied to ptracer  1"],
+         "summary": {"RNF_nTrUse": "1", "RNF_usePtracers": "T"},
+         "flux_sum": info["flux_sum"], "stop": "ABNORMAL END",
+         "forbid": no_error},
+        # The counterfactual of the two refusals: the same unmatched
+        # name with RNF_usePtracers switched off, which is the
+        # documented way to read such a file on purpose. The run goes
+        # through and says what it did not apply, which is what the
+        # reader did for every property before RUNOFF-013 -- so this
+        # case is the measurement of what the guard changed, and of the
+        # switch having an effect at all, which it did not before.
+        {"name": "ptracer_ignored",
+         "files": {"data.pkg": pkg_on,
+                   "data.rnf": add_to_namelist(
+                       rnf_bad, "RNF_PARM01",
+                       "  RNF_usePtracers = .FALSE.,")},
+         "nc": {"bad.nc": {"edit": add_series("runoff_ptracer_ghost", 1.0)}},
+         "normal_end": True, "stderr": [], "stdout": stdout_ok + [
+             "RNF_NC_SERIES: runoff_ptracer_ghost is in the file and"
+             " RNF_usePtracers is false:"],
+         "summary": {"RNF_nTrUse": "0", "RNF_usePtracers": "F"},
          "flux_sum": info["flux_sum"], "stop": "ABNORMAL END",
          "forbid": no_error},
         {"name": "cells_equal_dense",
