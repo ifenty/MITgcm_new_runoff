@@ -330,6 +330,11 @@ build without exf and is not scheduled.
   where no source discharges. Assignment is needed because `EXF_SET_FLD` does
   nothing when `runofffile` is blank (`pkg/exf/exf_set_fld.F:117-121`), so
   nothing else resets the array, and the control block adds to it each step.
+  It then enforces the per-cell magnitude bound `RNF_cellVolMax` on the field
+  it has just assigned (RUNOFF-040, "The per-cell aggregate bound" below).
+  Both halves are in this routine for the same reason: it is where the applied
+  field exists and where `rA`, the top-layer thickness and the time step are
+  all available.
 - This call is **one of the two** changes to exf code; the other is the pair of
   tests conditioned on `useRNF` in `EXF_CHECK_RANGE`, described under "Known
   effects inherited from the dense path" below. Those two are the whole exf
@@ -517,6 +522,14 @@ without NetCDF. `RNF_READPARMS`, called from `PACKAGES_READPARMS`
     aggregate simply is not what it bounds. That figure reproduces exactly
     from the cell area measured here: 4·10⁷ m³/s over
     `rA` = 3.112287377·10¹⁰ m² is 1.285228·10⁻³ m/s.
+    The file was rebuilt from this description and re-measured on RUNOFF-040
+    against the committed RUNOFF-030 build: exit 0, `Execution ended
+    Normally`, **0** `EXF WARNING` lines, flux sums both 4.0·10⁷ m³/s, and an
+    `EXFroff` dump with exactly one non-zero cell holding 1.2852284·10⁻³ m/s
+    at `(i,j) = (12,2)` — the description reproduces to every digit it
+    states. It is now the enrolled refusal case `cell_above_vol_max`, and
+    what refuses it is `RNF_cellVolMax` (below); nothing in `RNF_srcFluxMax`
+    changed.
   - **N is not small in the intended use case.** It is 10⁵–10⁶ sources (the
     global 2 km daily case of the model contract), so the aggregate headroom
     is five to six orders of magnitude, not a factor of a few.
@@ -538,8 +551,132 @@ without NetCDF. `RNF_READPARMS`, called from `PACKAGES_READPARMS`
   because the missing check is a different *shape* — a meaningful per-cell
   bound needs `rA`, the top-layer thickness and `deltaT` (it is a statement
   about how much water a column can take in one step), not a larger or smaller
-  m³/s threshold. That is filed as its own follow-up rather than grown into
-  this issue.
+  m³/s threshold. It was filed as its own follow-up rather than grown into
+  this issue, and **RUNOFF-040 implemented it**: `RNF_cellVolMax`, the
+  per-cell aggregate bound below. The mechanism is the one judged right here —
+  a fixed header constant, not a `data.rnf` parameter.
+
+  **The per-cell aggregate bound: `RNF_cellVolMax` = 0.2** (RUNOFF-040,
+  `RNF_EXF_RUNOFF`, reported by `RNF_SUMMARY`). It is the companion of
+  `RNF_srcFluxMax` and not a replacement for it: the one bounds the file per
+  source, the other bounds the field per cell, and only together do they cover
+  the error classes above.
+  - **The quantity.** `|RNF_vflx(c)|·deltaTFreeSurf / (drF(ks)·hFacC(c,ks))`:
+    the depth of water one step of runoff puts on the cell over the thickness
+    of the cell it goes into. With a real freshwater flux that is the
+    fractional change of the top-cell volume in that step — the runoff reaches
+    `etaN` through `EmPmR` and `dEtaHdt`, integrated with `deltaTFreeSurf`
+    (`model/src/integr_continuity.F:221`). With a linear free surface no
+    volume moves and it is instead the fractional freshwater dilution the
+    surface tracer forcing applies, where the model linearises the exact
+    `1/(1+f)` to `1-f` with relative error exactly `f²`. Being dimensionless
+    is the whole point: **one** number serves every grid, resolution and time
+    step, which is precisely what the exf rate bound of 10⁻⁶ m/s could not do.
+    It belongs in `RNF_EXF_RUNOFF` because that is where `rA` (through
+    `RNF_vflx`), the thickness and the step are all available and where the
+    applied field exists.
+  - **Where 0.2 comes from.** MITgcm's own thresholds on the size of the
+    surface cell are `hFacInf` = 0.2 and `hFacSup` = 2.0
+    (`model/src/set_defaults.F:258-259`, documented at
+    `model/inc/PARAMS.h:762` as "Threshold (inf and sup) for fraction size of
+    surface cell"), outside which `CALC_SURF_DR`
+    (`model/src/calc_surf_dr.F:92-98`) and `CALC_R_STAR`
+    (`model/src/calc_r_star.F:185-238`) warn. The smaller of the two
+    departures from `drF(ks)` that the model itself treats as remarkable is
+    `hFacInf` = 0.2, and that is taken as the limit on what a **single step**
+    of runoff may do: a step that moves the surface cell by more crosses the
+    model's own tolerance band before the free surface has a step in which to
+    respond, and at `f` = 0.2 the linearised dilution above is already 4%
+    wrong.
+  - **What it is on each grid** (measured): 5.5556·10⁻⁴ m/s on the lab_sea
+    target cell (`rA` = 3.112287·10¹⁰ m², `drF(1)` = 10 m,
+    `deltaTFreeSurf` = 3600 s), i.e. 1.729·10⁷ m³/s or 82 Amazons;
+    1.1574·10⁻⁴ m/s at **every** one of the 1189 target cells of
+    `cs32/input.rnof_sp_icedyn` (`drF(1)` = 50 m,
+    `deltaTFreeSurf` = 86400 s, and `hFacC(1)` measured 1.0 at all of them —
+    its `hFacMinDr` of 20 m would allow a thinner surface cell but no target
+    has one), which in m³/s is 1.62·10⁶ (7.7 Amazons) on the smallest target
+    cell, `rA` = 1.4019·10¹⁰ m², and 1.03·10⁷ (49 Amazons) on the median,
+    `rA` = 8.8743·10¹⁰ m²; and 1.6667·10⁻³ m/s on a
+    2 km cell (`rA` = 4·10⁶ m², `drF(1)` = 10 m, `deltaTFreeSurf` = 1200 s),
+    i.e. 6.67·10³ m³/s or 0.032 Amazons.
+  - **A physically correct large river, for comparison.** The Amazon's
+    2.1·10⁵ m³/s is `f` = 2.43·10⁻³ on the lab_sea cell (82 times under the
+    bound) and `f` = 4.09·10⁻³ on the median cs32 cell (49 times under; 7.7
+    times under on the smallest cs32 target cell), but `f` = 6.3
+    in **one** 2 km cell at `deltaTFreeSurf` = 1200 s — 31 times **over**.
+    That refusal is correct and not a false positive: 6.3 top-layer volumes in
+    one step is past `hFacSup` within the first step and is not a
+    configuration the model can integrate. What it says is that a 2 km grid
+    must spread the Amazon over at least 32 cells, which its ~200 km mouth is
+    (about 100), and spreading a source over its real cells is what
+    `target_fraction` exists for. Every committed sparse oracle is far below:
+    the largest per-cell `f` over every record of every one of them is
+    6.72·10⁻⁴, on cs32 — a margin of 297 — and the lab_sea files reach
+    3.42·10⁻⁴, a margin of 585.
+  - **Every step, not only `nIter0`.** The target table is static, so a
+    collapse of targets is already visible at `nIter0`; the flux series is
+    not, so a file whose record 1 is innocent and whose record 500 is not
+    would pass a check made once — the same reason `RNF_srcFluxMax` is tested
+    on every record. Cost: a second pass over the same tile interior — one
+    compare per cell, with the thickness lookup and the two multiplies only
+    on the cells that carry runoff, the assignment loop being left a plain
+    vectorisable copy — plus one `GLOBAL_SUM_INT`, which is what lets a
+    refusal seen on one tile stop every process (`ALL_PROC_DIE` hangs unless
+    all of them reach it; the same idiom as the one-tile refusals of
+    `RNF_INIT_FIXED`) and is the only part that does not scale down with the
+    tile. Measured on
+    `lab_sea/input.rnof_sp_const`, 48 steps, serial: the `EXF_GETFORCING`
+    timer section that contains the routine is 4.52·10⁻² s on the RUNOFF-030
+    build and 4.56–4.80·10⁻² s over four samples of the RUNOFF-040 build,
+    while `MAIN LOOP` is 3.999 s and 3.962–4.047 s — the section is 1.1% of
+    `MAIN LOOP` and the added cost is inside the run-to-run scatter, with an
+    upper bound of ≈ 60 µs per step on this grid.
+  - **What it does not cover.** It is per cell and per *step*, so it refuses
+    the absurd and does not certify the plausible: a flux just under the bound,
+    sustained, still adds 0.2 of the surface layer every step. It sees the
+    sparse field only — under `ALLOW_CTRL` with `ALLOW_GENTIM2D_CONTROL`,
+    `xx_runoff` is added to the exf `runoff` array at
+    `pkg/exf/exf_getffields.F:531-534`, **after** the `RNF_EXF_RUNOFF` call at
+    `:456`, so neither package bound sees the controlled field.
+    `EXF_CHECK_RANGE` *does* run after that addition
+    (`exf_getforcing.F:199` then `:348`), but of its tests on the runoff
+    array the upper bound is skipped with `useRNF` and the `sflux` one adds
+    the runoff back. That leaves the negative test — the **sign**, at
+    `nIter0` — and, only where `ALLOW_RUNOFTEMP` is compiled (cs32 defines
+    it, lab_sea does not), a 36 m/s ceiling that the runoff-**temperature**
+    test reads from the `runoff` array where it means `runoftemp`: an
+    upstream misnaming, not conditioned on `useRNF`, and 6.5·10⁴ times above
+    `RNF_cellVolMax` on the lab_sea cell, so it constrains nothing in
+    practice. Nothing therefore bounds the magnitude of `xx_runoff`; that is
+    a `pkg/ctrl` question, deliberately not in this issue's scope.
+    It bounds magnitude only, not the temperature, salinity or tracer
+    concentrations the water carries, and not the sign. It cannot tell one
+    wrong source from N collapsed ones; it names the **cell**, which is what
+    locates a collapsed target. It is blind in proportion to
+    `drF(ks)·hFacC/deltaTFreeSurf`, so a collapse onto a thick top layer with
+    a short step gets further. And the thickness it uses is the reference one;
+    with `select_rStar` the live thickness is `rStarFacC` times that, within
+    `[hFacInf,hFacSup]` of it. `RNF.h` carries the same list beside the
+    constant.
+  - **Measured, both directions** (`tests/rnf/refusal_check.py`):
+    `cell_above_vol_max` is the witness above and is refused, naming the cell
+    `(i,j,bi,bj) = (3,3,2,1)` with `XC,YC` = 305°E, 51°N, `value`
+    1.28522836·10⁻³, `limit` 5.55555556·10⁻⁴ m/s, with a `forbid` list that
+    excludes the per-source bound and every init check the collapse walks
+    past; it **fails** on a mutant with `RNF_cellVolMax` ten times too large,
+    where the run ends normally again. `cell_at_vol_max`, the same collapse at
+    0.99 of the bound, must and does end normally; it applies 0.99 of the
+    5.5556·10⁻⁴ m/s allowed on that cell where `flux_at_source_max` applies
+    3.21·10⁻⁴ m/s, i.e. 0.578 of it, so it sits **1.7** times nearer the
+    bound — while the witness is 2.31 times *over* it and a factor of 4 above
+    `flux_at_source_max`.
+    What `cell_at_vol_max` does **not** do is pin the `.LE.` against
+    a `.LT.`, the way `ptracer_name_max` pins its length test: a control
+    exactly at the bound would have to land on the last bit of a product of
+    three reals and would measure the compiler's rounding, and the direction
+    carries no promise here — `RNF_cellVolMax` is a round safety share, not a
+    value a file may sit on, which is what `RNF_srcFluxMax` is.
 
   **How the second relaxation came to be in scope, kept because the reasoning
   is the useful part.** Round 0 implemented only the runoff skip, as the issue
@@ -605,7 +742,7 @@ temperature term of decision 3 becomes
 temperature still enter at `θ`.
 
 **Consequence for issues.** RUNOFF-004 implements `RNF_EXF_RUNOFF` and the
-refusals. RUNOFF-014 tests branches N, L and U with unchanged downstream code.
+refusals; RUNOFF-040 adds the per-cell magnitude refusal to that same routine. RUNOFF-014 tests branches N, L and U with unchanged downstream code.
 RUNOFF-016 must use the `rhoConstFresh/rhoConst` factor when it compares model
 volume with source flux. RUNOFF-017 gains the refusals above, the scale-factor
 one included. RUNOFF-026 states that exf input scaling is not applied. RUNOFF-024
@@ -617,10 +754,13 @@ RUNOFF-011 must give every testbed an exf build: `isomip` and
 test variant. RUNOFF-026 documents `useExfCheckRange`: that **two** of its tests are
 conditioned on `useRNF` — the runoff upper bound skipped, and the `sflux` bound
 applied to `sflux + runoff` so an out-of-range `evap - precip` is still refused
-— that `RNF_srcFluxMax` applies instead, and that the negative-runoff test and
-every range check of every *other* field are unaffected. This candidate's own
-`doc/phys_pkgs/exf.rst` already states all of that, so RUNOFF-026 inherits a
-complete description rather than half of one.
+— that `RNF_srcFluxMax` and `RNF_cellVolMax` apply instead, and that the
+negative-runoff test and every range check of every *other* field are
+unaffected. This candidate's own `doc/phys_pkgs/exf.rst` and
+`pkg/rnf/README.md` already state all of that, so RUNOFF-026 inherits a
+complete description rather than half of one; both gained the per-cell bound
+with RUNOFF-040, `exf.rst` without naming the constant, since that page
+documents exf and not the internals of `pkg/rnf`.
 
 ## Decision 3: temperature and salinity contributions
 

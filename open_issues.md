@@ -689,6 +689,8 @@ Separately, at the 2 km target resolution `RNF_srcFluxMax` is not a per-cell saf
 ### Scientific or engineering impact
 A silently wrong applied field on the configuration the package exists to serve. The old bound was the wrong shape but it did catch this; nothing does now.
 
+**Implemented 2026-10-06.** The present tense above describes the code *before* this change: `RNF_cellVolMax` = 0.2 in `RNF.h`, enforced in `RNF_EXF_RUNOFF` on every step, now refuses a cell whose one-step runoff exceeds that share of its top-layer volume, naming the cell, the applied value and the limit. Review B's four-source witness was rebuilt from the description in the Evidence section and confirmed on the committed RUNOFF-030 build first (normal end, exit 0, zero `EXF WARNING` lines, 1.2852284e-3 m/s at one cell); it is now the enrolled refusal `cell_above_vol_max`, with `cell_at_vol_max` at 0.99 of the bound as its control. The derivation, the figures on each grid and what the bound does not cover are in `RNF.h` and in [package design](docs/package_design.md) decision 2. Nothing in the "Proposed action and acceptance" paragraph below was changed.
+
 ### Proposed action and acceptance
 **Not a parameter.** Review B's judgment, which Arch accepted and which the design records: a fixed header constant is the right mechanism for the per-source bound, a `data.rnf` scalar would be a cost with no benefit, and the remaining gap cannot be closed by a different *number* — it needs a different *shape* of check. The grid-independent form is the volume added per step as a fraction of the target cell's top-layer volume, which requires `rA`, the top-layer thickness and `deltaT`, so it belongs in `RNF_EXF_RUNOFF` where all three are available and the applied field exists.
 

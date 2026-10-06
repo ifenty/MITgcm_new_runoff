@@ -155,8 +155,14 @@ SALT_FILE = "salt0_rnfterm.bin"
 #: retained ``L_set`` run: ``exf_debugLev = 2``, the ``it= 0`` trace
 #: selects ``rec0 = 1`` with ``fac = 1.0``, and the log holds no
 #: ``EXF WARNING`` line. So these cases say nothing about the RUNOFF-030
-#: skip either way. The bound that does apply to the flux is
-#: ``RNF_srcFluxMax`` = 1e7 m^3/s on one source, ten times this value.
+#: skip either way. Two package bounds do apply to this flux, and it is
+#: under both: ``RNF_srcFluxMax`` = 1e7 m^3/s on one source, ten times
+#: this value; and ``RNF_cellVolMax`` = 0.2 of the target cell's
+#: top-layer volume per step (RUNOFF-040), which on this cell is
+#: 5.5556e-4 m/s (10 m first level, 3600 s step) against the 3.21e-5 m/s
+#: above, a factor of 17. Unlike the exf check, that one runs on **every**
+#: step, so raising ``FLUX`` by more than 17 would refuse these runs in
+#: ``RNF_EXF_RUNOFF`` rather than merely warn.
 FLUX = 1.0e6
 #: Steps each run takes. Only the **second** one is measured (see
 #: :func:`dump_at`); the first is there to put the two runs of a case
@@ -631,7 +637,9 @@ def write_input(case, input_dir, zero_flux):
     # lab_sea/input (.TRUE.); see the FLUX comment at the top for why
     # the override that used to be here was unnecessary, and for the
     # measurement that says so. pkg/rnf bounds the source flux itself
-    # (RNF_srcFluxMax, package design decision 2, RUNOFF-030).
+    # (RNF_srcFluxMax, package design decision 2, RUNOFF-030) and the
+    # applied field per cell (RNF_cellVolMax, RUNOFF-040); FLUX is under
+    # both, by factors of 10 and 17.
     with open(os.path.join(base, "data.exf")) as fh:
         exf = fh.read()
     exf = set_namelist(exf, "EXF_NML_02", "runoffFile",

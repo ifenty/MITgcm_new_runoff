@@ -19,9 +19,11 @@ integer one, and ``E``/``F``/``G``/``D`` a real one. An ``I`` descriptor with a
 to the compiler, so collapsing the numeric kinds would miss it.
 
 How the item type is found: the declarations of the routine the statement is
-in, then those of the package headers ``RNF.h`` and ``RNF_SIZE.h``, then
-literals and a small table of intrinsics (``LEN``, ``ILNBLNK``, ``ABS`` and so
-on). Scoping is per routine, which matters: ``attVal`` is ``_RL`` in
+in, then those of the package headers ``RNF.h`` and ``RNF_SIZE.h``, then the
+model headers a message actually takes items from (``MODEL_HEADERS``: the grid
+and the run-time parameters, for the cell coordinates and the time step that
+``RNF_EXF_RUNOFF`` prints when it refuses a cell), then literals and a small
+table of intrinsics (``LEN``, ``ILNBLNK``, ``ABS`` and so on). Scoping is per routine, which matters: ``attVal`` is ``_RL`` in
 ``RNF_NC_ATT_REAL`` and ``CHARACTER*(*)`` in ``RNF_NC_ATT_TEXT``. An item the
 module cannot classify fails
 :func:`test_every_write_item_of_pkg_rnf_is_classified` rather than passing
@@ -38,8 +40,25 @@ import os
 import re
 import sys
 
-PKG = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__)))), "MITgcm", "pkg", "rnf")
+MITGCM = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__)))), "MITgcm")
+PKG = os.path.join(MITGCM, "pkg", "rnf")
+
+#: Model headers a ``pkg/rnf`` message may take an item from, read before the
+#: package ones so that a package declaration shadows a model one. The list is
+#: not every header the package includes: it is the ones that actually supply
+#: items to a ``WRITE(msgBuf,...)``, which today means the grid
+#: (``XC``, ``YC``, ``drF``) and the run-time parameters (``deltaTFreeSurf``)
+#: that ``RNF_EXF_RUNOFF`` names when it refuses a cell. Adding a message that
+#: prints a variable from an unlisted header does not pass quietly -- it fails
+#: :func:`test_every_write_item_of_pkg_rnf_is_classified` with "has no known
+#: type", which is how this list came to exist (RUNOFF-040). Extend it there
+#: and then, rather than widening the classifier.
+MODEL_HEADERS = (
+    os.path.join(MITGCM, "eesupp", "inc", "EEPARAMS.h"),
+    os.path.join(MITGCM, "model", "inc", "PARAMS.h"),
+    os.path.join(MITGCM, "model", "inc", "GRID.h"),
+)
 
 #: Fortran type keywords and the item kind each one declares.
 TYPES = (
@@ -184,8 +203,17 @@ def join_continuations(text):
 
 
 def symbols_of_headers():
-    """Return the declarations of the package headers, by upper-case name."""
+    """Return the declarations of the headers in scope, by upper-case name.
+
+    The model headers of :data:`MODEL_HEADERS` first, then the package
+    headers, so a ``pkg/rnf`` declaration shadows a model one of the same
+    name. Measured when this was added: the two sets declare no name in
+    common, so the order is a rule for the future and not a live fix.
+    """
     out = {}
+    for path in MODEL_HEADERS:
+        with open(path) as fh:
+            out.update(declarations(join_continuations(fh.read())))
     for name in ("RNF_SIZE.h", "RNF.h"):
         with open(os.path.join(PKG, name)) as fh:
             out.update(declarations(join_continuations(fh.read())))

@@ -46,6 +46,19 @@ There are three kinds of case.
     runoff from its ``sflux`` bound, so without this refusal nothing would
     stop an absurd flux. Its at-the-bound companion
     ``flux_at_source_max`` is among the normal-end runs below;
+  - the per-cell **aggregate** above ``RNF_cellVolMax``
+    (``cell_above_vol_max``, RUNOFF-040), which is the error class the
+    bound above cannot see: it is per source and per file, so four
+    sources each carrying *exactly* ``RNF_srcFluxMax`` with every target
+    collapsed onto one cell got past it, applying 1.285228e-3 m/s and
+    ending normally with no message at all (measured). The collapse
+    carries ``target_cell_area``, ``target_lon`` and ``target_lat`` with
+    the targets and leaves the fractions alone, so no init check can
+    fire and the aggregate is the only thing wrong with the file; the
+    ``forbid`` list asserts that. ``RNF_EXF_RUNOFF`` refuses it on every
+    step, naming the cell, the applied value and the limit. Its control
+    ``cell_at_vol_max``, just under the bound, is among the normal-end
+    runs below;
   - the exf freshwater bound with ``useRNF`` on and **no** runoff at all
     (``sflux_out_of_range``, RUNOFF-030 correction round 1): the ``sflux``
     test is applied to ``sflux + runoff`` with ``useRNF``, and this case
@@ -77,6 +90,13 @@ There are three kinds of case.
   with ``useExfCheckRange`` at the lab_sea default ``.TRUE.``, printing
   neither range warning and no m/yr advice. No case here switches
   ``useExfCheckRange`` off),
+  ``cell_at_vol_max`` (the control of ``cell_above_vol_max``: the same
+  collapse onto one cell, sized so that the aggregate is 0.99 of
+  ``RNF_cellVolMax`` rather than 2.31 times it, so the per-cell guard
+  must stay silent and the record must then be applied. It is the
+  tightest run here that must still finish: it applies 5.50e-4 m/s against
+  that bound's 5.5556e-4 m/s, where ``flux_at_source_max`` applies
+  3.21e-4 m/s, so it sits 1.7 times nearer the bound),
   ``cells_equal_dense`` (the one-source-per-cell file must
   reproduce the dense reference ``results/output.rnof_const.txt``),
   ``zero_flux_differs`` (the same run with every flux set to zero must NOT
@@ -337,6 +357,12 @@ def sparse_info():
     the grid, which one process owns in a two-process run). Land is where
     ``input/bathy.labsea1979`` is not negative.
 
+    For the per-cell aggregate cases of RUNOFF-040 it also has
+    ``fracs`` (``target_fraction`` in file order) and the three stored
+    properties of the cell the targets are collapsed onto, which the
+    collapse carries with them so that no area or cell-centre check can
+    fire: ``wet_area``, ``wet_lon`` and ``wet_lat``.
+
     It also has the three values of the ``target_coords`` case, which moves
     one target to its neighbour in x: ``moved_entry`` (the table entry),
     ``moved_cell`` (the cell it is moved to) and ``moved_source`` (the id
@@ -361,6 +387,10 @@ def sparse_info():
         flux0 = float(flux[0])
         cells = np.asarray(ds["target_cell"][:]).astype(int)
         wet_cell = int(cells[0])
+        fracs = [float(f) for f in ds["target_fraction"][:]]
+        wet_area = float(ds["target_cell_area"][0])
+        wet_lon = float(ds["target_lon"][0])
+        wet_lat = float(ds["target_lat"][0])
     bathy = np.fromfile(os.path.join(VERIF, EXPERIMENT, "input", "bathy.labsea1979"),
                         dtype=">f4").reshape(ny, nx)
     land = [(int(j), int(i)) for j, i in np.argwhere(bathy >= 0.0) if i < nx // 2]
@@ -377,8 +407,67 @@ def sparse_info():
     return {"ids": ids, "target_source": target_source, "nx": nx, "ny": ny,
             "flux_sum": flux_sum, "flux0": flux0, "wet_cell": wet_cell,
             "land_cell": i + nx * j,
+            "fracs": fracs, "wet_area": wet_area,
+            "wet_lon": wet_lon, "wet_lat": wet_lat,
             "moved_entry": moved_entry, "moved_cell": moved_cell,
             "moved_source": ids[target_source[moved_entry]]}
+
+
+def applied_on_cell(flux, info):
+    """Aggregate applied value, in m/s, when every target is on one cell.
+
+    ``flux`` is the volume flux every source of ``SPARSE`` carries, in
+    m^3/s. The sum is accumulated over the target entries **in file
+    order**, each as ``flux*frac/rA``, which is what ``RNF_LOAD_AT``
+    builds (``pkg/rnf/rnf_fields_load.F``, the ``RNF_vflx`` statement)
+    and whose order the package design declares a contract. It is
+    rebuilt here rather than shortened to ``n*flux/rA`` so that the
+    figure a case asserts is the one the model computes, to the last
+    place.
+    """
+    total = 0.0
+    for k in range(len(info["fracs"])):
+        total += flux*info["fracs"][k]/info["wet_area"]
+    return total
+
+
+def surface_bound(experiment_input="input"):
+    """Return ``(drF(1), deltaTFreeSurf, limit)`` of a lab_sea run.
+
+    ``limit`` is the largest runoff one cell may take, in m/s, i.e. the
+    value ``RNF_EXF_RUNOFF`` compares the applied field with: its
+    ``vLim`` is ``RNF_cellVolMax*drF(ks)*hFacC(ks)/deltaTFreeSurf``.
+    ``RNF_cellVolMax`` is read from ``RNF.h`` and the two grid values
+    from the experiment's own ``data``, so neither can drift away from
+    what the run uses:
+
+    * ``drF(1)`` is ``delZ(1)``. ``hFacC(i,j,1)`` is 1 at every target
+      cell of the sparse files, because the shallowest of them is 55 m
+      deep against a 10 m first level (measured);
+    * ``deltaTFreeSurf`` defaults to ``deltaTMom``
+      (``model/src/ini_parms.F:1068``) and lab_sea's ``data`` does not
+      set it. A ``data`` that did would make that default wrong, so
+      this raises rather than return a stale figure.
+    """
+    path = os.path.join(VERIF, EXPERIMENT, experiment_input, "data")
+    with open(path) as fh:
+        text = fh.read()
+    active = [ln for ln in text.splitlines()
+              if not ln.lstrip().startswith("#") and "=" in ln]
+    for line in active:
+        if line.split("=")[0].strip().lower() == "deltatfreesurf":
+            raise ValueError(f"{path} sets deltaTFreeSurf: surface_bound "
+                             f"assumes it defaults to deltaTMom")
+    def one(name):
+        hits = [ln.split("=", 1)[1] for ln in active
+                if ln.split("=")[0].strip().lower() == name]
+        if len(hits) != 1:
+            raise ValueError(f"expected one {name} in {path}, "
+                             f"found {len(hits)}")
+        return hits[0]
+    drf1 = float(one("delz").split(",")[0].strip())
+    dtfs = float(one("deltatmom").strip().rstrip(",").replace("D", "E"))
+    return drf1, dtfs, real_bound("RNF_cellVolMax")*drf1/dtfs
 
 
 def ulp_shares(flux, area, fraction=0.35):
@@ -850,6 +939,77 @@ def cases(data_pkg, data_exf, info=None):
         f" limit{e16_8(flux_bound)}",
         f"RNF_NC_READ_FLUX: RNF:{1:8d} value(s) of runoff_flux out of"
         f" range (not allowed)"]
+    # The package's own bound on the per-cell AGGREGATE (RUNOFF-040).
+    # RNF_srcFluxMax above is per source and per file, so it cannot see
+    # several sources adding up on one cell; RNF_cellVolMax is the share
+    # of the target cell's top-layer volume that one time step of runoff
+    # may add, and RNF_EXF_RUNOFF refuses the cell that exceeds it. The
+    # limit in m/s is read from the constant and the grid, never
+    # repeated: see ``surface_bound``.
+    vol_bound = real_bound("RNF_cellVolMax")
+    drf1, dtfs, cell_limit = surface_bound()
+    # Review B's witness: four sources each carrying exactly
+    # RNF_srcFluxMax with every target on one cell.
+    agg_applied = applied_on_cell(flux_bound, info)
+    # Just under the bound, for the control that must still run. The
+    # per-source flux it needs has to stay under RNF_srcFluxMax, or the
+    # control would be refused by that guard instead and so would
+    # measure it rather than this one -- which is what happens, and is
+    # how this was found, on a mutant whose RNF_cellVolMax is ten times
+    # too large. Raise rather than run as something weaker.
+    at_vol_flux = 0.99*cell_limit*info["wet_area"]/sum(info["fracs"])
+    if at_vol_flux >= flux_bound:
+        raise ValueError(
+            f"cell_at_vol_max needs {at_vol_flux:.6E} m^3/s a source to "
+            f"reach 0.99 of RNF_cellVolMax on this grid, which is not "
+            f"below RNF_srcFluxMax = {flux_bound:.6E}: the control would "
+            f"be refused by the per-source bound instead")
+    cell_msg = [
+        "RNF_EXF_RUNOFF: RNF: runoff out of range: cell (i,j,bi,bj) =",
+        f", value{e16_8(agg_applied)}, limit{e16_8(cell_limit)}",
+        f"RNF_EXF_RUNOFF: its XC,YC ={e16_8(info['wet_lon'])}"
+        f"{e16_8(info['wet_lat'])}, top-layer thickness{e16_8(drf1)}"
+        f" m, deltaTFreeSurf{e16_8(dtfs)}"]
+    cell_tally = [
+        f"RNF_EXF_RUNOFF: RNF:{1:8d} cell(s) with too much runoff at"
+        f" iteration{1:10d}",
+        f"RNF_EXF_RUNOFF: one step adds more than RNF_cellVolMax ="
+        f"{e16_8(vol_bound)} of the cell top-layer volume",
+        "RNF_EXF_RUNOFF: several sources on one cell add up here:"
+        " check target_cell of the file"]
+    # None of the adjacent reasons may be what stops the run. The first
+    # is the point of the case: the per-source bound is NOT breached,
+    # each source carries exactly the value it allows. The next four are
+    # the init checks that the collapse is built to walk past, and the
+    # last two are pkg/exf, whose runoff upper bound is skipped with
+    # useRNF and must not be what fires.
+    cell_forbid = ["runoff_flux out of range",
+                   "target_cell_area differs from the cell area",
+                   "target on land",
+                   "fraction sum is not 1",
+                   "target_lon/target_lat are not the centre",
+                   "missing runoff_flux",
+                   "EXF WARNING",
+                   "ABNORMAL END: S/R EXF_CHECK_RANGE"]
+
+    def collapse(flux):
+        """Put every target on the first one's cell, at ``flux`` a source.
+
+        ``target_cell_area``, ``target_lon`` and ``target_lat`` move
+        with the targets, so the area and cell-centre checks of
+        RNF_INIT_FIXED see a consistent entry, and ``target_fraction``
+        is left alone, so every source's fractions still sum to 1. That
+        is what leaves the per-cell aggregate as the only thing wrong
+        with the file.
+        """
+        def edit(ds):
+            n = len(ds.dimensions["target"])
+            for name in ("target_cell", "target_cell_area",
+                         "target_lon", "target_lat"):
+                ds[name][:] = [ds[name][0]]*n
+            ds["runoff_flux"][0, :] = flux
+        return edit
+
     # A one-step run, for the at-the-bound companion below: a flux of
     # exactly RNF_srcFluxMax has to be applied, and over the nine steps
     # of lab_sea/input it would add 3.2e11 m^3 to one cell, i.e. 10 m
@@ -1094,6 +1254,32 @@ def cases(data_pkg, data_exf, info=None):
         # every adjacent reason it could pass for.
         file_case("flux_above_source_max", over_msg, stop=stop_flux,
                   edit=set_var("runoff_flux", (0, 0), 2.0*flux_bound)),
+        # The per-cell aggregate (RUNOFF-040), which RNF_srcFluxMax
+        # cannot see at all: four sources each carrying EXACTLY the
+        # value it allows, with every target collapsed onto one cell.
+        # Measured on the build before this check existed: the run
+        # ended normally with exit 0, no message of any kind and no
+        # EXF WARNING, applying 1.2852284E-03 m/s -- 1285 times the
+        # pkg/exf runoff bound that useRNF skips -- at the one
+        # non-zero cell. Its route is a converter index bug collapsing
+        # sources, which is on this project's own highest-risk list,
+        # and N is 10^5 to 10^6 in the intended case.
+        # The messages the owning process prints name the cell, the
+        # applied value and the limit, which is what locates the
+        # collapsed target; the tally and the two lines after it are
+        # printed by every process, because the count is reduced
+        # before the stop so that a refusal on one tile stops them all.
+        {"name": "cell_above_vol_max",
+         "files": {"data.pkg": pkg_on, "data.rnf": rnf_bad,
+                   "data": data_one_step},
+         "nc": {"bad.nc": {"edit": collapse(flux_bound)}},
+         "stderr": cell_tally, "stderr_any": cell_msg,
+         "stdout": [],
+         # the record was read and applied: the refusal is about the
+         # aggregate on the cell and not about rejecting the record
+         "flux_sum": flux_bound*len(ids),
+         "stop": "ABNORMAL END: S/R RNF_EXF_RUNOFF",
+         "forbid": cell_forbid},
         # The control of the sflux half of RUNOFF-030: with useRNF
         # true and NO runoff at all, an out-of-range evap - precip
         # must still stop the run. The sflux bound is now tested on
@@ -1356,7 +1542,11 @@ def cases(data_pkg, data_exf, info=None):
         "RNF_SUMMARY: its sflux bound tests sflux+runoff, i.e. evap-precip,"
         " with useRNF=.TRUE.",
         "RNF_SUMMARY: the negative-runoff test of EXF_CHECK_RANGE still"
-        " applies per cell (at nIter0)"]
+        " applies per cell (at nIter0)",
+        # RUNOFF-040: the per-cell aggregate bound, which is the one of
+        # the five that is checked on every step of every run
+        "RNF_SUMMARY: RNF_EXF_RUNOFF refuses a cell above"
+        " RNF_cellVolMax ="]
     stdout_ok = stdout_ok + bounds_report
     dense = {name: None for name in ("data", "data.exf")}
     out += [
@@ -1447,6 +1637,42 @@ def cases(data_pkg, data_exf, info=None):
          "flux_sum": info["flux_sum"] - info["flux0"] + flux_bound,
          "stop": "ABNORMAL END",
          "forbid": no_error + ["out of range", "m/s not m/yr"]},
+        # The negative control of cell_above_vol_max: the same collapse
+        # onto the same cell, sized so that the aggregate is 0.99 of
+        # RNF_cellVolMax instead of 2.31 times it. The guard must stay
+        # silent and the record must then be applied, which the flux
+        # sums assert. It is the tightest configuration in this file
+        # that must still run: it applies 0.99 of the 5.5556e-4 m/s the
+        # bound allows on this cell, where flux_at_source_max applies
+        # 3.21e-4 m/s, i.e. 0.578 of it -- so this case sits 1.7 times
+        # nearer the bound. The witness, for scale, is 2.31 times OVER
+        # the bound and a factor of 4 above flux_at_source_max.
+        #
+        # What this case does NOT do is pin the `.LE.` of the guard
+        # against a `.LT.`, the way ptracer_name_max pins its length
+        # test. A control exactly at the bound would have to make
+        # ABS(vflx)*deltaTFreeSurf land on the last bit of
+        # RNF_cellVolMax*drF*hFacC, a product of three reals the
+        # compiler is free to round its own way, so it would measure
+        # rounding rather than the guard. The direction does not carry
+        # a promise here either: RNF_cellVolMax is a round safety
+        # share, not a value a file may sit on, which RNF_srcFluxMax
+        # (where the at-the-bound direction IS a promise) is.
+        {"name": "cell_at_vol_max",
+         "files": {"data.pkg": pkg_on, "data.rnf": rnf_bad,
+                   "data": data_one_step},
+         "nc": {"bad.nc": {"edit": collapse(at_vol_flux)}},
+         "normal_end": True, "stderr": [], "stdout": stdout_ok,
+         "summary": {"RNF_nSrcFile": str(len(ids)), "RNF_nTgtOwned": "7",
+                     # the parameter line of the bound this case sits
+                     # under, so the reported value and the enforced
+                     # one cannot drift apart unnoticed; WRITE_0D_RL
+                     # prints 15 decimals, as for RNF_srcFluxMax above
+                     "RNF_cellVolMax": f"{vol_bound:.15E}"},
+         "flux_sum": at_vol_flux*len(ids),
+         "stop": "ABNORMAL END",
+         "forbid": no_error + ["out of range", "m/s not m/yr",
+                               "too much runoff"]},
         {"name": "cells_equal_dense",
          "copy_from": DENSE_INPUT, "copy": dense,
          "files": {"data.pkg": pkg_on, "data.rnf": DATA_RNF.format(CELLS_REL)},

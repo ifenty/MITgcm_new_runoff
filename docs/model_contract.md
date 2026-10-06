@@ -134,16 +134,40 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
   skipped — but note the coverage, because it is easy to state backwards: that
   sign test is inside `EXF_CHECK_RANGE`, which runs at `nIter0` only unless
   `exf_debugLev` ≥ `debLevC` (`exf_getforcing.F:346-349`), so it is checked
-  once per run. So was the upper bound it sits beside, before this change;
+  once per run. So was the upper bound it sits beside, before RUNOFF-030;
   `RNF_srcFluxMax` in `RNF_NC_READ_ONE` is the one with per-record coverage.
   The asymmetry — magnitude every record, sign once — is therefore real but
-  pre-existing, and this change does not alter it. The skip alone is not
-  sufficient, so the exf `sflux` bound is
+  pre-existing, and neither RUNOFF-030 nor RUNOFF-040 alters it. The skip
+  alone is not sufficient, so the exf `sflux` bound is
   conditioned on `useRNF` as well — it is applied to `sflux + runoff`, since
   `exf_getforcing.F:313` subtracts runoff into `sflux` before the check — and
   with both conditions a point source runs with `useExfCheckRange=.TRUE.`
   while an out-of-range `evap - precip` is still refused. The dense
   `runoffFile` path is untouched by both.
+- An **applied field** that puts more than `RNF_cellVolMax` = 0.2 of a target
+  cell's top-layer volume into it in one time step stops the run, naming the
+  cell (`i,j,bi,bj` and its `XC,YC`), the applied value and the limit
+  (`RNF_EXF_RUNOFF`, RUNOFF-040). This is the per-**cell** companion of
+  `RNF_srcFluxMax`, which is per source and per file and therefore cannot see
+  an aggregate at all: measured, four sources each carrying exactly
+  `RNF_srcFluxMax` with every target collapsed onto one lab_sea cell applied
+  1.285228 × 10⁻³ m/s — 1285 times the exf bound that was relaxed — and the
+  run ended normally with no message of any kind. The quantity bounded is the
+  dimensionless `|runoff|·deltaTFreeSurf / (drF(ks)·hFacC(ks))`, so one
+  constant serves every grid, resolution and time step, which is exactly what
+  the exf bound of 10⁻⁶ m/s could not do. The number is MITgcm's own
+  `hFacInf` = 0.2, the smaller of the two thresholds it sets on the size of
+  the surface cell (`set_defaults.F:258-259`, `PARAMS.h:762`). It is checked
+  on **every step**, because the target table is static but the flux series
+  is not. `RNF.h` carries the derivation, the value in m/s on each test grid,
+  what a physically correct large river is on each, and what the bound does
+  not cover — in particular that it runs *before* `xx_runoff` is added at
+  `exf_getffields.F:531-534`, so neither package bound sees the controlled
+  field, and that of the tests `EXF_CHECK_RANGE` makes on the runoff array —
+  it does run after that addition — only the negative one still constrains
+  it, at `nIter0`, plus a 36 m/s ceiling that the runoff-*temperature* test
+  reads from the `runoff` array where `ALLOW_RUNOFTEMP` is compiled. Nothing
+  bounds the magnitude of `xx_runoff` in any way that binds.
 - Read the static index and fraction arrays (~10⁶ entries) once at init.
 
 ## Model behavior

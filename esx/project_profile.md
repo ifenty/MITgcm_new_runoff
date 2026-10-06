@@ -244,11 +244,63 @@ This is the scientific contract agents read. Executable paths and commands are i
     more. That gap needs `rA`, the top-layer thickness and `deltaT` to close,
     i.e. a different check rather than a different number, so **no `data.rnf`
     parameter was added**: a fixed header constant is the right mechanism and a
-    scalar would be cost without benefit. Measured by execution
+    scalar would be cost without benefit. **RUNOFF-040 closed that gap** with
+    `RNF_cellVolMax`, the next entry, keeping that mechanism. Measured by
+    execution
     (`refusal_check.py --case flux_above_source_max`, demonstrated failing on a
     mutant with the bound weakened fourfold, with `flux_at_source_max` as the
     at-the-bound control that must get past the guard at exactly the bound and
     then apply the record).
+  - an **applied field** that puts more than `RNF_cellVolMax` = 0.2 of a
+    target cell's top-layer volume into it in one time step — **implemented
+    in RUNOFF-040**, in `RNF_EXF_RUNOFF` (`rnf_exf_runoff.F`), which refuses
+    on every step, naming the cell (`i,j,bi,bj` and its `XC,YC`), the applied
+    value and the limit. This is the per-cell companion of `RNF_srcFluxMax`
+    above, not a replacement: the one bounds the file per source, the other
+    bounds the field per cell, and only together do they cover what the
+    skipped `pkg/exf` runoff bound used to. The quantity bounded is the
+    dimensionless `|runoff|·deltaTFreeSurf / (drF(ks)·hFacC(ks))`, so **one**
+    constant serves every grid, resolution and time step — which is exactly
+    what a rate in m/s could not do and why the exf bound had to be skipped
+    rather than retuned. With a real freshwater flux it is the fractional
+    change of the top-cell volume in one step
+    (`model/src/integr_continuity.F:221`); with a linear free surface it is
+    the fractional dilution the surface tracer forcing applies, where the
+    model linearises `1/(1+f)` to `1-f` with relative error exactly `f²`.
+    The number is MITgcm's own `hFacInf` = 0.2, the smaller of the two
+    thresholds it puts on the size of the surface cell
+    (`model/src/set_defaults.F:258-259`, `model/inc/PARAMS.h:762`), outside
+    which `CALC_SURF_DR` and `CALC_R_STAR` warn: a step that moves the
+    surface cell by more crosses the model's own tolerance band before the
+    free surface has a step in which to respond. On the lab_sea target cell
+    that is 5.5556e-4 m/s (82 Amazons), at every cs32 target cell 1.1574e-4
+    m/s (7.7 Amazons on the smallest of them, 49 on the median), and on a
+    2 km cell with a 10 m top layer and a 1200 s step
+    1.6667e-3 m/s, i.e. 6.67e3 m³/s — so a 2 km grid must spread an Amazon
+    over at least 32 cells, which its ~200 km mouth is. Every committed
+    sparse oracle is at most 6.72e-4 of a cell per step, a margin of 297.
+    **What it does not cover:** it is per cell and per step, so a sustained
+    flux just under it is not certified; it bounds magnitude only, not the
+    sign nor the temperature, salinity and tracers the water carries; and it
+    runs **before** `xx_runoff` is added at `exf_getffields.F:531-534`, so
+    neither package bound sees the controlled field. `EXF_CHECK_RANGE` does
+    run after that addition (`exf_getforcing.F:199` then `:348`), but of its
+    tests on the runoff array the upper bound is skipped with `useRNF` and
+    the `sflux` one adds the runoff back, leaving the negative test — the
+    sign, at `nIter0` — and, only where `ALLOW_RUNOFTEMP` is compiled (cs32
+    defines it, lab_sea does not), a 36 m/s ceiling that the
+    runoff-*temperature* test reads from the `runoff` array where it means
+    `runoftemp`, an upstream misnaming not conditioned on `useRNF` and
+    6.5e4 times above `RNF_cellVolMax` on the lab_sea cell. Nothing
+    therefore bounds the magnitude of `xx_runoff`; that is a
+    `pkg/ctrl` question and was deliberately kept out of scope. Measured
+    by execution (`refusal_check.py --case cell_above_vol_max`, review B's
+    four-source witness rebuilt from its description and confirmed first on
+    the RUNOFF-030 build — normal end, 0 `EXF WARNING`, 1.2852284e-3 m/s at
+    one cell — then demonstrated failing on a mutant with the bound weakened
+    tenfold, with `cell_at_vol_max` at 0.99 of the bound as the control that
+    must still end normally; on `-mpi 2` both processes stop, the count
+    being reduced with `GLOBAL_SUM_INT` before the stop).
   - **`EXF_CHECK_RANGE` conditions TWO tests on `useRNF`, and a point source
     needs both.** Skipping the runoff upper bound alone achieves nothing,
     which RUNOFF-030 found by measurement: the same routine stops the run when
