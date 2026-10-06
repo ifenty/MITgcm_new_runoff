@@ -731,7 +731,7 @@ invariant: an owner who grants N iterations gets N units of work, not N polls.
 **Category**: workflow_integrity
 **Severity**: Medium
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
-**Anchors**: tools/esx/brief.py:COMMAND_PATTERN; tools/esx/brief.py:interface_errors
+**Anchors**: tools/esx/brief.py:interface_errors; tools/esx/brief.py:build
 **Implementation-Reference**: project commit 59fe9a7; guard in tests/esx/test_framework_fixes.py
 
 ### Issue
