@@ -769,6 +769,31 @@ component of `verify.fingerprint` and every module-context digest, so on this
 issue the fix staled the implementer's sealed report AND its focused-suite
 evidence, forcing a full re-emission with a fresh 16-minute suite run.
 
+### A second cost, found by the implementer and not anticipated by Arch
+
+Staleness was not the only consequence. Re-drafting the documentation plan
+pulled **the fix's own targets into the active issue's plan**:
+`tools/esx/brief.py::<module>`,
+`tests/esx/test_framework_fixes.py::<module>` and
+`::test_command_span_stops_at_a_quote` appeared in RUNOFF-040's seal, because
+the issue baseline predates the fix commit. The implementer measured that
+neither `upgrade_attribution` nor `carried_attribution` can claim them, so it
+had to write real judgments for code it did not author, and a reviewer would
+otherwise see them attributed to RUNOFF-040.
+
+It reported this rather than absorbing it, and judged the three by reading the
+diff and re-measuring the guard rather than by quoting Arch's commit message.
+Arch's call was that the judgments stay, since they are accurate and the
+baseline genuinely predates the fix, with the attribution stated explicitly in
+both reviewers' brief addendum so neither is left to infer it.
+
+So a mid-issue `tools/esx/` fix carries **two** costs, not one: it stales the
+implementer's seal and suite evidence, and it mis-attributes its own targets
+into whatever issue is open. Both argue for the same discipline that
+`project.py acceptance-scope` already encodes for the acceptance set — defer a
+framework fix to a closeout boundary unless it blocks the work outright, which
+this one did.
+
 ### Proposed Fix
 
 Terminate the command span at a quote as well, so a command inside embedded JSON
