@@ -40,12 +40,23 @@ Recall is measured, not asserted
 and over benign lines that must not match, and reports 8 of 8 and 0 of 3. Five
 are the sentences review actually must-fixed on RUNOFF-030; three are recall
 gaps found while building the predicate, each kept so its gap cannot reopen.
-Four of the five are verbatim from the pre-change tree; the fifth
-(``open_issues.md:441``) is quoted from review B's provenance check, because
-its pre-fix bytes are in no commit -- that record paragraph was first
-committed only after it had been corrected. A predicate for this class is only
-worth having if it would have caught the class, so the check ships with it
-rather than being done once by hand.
+Four of the five are verbatim from the pre-change tree (commit ``d95645a``)
+and from this issue's own round-0 edit; the fifth is verbatim from commit
+``1224dd2``, contiguous at ``open_issues.md:441``, where the corrected record
+quotes its own pre-fix clause as the subject of that correction. All five are
+therefore recovered text traceable to a commit, and none is a reconstruction.
+A predicate for this class is only worth having if it would have caught the
+class, so the check ships with it rather than being done once by hand.
+
+**Three places state that provenance -- this paragraph, the ``MUST_MATCH``
+block comment and element 5's own comment -- and they must be kept in step.**
+They were not: correction round 4 replaced element 5 and updated this
+paragraph, round 5 corrected the block comment and the element comment and
+left this paragraph behind. Both times the same shape, which is the very class
+this file sweeps for: a claim about a set made false by changing one element,
+corrected in some places and left standing in another. The audit that caught
+the round-5 instance is worth keeping as the method -- compare all three, do
+not read one.
 
 Scope is declared, never derived from VCS state
 ===============================================
@@ -432,9 +443,16 @@ def kept(name, text, keeps=KEEP):
     return None
 
 
-#: The five sentences actually must-fixed on RUNOFF-030, verbatim from the
-#: pre-change tree (commit d95645a) and from this issue's own round-0 edit.
-#: The predicate must match every one of them.
+#: The five sentences review actually must-fixed on RUNOFF-030. Four are
+#: verbatim from the pre-change tree (commit d95645a) and from this issue's own
+#: round-0 edit; the fifth is verbatim from commit 1224dd2, where the record
+#: quotes its own pre-fix clause as the subject of its correction -- see the
+#: comment on that element. The predicate must match every one of them.
+#: Review B found this header still claiming all five were verbatim from the
+#: pre-change tree after the fifth had been replaced: a claim about a set made
+#: false by changing an element, corrected in the module docstring and in the
+#: element's own comment but not here, which is this issue's error class
+#: committed against its own fixtures. Keep all three statements in step.
 MUST_MATCH = [
     "  `useRNF`; the only exf change is one guarded call in "
     "`exf_getffields.F`\n  (package design, decision 2).",
@@ -460,12 +478,40 @@ MUST_MATCH = [
     # `open_issues.md` in scope while excluding the append-only records. A
     # provenance list that omitted it also quietly undercut that decision.
     #
-    # Quoted from review B, not verbatim from git: the pre-fix bytes are in no
-    # commit, because this record paragraph was first committed only after it
-    # had been corrected. Labelled as a reconstruction rather than presented
-    # as recovered text.
-    "`useRNF` is `evap - precip`, and no other field's range check was "
-    "touched.",
+    # VERBATIM, from commit 1224dd2, contiguous at open_issues.md:441. The
+    # pre-fix bytes of this paragraph are indeed in no commit -- it was first
+    # committed only after correction -- but the corrected paragraph QUOTES its
+    # own pre-fix clause as the subject of that correction, and the quotation
+    # is committed. So the fixture is recovered text after all, not a
+    # reconstruction, and it is traceable with `git show 1224dd2:open_issues.md`.
+    #
+    # Earlier wordings of this element were a splice of the corrected stem and
+    # the pre-fix clause joined by an invented ", and", labelled "quoted from
+    # review B" -- a quotation of neither the review nor any one generation of
+    # the record (review B, correction round 4).
+    #
+    # The stem is NOT decoration and must not be trimmed to the bare clause:
+    # the predicate needs a package mention inside its window, and
+    # "no other field's range check was touched" alone carries none, so the
+    # short form MATCHES NOTHING and would drop recall from 8 of 8 to 7 of 8
+    # silently. Measured while making this correction, which is also why the
+    # earlier splice existed.
+    #
+    # KNOWN WEAKNESS OF THIS EXEMPLAR, measured in the round-5 audit rather
+    # than assumed. It matches on marker "no other" + footprint word "check"
+    # + package token "RNF", and that RNF comes from `useRNF` in the STEM --
+    # not from the claim's own subject, which is "no other field's range
+    # check" and names no package. So element 5 tests the package window
+    # reaching back across a sentence to a mention the claim does not itself
+    # make. That is a real property of this class (element 4 above has the
+    # same shape, marker on the last line and package on the middle one), so
+    # the fixture is legitimate; but it is a weaker exemplar than a claim that
+    # names its own package, and a future narrowing of PACKAGE_WINDOW would
+    # drop it before it dropped the others. Recorded so that is a decision
+    # rather than a surprise.
+    "so the quantity tested under `useRNF` is `evap - precip`. The original "
+    "wording here said no other field's range check was touched, which was "
+    "true of round 0 and false after round 1",
 ]
 
 #: Three further claims of the same class that the predicate missed when it
