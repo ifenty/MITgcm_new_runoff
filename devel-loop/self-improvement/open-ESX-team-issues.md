@@ -559,6 +559,8 @@ RUNOFF-030 correction round 2, 2026-10-06. The implementer's documentation edits
 
 This is the mirror of the error Arch made earlier in the same issue, and the pairing is what makes it worth filing. Arch measured that the *review packet* does not re-fingerprint verification evidence and generalised that to "nothing re-fingerprints it"; capture does, and an instruction based on that generalisation would have produced a third rejected footer. Here the asymmetry runs the other way: `check-orientation` is strict and capture is lenient. In both directions the lesson is the same and is now recorded twice — **two gates that validate the same artifact need not agree, and knowing which one decides is part of knowing the answer.**
 
+**Sharpened 2026-10-06 by the implementer on RUNOFF-030 round 3, which pre-flighted its own footer through both capture functions with three must-fail controls.** The two gates are *complementary*, not merely unequal in strictness: superseded verification evidence is caught by `reference_errors` only, and a superseded orientation receipt by `validate` only. Neither alone is sufficient, which rules out the simplest fix of picking one. And a third artifact is covered by neither on the implementer path: a **Bob** footer citing a superseded sealed documentation report returns no error from either function, because `validate`'s report-identity check compares against an `expected_report` that only a validated reviewer packet supplies, and an implementer has no packet. So the currency of `documentation_review.report` in an implementer footer rests on diligence alone. This is the artifact the implementer re-seals every single round, i.e. the one most likely to go stale, and the role that re-seals it is the role with no gate on it. Add to the acceptance criteria: an implementer footer citing a superseded sealed report is refused at capture.
+
 ### Potential Impact
 A completion recorded as valid against an orientation that no longer describes what the agent read. The failure is silent at the moment it matters and surfaces, if at all, at closeout — the same shape as TEAM-BRIEF-UNVALIDATED-INTERFACE-001's footer-identity defect, which voided four reviews before anything reported it. It also rewards not checking: an agent that runs `check-orientation` discovers work to do, while one that does not is captured clean.
 
@@ -570,3 +572,74 @@ A footer citing an orientation whose selected targets have moved is either refus
 
 ### Expected Effect
 The two gates agree, or their disagreement is visible in the record. Direction: completions recorded against a stale orientation go to zero. The qualitative invariant: no artifact is valid at one gate and invalid at another without the record saying so.
+
+## 🔴 PROPOSED: the defective-completion notice never clears after the agent fixes it
+
+**Date Identified**: 2026-10-06  14:20
+**Status**: Proposed
+**UUID**: TEAM-GATE-DEFECT-NOTICE-NOT-SUPERSEDED-001
+**Category**: workflow_integrity
+**Severity**: Medium
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
+**Anchors**: tools/esx/loop_gate.py:defective_completions; tools/esx/loop_gate.py:rejection_streak
+
+### Issue
+
+`defective_completions` reports every dispatch record whose `status` is
+`incomplete` or `failed` for the active iteration, with no suppression for a
+later record showing the same agent re-emitted the same round successfully. The
+notice is therefore permanent for the rest of the iteration: it is emitted on
+every subsequent `--next`, long after the condition it describes was repaired.
+
+The sibling method directly below it, `rejection_streak`, does the same job
+correctly — it accumulates into `verdicts[number]`, so the latest record for a
+round replaces the earlier one and only the current state is reported. The two
+methods are adjacent, read the same log, and disagree about whether a later
+record supersedes an earlier one.
+
+### Evidence
+
+RUNOFF-030, 2026-10-06. `dispatch_log.jsonl` holds six records for
+`bob a3ded3177de1902a7` at `correction_round` 1: one `incomplete`
+("report cites a reference that does not resolve: independent_check.evidence:
+verification evidence is stale") followed by four `completed` records with no
+error, the re-emissions that fixed exactly that defect. Round 3 is also
+recorded `completed`. The gate still printed
+`UNCAPTURED COMPLETION: bob a3ded3177de1902a7 (round 1) ...` and its remedy —
+"Resume that agent and ask it to re-emit its footer" — names work that had
+already been done five records earlier in the same file.
+
+### Potential Impact
+
+This is the failure mode the mechanism was built to prevent, inverted. The
+notice exists because four valid RUNOFF-013 reviews were recorded `incomplete`
+and nothing reported it (TEAM-BRIEF-UNVALIDATED-INTERFACE-001). A notice that
+cannot clear teaches the operator to read past it, so the next real one is
+skipped too — and a real one is indistinguishable from a stale one by
+inspection, since both name a resumable agent and a plausible remedy. It also
+costs a dispatch each time it is believed: resuming an agent to re-emit a
+footer it has already re-emitted correctly.
+
+### Proposed Fix
+
+Key the scan by `(agent_id, agent_type, correction_round)` and keep only the
+last record for each key, as `rejection_streak` already does for verdicts; report
+only keys whose final state is `incomplete` or `failed`. Do not merely compare
+counts — an agent may legitimately have a later *different* round still broken,
+so the suppression must be per round and not per agent.
+
+### Acceptance Criteria
+
+A round with an `incomplete` record followed by a `completed` one for the same
+agent and round produces no notice. A round whose only record is `incomplete`
+still produces one. An agent with round 1 repaired and round 2 broken is
+reported for round 2 only. Reproduce the RUNOFF-030 six-record round-1 sequence
+above as the regression case, and assert that `rejection_streak` and
+`defective_completions` agree about supersession on the same log.
+
+### Expected Effect
+
+Every notice the gate emits describes a condition that is true when it is
+printed. Direction: notices naming already-repaired records go to zero. The
+qualitative invariant: a gate notice is actionable, so it can be trusted without
+re-deriving whether it still holds.
