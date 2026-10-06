@@ -233,3 +233,80 @@ Two forms of the same error. A test figure carries no information unless the bin
 - State build and source mtimes beside any figure that depends on a compiled binary, and check the ordering before the run.
 - Rebuild rather than argue from the nature of the change.
 - To reuse earlier evidence, confirm the bytes it rests on with a direct diff against a named commit; never infer it from a comparison of reference sets.
+
+## LESSON: An enrolment is real only when the enrolled command is measured failing [LL-012]
+
+### Lesson and applicability
+A suite that has never executed the code it claims to cover reports success forever. Enrolling an instrument is not evidence; the evidence is that the enrolled command fails on a deliberate defect. Applies to every acceptance instrument, and especially where a flag exists to tolerate a missing prerequisite.
+
+### Evidence
+RUNOFF-013, 2026-10-05. Review A established that no configured command executed `RNF_TENDENCY_APPLY_T` or `_S` at all: of ten committed sparse files only `global_ocean.cs32x15/input.rnof_sparse` carries `runoff_temperature` and no suite command ran that directory, none carries `runoff_salinity`, and no enrolled input set `salt_EvPrRn`, so `RNF_applyT`/`RNF_applyS` were `.FALSE.` everywhere and both routines returned at their first executable statement in all 57 scientific commands. Arch confirmed each leg independently. Review A then built mutant binaries: a wrong `X_ref` fails `L_set`/`U_set` at 1.727e-02, 1.726e-02, 3.338e-02 and 8.061e-02, while a sign flip in the applied term leaves `package_T` at exactly 0.000e+00 and is caught only by the two-run `TOTTTEND` difference, at 2.000e+00 and 9.339e+00. `--allow-missing-rows`, whose help text said it was "used when the ALLOW_ATM_TEMP build is absent", suppressed both the uncovered-row failure and the missing-binary exit 2.
+
+### Correction
+Both instruments enrolled (focused 9 → 10, scientific 57 → 59); `--allow-missing-rows` deleted and `missing_binary` made an unconditional exit 2; `--build` added so each enrolled command compiles its own binary under a staleness rule and is self-contained on a clean tree. The final 59-command receipt exercised 10 of 10 decision-3 rows, including the two no-`ALLOW_ATM_TEMP` rows that had never had a passing case.
+
+## LESSON: A reachability claim is a measurement, not a reading, in both directions [LL-013]
+
+### Lesson and applicability
+Reading the source tells you what guards a condition, never what input reaches it, and the distance between the two is usually one input edit. The error is symmetric: conditions recorded as unreachable turn out reachable, and gaps recorded as open turn out impossible. Applies to every refusal, guard and hardening claim.
+
+### Evidence
+Three consecutive issues recorded refusals as unreachable from source and were wrong. RUNOFF-005: `yearly_repcycle`. RUNOFF-033: the non-finite `target_cell_area` case. RUNOFF-013: three of five `RNF_NC_SERIES` refusals described as "unreachable in this build and unenrolled", with the matrix hedging that "their reachability was read from the source and not measured" — review B fired all three in seconds using the test's own helper and a NetCDF file edit alone (empty tracer name, a 65-character name, six tracer variables against `RNF_nTr` = 5). The mirror error appeared in the same issue: a proposed check for two runoff-tracer names colliding on their trimmed form is unreachable, because NetCDF refuses a name with a trailing blank and accepts a trailing NUL only by collapsing it to the same stored name, then refuses the duplicate (netCDF4 1.7.4, libnetcdf 4.10.0, measured twice independently).
+
+### Correction
+The three refusals are enrolled (`refusal_check.py` 58 → 61 → 64 cases), each demonstrated passing on the committed build and failing on a mutant with its guard weakened. The records now separate the two genuinely build-dependent gaps from the ones that needed only a file, and the unreachable hardening is recorded as unreachable with its three measured legs rather than carried as an open gap.
+
+## LESSON: Perturb the mechanism; never check a list by reading it [LL-014]
+
+### Lesson and applicability
+A listed entry that looks like coverage and measures nothing cannot be found by inspection, because inspection is exactly what it defeats. The general defence is to perturb an entry and require the mechanism's output to change. Applies to source lists, path lists, figures tables, forbid lists and any enumeration that underwrites a claim.
+
+### Evidence
+RUNOFF-013 produced six instances of one class. (1) An acceptance instrument enrolled in no suite, so the code it covered executed nowhere. (2) `BUILD_SOURCES` omitted `MITgcm/model/inc`, `MITgcm/pkg/ptracers` and `MITgcm/pkg/pkg_depend`, so an edit to `PARAMS.h` — where `temp_EvPrRn`, `salt_EvPrRn`, `convertFW2Salt` and `UNSET_RL` are declared — could not mark any binary stale. (3) `os.walk` of a plain file yields nothing, so adding `pkg_depend` as a path would have looked like coverage and measured nothing; found by measuring, not reading. (4) A nonexistent entry contributes exactly 0.0 and raises nothing, and `pkg/rnf` is the entry that sets the maximum, so a rename would move the staleness reference back 117325.56 s while still printing "reused". (5) A document outside `doc_inventory.paths` is never swept. (6) A reviewer established the policy/record boundary by ten membership probes rather than by enumeration — its own words: "precisely the error my own RUNOFF-036 lesson warns about". Three hand-counts of that boundary gave 1, 10 and 44; only the mechanical enumeration was right.
+
+### Correction
+`BUILD_SOURCES` widened to six entries with plain-file handling, demonstrated by the predicate flipping for all three added paths under the new scan and for none under the old, with contents untouched and mtimes restored. Figures rows added and then re-run against the round-0 bytes to prove they fire. RUNOFF-036 filed for the nonexistent-entry case with a negative control in its acceptance criteria.
+
+## LESSON: A clean sweep has two blind spots, and a guard row needs a mechanical token [LL-015]
+
+### Lesson and applicability
+A stale-figure sweep reports on the table, not on the document: a statement survives if no row is spelled the way the prose spells it. Separately, a document outside the inventory is not swept at all, and there no wording helps. When a row is meant as a guard rather than a regression test for one sentence, spell a mechanical token — a dead `file:line`, a removed symbol, a deleted flag name — because those survive rewording.
+
+### Evidence
+RUNOFF-013, 2026-10-05. Two false statements — `esx/project_profile.md`'s "not yet; RUNOFF-013" passage with a dead `rnf_init_fixed.F:382-408` citation, and `docs/verification_matrix.md:269`'s "No test has temperature, salinity or tracers in the model" — both survived `doc_contract.py stale` reporting 0 hits over 6 figures, because `figures-RUNOFF-013.tsv` spelled the token `not applied yet` and neither line used that form. Review B then replicated the matcher and ran the current 27-row table against the round-0 text: the matrix row fires on the exact round-0 line, but zero rows fired anywhere in the round-0 profile. Its six-probe generalisation test showed that of three rows added for that paragraph, only the dead-citation row catches a reworded version of the same claim; `deferred to RUNOFF-013`, `pending; RUNOFF-013`, a wholly reworded claim and a symbol-token variant all passed clean.
+
+### Correction
+Three rows added in the forms the false sentence actually used, then re-run against the round-0 baseline bytes to confirm they fire at the exact lines. The guidance that a mechanical token generalises while a prose clause does not is recorded in `devel-loop/documentation_contract.md`, explicitly as guidance rather than as a defect in the matcher, which is a literal matcher by design.
+
+## LESSON: State a limit as a class and enumerate it mechanically [LL-016]
+
+### Lesson and applicability
+When disclosing the limits of a mechanism, a subset named from memory is worse than an admitted unknown, because it converts an unmeasured gap into confident wrong coverage. State the class, give the measured membership, and make the enumeration mechanical so a newly added member cannot land silently outside it.
+
+### Evidence
+RUNOFF-013, 2026-10-05. The first disclosure of the uninventoried-document gap named `open_issues.md` and `long_term_goals.md`. Review B measured the real boundary: every tracked project record document is outside `doc_inventory.paths` — eleven files plus everything under `devel-loop/self-improvement/assessments/` — including `lessons_learned.md`, whose lessons are quoted in every brief, and, recursively, the ledger the framework issue is filed in. Running the issue's own table by hand over all of them gave 8 hits in 5 files, of which only `open_issues.md` was covered by the check the disclosure prescribed; `closed_issues.md:350` was still carrying in the present tense the same two stale tokens that had been a must-fix in the profile two rounds earlier. Arch had under-scoped the same boundary twice — first two files of eleven, then one policy file of forty-four.
+
+### Correction
+All three records restated as a class with the measured count and the exclusion rule; the framework issue's acceptance criterion now requires a mechanical enumeration rather than a hand-maintained list; `closed_issues.md:350` and `open_issues.md:74` given labelled-history corrections, found by the by-hand check the disclosure prescribes.
+
+## LESSON: Records may be edited during review; policy and executable witnesses may not [LL-017]
+
+### Lesson and applicability
+The documentation seal and every reviewer approval are invalidated by the same file set, because the signature scope and the documentation inventory are the identical set. So an edit to any policy file or executable witness mid-review strands every approval, while an edit to a record strands nothing. Keep a record-only correction round record-only; when a policy file must change, plan the re-affirmation into the round rather than discover it.
+
+### Evidence
+RUNOFF-013 correction round 3, 2026-10-05. Review B's single round-2 must-fix lay entirely in record documents, all outside the candidate — so that round need not have cost an approval. Arch then made one of the five fixes in `devel-loop/documentation_contract.md`, a policy file inside the candidate: `doc_contract.py check` reported the sealed report stale and the signature moved from `1cb143ef…` to `7e6343dc…`, stranding review A's approval and causing round 3 outright. Arch first concluded that routing the edits through the implementer would have avoided it; the implementer measured that `project.py::source_signature` digests exactly `inventory_paths`, so the approval was lost the moment that file needed correcting by anyone. Review A then measured set equality with empty symmetric difference over 355 paths, and that `FRAMEWORK_PATHS` places all of `tools/esx`, `.claude`, `devel-loop`, `docs`, `esx`, `CLAUDE.md` and `.gitignore` inside — ten policy files by its probe, forty-four by review B's enumeration. The framework already stated the right rule, in `project.administrative()`'s docstring.
+
+### Correction
+The rule is recorded against the measurement rather than against a file list, since a change to `FRAMEWORK_PATHS` or `administrative()` moves the boundary. One carve-out is noted: an edit to an issue's own acceptance criteria inside `open_issues.md` is policy in substance, because it is what a reviewer judges against. A tension is recorded too: inventorying the root records, which `TEAM-DOCINVENTORY-LEDGER-UNINVENTORIED-001` proposes, would move them inside the signature and silently void the corollary that a record-only round need not strand an approval.
+
+## LESSON: Bookkeeping can cost more than the science, and the gate will not say so [LL-018]
+
+### Lesson and applicability
+A loop gate reports what it wants next, never what that instruction costs. A declared provider outage whose cause is structural still demands a probe every iteration, and gates progress before reporting anything else. When the only pending work is a long verification that nothing can accelerate, pausing preserves the finite budget and keeps dispatched work alive; check for that before idling through cycles.
+
+### Evidence
+RUNOFF-013, 2026-10-05/06. Loop iterations 13–85 produced no scientific work. They were consumed by a mandatory per-iteration re-probe of a Slack provider that was never configured — 73 probes, every one returning `claude mcp list`: "No MCP servers configured. Use `claude mcp add` to add a server." — plus 14 outage renewals under a separate five-iteration bound, while a 59-command, 6449-second verification ran in the background. The gate blocked on the probe before reporting any other instruction, so each cycle paid the toll first. 73 probes exceeded the number of genuine review findings the issue's final two rounds produced. `loop_control.py pause` ("spends none of its budget … dispatched agents keep running") was available from the first idle cycle and was never suggested by `--next`.
+
+### Correction
+The loop was paused at iteration 85, preserving the remaining budget for the closeout; the pause was verified to hold across hook cycles without advancing the iteration, which also bounds `TEAM-PAUSE-EARLY-LIFT-001` to `provider_limit` pauses carrying a `paused_until`. The owner then revoked Slack authorization and all 102 undelivered events were recorded `unauthorized`. The cost figures are attached to the outage evidence so the framework finding carries its own measurement.

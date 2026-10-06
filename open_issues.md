@@ -50,29 +50,6 @@ Carry forward from RUNOFF-012:
 - cs32 `input.in_p` already runs dense exf runoff and runoff temperature in pressure coordinates, with a reference.
 - `obcs_ctrl` has only adjoint inputs.
 
-## UNRESOLVED: Temperature and salinity runoff contributions via tendency terms
-
-**Date Identified**: 2026-10-02T22:30:00Z
-**Status**: Unresolved
-**UUID**: RUNOFF-013
-**Anchors**: MITgcm/pkg/icefront/icefront_tendency_apply.F::<module>; MITgcm/pkg/shelfice/shelfice_forcing.F::<module>
-
-### Issue or research question
-Apply runoff heat and salt to the target cells as tendency contributions (icefront/shelfice pattern): flux-weighted T and S per cell, missing T meaning ambient water temperature, missing S meaning 0, consistent with the chosen freshwater-flux formulation (real vs virtual).
-
-### Evidence
-Owner direction 2026-10-02 (owner away for several days): develop and test the new runoff program across many MITgcm configurations, with and without T, S and tracer contributions, in every time mode, as a robust, documented MITgcm package following MITgcm coding standards; T/S fluxes follow the shelfice/icefront tendency pattern. Contract: docs/model_contract.md (flux-weighted mixing, conservation invariants).
-
-### Scientific or engineering impact
-Core physics deliverable; wrong signs or double counting break heat/salt conservation.
-
-### Proposed action and acceptance
-Design (RUNOFF-010, docs/package_design.md): decision 3 gives the term `[(mT) − m_T·T_ref]·mass2rUnit/(drF·hFacC)` (and the S analogue) in `APPLY_FORCING_T/S` after the ICEFRONT calls, with `T_ref`/`S_ref` from the freshwater formulation table, the same-step `PmEpR` time level, and the `rhoConstFresh/rhoConst` mass convention. Acceptance: analytic single-cell tests for every row of the decision 3 tables (heat and salt budgets to 1e-12 relative); cell-by-cell agreement with the exf `runoftemp` term in ice-free cells (dense EXFroff/EXFroft/THETA vs package diagnostic); budget closure in RUNOFF-016.
-
-Unblocked 2026-10-04: RUNOFF-004 closed (sparse reader, per-tile lists, placement by the `mdsio_read_field.F` arithmetic, `GLOBAL_SUM` fraction check and the exf volume flux; fork `610d4cbaf`, final verification receipt `2e11b06d`, all 33 scientific commands passing). Note the reader accepts **one constant record only**: `rnf_init_fixed.F:199-217` stops the run for `RNF_useYearlyFiles` or any `RNF_period` other than 0, naming RUNOFF-005.
-
-Scope moved in from RUNOFF-004 (Arch, 2026-10-04): **refusing a tracer name with no matching ptracer** belongs here. **As recorded at RUNOFF-004, describing the code as it then stood:** the reader read no tracer, temperature or salinity variable, so there was no name to match against `PTRACERS_names`; a variable present in the file was warned about per variable and not applied (`rnf_init_fixed.F:382-408`). Both RUNOFF-004 reviewers ruled the deferral legitimate because no value is silently wrong. This issue's acceptance already names the refusal; `docs/runoff_schema.md` §3.5 and `esx/project_profile.md` now mark it as arriving here. **Implemented 2026-10-05 (RUNOFF-013):** the warning walk of that paragraph no longer exists; the matching and its refusals are in `RNF_NC_SERIES` (`MITgcm/pkg/rnf/rnf_nc_utils.F`), so the `rnf_init_fixed.F:382-408` citation above describes only the RUNOFF-004-era code. This line was found by hand, because `open_issues.md` is outside `doc_inventory.paths` and receives no stale sweep (see [the documentation contract](devel-loop/documentation_contract.md), `TEAM-DOCINVENTORY-LEDGER-UNINVENTORIED-001`).
-
 ## UNRESOLVED: Real versus virtual freshwater flux and free-surface options
 
 **Date Identified**: 2026-10-02T22:30:00Z

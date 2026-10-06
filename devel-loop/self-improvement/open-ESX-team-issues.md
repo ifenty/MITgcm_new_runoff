@@ -422,3 +422,101 @@ For **every** tracked project prose document, either `doc_contract.py stale` vis
 
 ### Expected Effect
 No project prose is both unswept and undeclared. Direction: documents that are neither inventoried nor disclosed as uninventoried go to zero. The qualitative invariant: a clean sweep's scope is written down, so "clean" cannot be read as "complete" by mistake.
+
+## 🔴 PROPOSED: A structurally dead provider is probed every iteration and gates the loop before any other instruction
+
+**Date Identified**: 2026-10-06  05:50
+**Status**: Proposed
+**UUID**: TEAM-NOTIFY-OUTAGE-NO-BACKOFF-001
+**Category**: loop_cost
+**Severity**: High
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
+**Anchors**: tools/esx/notifications.py:active_outage; tools/esx/loop_gate.py:Gate.next; devel-loop/communication.md
+
+### Issue
+While an outage is active, `--next` demands a recorded re-probe **every loop iteration**, and separately the outage record expires after `OUTAGE_RENEW_ITERATIONS` and must be renewed with fresh evidence. Both demands are emitted *before* any other instruction, so each iteration pays the toll before the gate will say what the actual work is. Neither mechanism distinguishes a transient provider fault from a structural one — a provider that has never been configured is re-probed on exactly the same cadence as one that might come back in a minute.
+
+### Evidence
+RUNOFF-013, loop iterations 1-85, 2026-10-05/06. **73 probes**, every one returning the identical `claude mcp list` output: `No MCP servers configured. Use `claude mcp add` to add a server.` (exit 0). Plus **14 outage renewals** under the five-iteration bound. **Loop iterations 13-85 produced no scientific work at all** — 73 of 100 authorized iterations, 73% of the budget — because the only pending work was a 59-command verification (6449 s) that nothing could accelerate, and every cycle spent its turn on the probe first. The probe count exceeded the number of genuine review findings the issue's last two correction rounds produced.
+
+The cause was structural and known from the first probe: no Slack MCP server was registered for the session, so there was no authenticated message-posting tool to discover, and the remedy (`claude mcp add`) is an owner action no agent can perform. The owner was told the exact command and ultimately revoked the provider instead.
+
+This is the third retrospective in which an absent notification provider is a recorded problem (`provider_api_error_and_absent_notification_provider` on RUNOFF-005), so it is a recurrence with no open owner until now.
+
+### Potential Impact
+Direct, measured consumption of the finite loop budget with zero information gained. In the worst case the budget is exhausted on probes before the active issue can be closed, which would leave a fully reviewed and verified issue open because the loop ended during its closeout. The toll scales with how long real work takes, so the slowest and most valuable issues pay the most.
+
+### Proposed Fix
+Distinguish a structural outage from a transient one, and back off. A probe whose evidence is byte-identical to the previous probe's should extend the outage rather than reset the per-iteration demand; after N identical probes, stop demanding per-iteration re-probes and demand one per closeout, or none until the provider's configuration changes. Separately, never emit the probe demand ahead of the active issue's own next instruction — report both, work first. If `communication.provider` names a provider with no discoverable tool at session start, say so once and mark the channel unavailable for the session rather than re-deriving it every iteration.
+
+### Acceptance Criteria
+With a provider that cannot be discovered and probe evidence that does not change, a 100-iteration loop records at most a bounded number of probes (one per closeout, or one per configuration change) and `--next` reports the active issue's instruction first. Reproduce the RUNOFF-013 case: 85 iterations with an unconfigured provider must not produce 73 probes. An outage with *changing* evidence keeps the existing per-iteration cadence, since that is a provider that might recover.
+
+### Expected Effect
+Loop budget is spent on work. Direction: iterations whose only activity is a provider probe go to zero. The qualitative invariant: a mechanism that has returned the same answer N times in a row stops being asked.
+
+## 🔴 PROPOSED: The documentation seal and every reviewer approval share one invalidation set, so any policy edit mid-review strands them
+
+**Date Identified**: 2026-10-06  05:50
+**Status**: Proposed
+**UUID**: TEAM-ACCEPTANCE-POLICY-EDIT-STRANDS-APPROVALS-001
+**Category**: workflow_integrity
+**Severity**: High
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
+**Anchors**: tools/esx/project.py:source_signature; tools/esx/project.py:administrative; tools/esx/doc_inventory.py:paths
+
+### Issue
+`project.source_signature` digests exactly `inventory_paths(root, cfg, scientific)`, and `doc_inventory.paths` returns `inventory_paths(root, config(root, ready=False))` — measured to be the **identical** 355-path set, empty symmetric difference. So the sealed documentation report and every reviewer approval are invalidated by precisely the same files, in one event. Because `FRAMEWORK_PATHS` places all of `tools/esx`, `.claude`, `devel-loop`, `docs`, `esx`, `CLAUDE.md` and `.gitignore` inside that set, **44 policy and instruction documents** sit inside the candidate beside 49 executable witnesses. Editing any one of them during review — including to fix a defect a reviewer just asked for — strands every approval and forces a re-affirmation round.
+
+### Evidence
+RUNOFF-013 correction rounds 2 and 3, 2026-10-05. Review B's single round-2 must-fix lay entirely in *record* documents, all outside the candidate, so that round need not have cost an approval. One of the five resulting fixes landed in `devel-loop/documentation_contract.md`, a policy file inside the candidate: the signature moved `1cb143ef…` → `7e6343dc…`, `doc_contract.py check` reported the sealed report stale, and review A's approval was stranded — causing correction round 3 outright, at the cost of one implementer turn and two reviewer re-affirmations for zero code change.
+
+Three successive hand-counts of this boundary gave **1, 10 and 44**; only the mechanical enumeration was right. `project.administrative()`'s own docstring already states the intended rule — *"Exclude records, not policy or executable witnesses, from acceptance."* — but nothing surfaces the boundary at dispatch time, so a coordinator cannot tell which of its pending edits will strand an approval.
+
+This is the second retrospective with this problem (`post_approval_edit_invalidates_evidence` on RUNOFF-033), so it is a recurrence with no open owner until now.
+
+### Potential Impact
+A correction round per policy-file edit, each costing an implementer turn plus a re-affirmation from every reviewer. The failure is discovered only when the next gate refuses, long after the edit, and the diagnosis is unobvious: the natural reading is that something about the work changed, when in fact only a contract document moved. It also creates a perverse incentive to leave a policy document wrong until after closure.
+
+Note a tension this interacts with: `TEAM-DOCINVENTORY-LEDGER-UNINVENTORIED-001` proposes bringing the project's record documents *into* the inventory. Because the inventory set is the signature set, doing so would move `open_issues.md` inside the candidate and silently void the corollary that a record-only round need not strand an approval. The two must be decided together, or the inventory needs a scope the signature does not share.
+
+### Proposed Fix
+Make the boundary visible and actionable rather than implicit. At minimum: a command that answers "will editing this path strand approvals?" from the live inventory, and a line in the dispatch records naming the records-versus-policy rule against the measurement rather than against a file list. Better: give the documentation inventory a scope the signature does not share, so a policy-document correction can be re-sealed without invalidating reviews of unchanged code — the seal already carries per-reference hashes that could decide this per file. One carve-out must survive either fix: an edit to an issue's own acceptance criteria inside `open_issues.md` is policy in substance, because it is what a reviewer judges against.
+
+### Acceptance Criteria
+A coordinator can determine, before editing, whether a path is inside the acceptance set, from the live configuration rather than a documented list. A correction confined to record documents provably does not invalidate a sealed report or an approval. If the inventory and signature scopes are separated, a policy-only edit re-seals without requiring reviewer re-affirmation of unchanged source, and an edit to an issue's acceptance criteria still does require it. Reproduce the RUNOFF-013 round-3 case as the regression test.
+
+### Expected Effect
+Re-affirmation rounds are caused by changed work, not by changed prose. Direction: correction rounds whose only content is a stranded approval go to zero. The qualitative invariant: the acceptance boundary is queryable, so stranding an approval is always a choice rather than a surprise.
+
+## 🔴 PROPOSED: Briefs are hand-written and cite tool interfaces that do not exist, while brief.py goes unused
+
+**Date Identified**: 2026-10-06  05:50
+**Status**: Proposed
+**UUID**: TEAM-BRIEF-UNVALIDATED-INTERFACE-001
+**Category**: dispatch_quality
+**Severity**: Medium
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
+**Anchors**: tools/esx/brief.py:build; tools/esx/footer_contract.py:reference_errors; devel-loop/team_operations.md
+
+### Issue
+`brief.py build` exists to assemble a dispatch brief with the baseline, orientation suggestions, figures and sweep sections. Briefs are nonetheless written by hand, and nothing validates the interfaces, paths or required references they cite. A brief that instructs an agent to run a command with flags that do not exist, or omits a reference the receiving contract requires, is discovered only by the agent — if the agent is careful enough to measure rather than comply.
+
+### Evidence
+RUNOFF-013, 2026-10-05, three instances in one issue. (1) A brief instructed the implementer to run `loop_gate.py --check-start --issue RUNOFF-013 --agent bob`; **those flags do not exist**, and the gate is Arch's over Arch's own orientation rather than a per-agent permission check. The implementer measured this, established the gate had already passed on time, and proceeded — but a less careful agent would have stalled or falsified a receipt. (2) Two consecutive briefs **omitted the sealed documentation report's path and sha256**, which the documentation contract requires in a standalone section and without which an approval is rejected at capture; both reviewers had to locate it themselves, and one noted that an approval citing the wrong report is rejected. (3) A brief asserted that three enrolled test cases needed `data.ptracers` and `data.longstep` when they need neither, and asserted a reviewer had not hit a prerequisite it had in fact hit — both traceable to Arch repeating an implementer's summary about a *different* set of cases without checking.
+
+The same issue also produced a related defect from invented naming: calling the two reviewers "Richard A" and "Richard B" in every brief led one to write `"agent": "richard-a"` in its footer, which `agent_runtime.py:236` compares against the registered `agent_type`. **All four of that reviewer's completions were silently recorded `incomplete`** and were unavailable to the closeout packet, discovered only hours later when closure needed them.
+
+This is the second retrospective with this problem (`stale_role_file_path_in_briefs` on RUNOFF-033, where every brief cited `.claude/ESX-team/BOB.md` and `RICHARD.md`, which do not exist), so it is a recurrence with no open owner until now.
+
+### Potential Impact
+Wasted agent turns, and worse, a nudge toward falsifying records: an agent told to run a command that cannot succeed must either stall, improvise, or use an escape hatch that corrupts a receipt. The footer instance shows the sharper risk — correct work recorded as incomplete, invisibly, until a gate needs it.
+
+### Proposed Fix
+Validate a brief before dispatch against the things that are already machine-checkable: that every `tools/esx/...` command and flag it names exists (argparse introspection), that every cited path resolves, and that the references the receiving contract requires are present — the sealed report, the baseline, the orientation. `footer_contract.reference_errors` already does the symmetric check on the way back; the same discipline belongs on the way out. State the exact required `agent` footer value in the dispatch, since it is the registered `agent_type` and an agent cannot otherwise know that a descriptive name voids its record. Prefer `brief.py build` over hand-assembly so these checks have a single place to live.
+
+### Acceptance Criteria
+A brief naming a nonexistent flag, an unresolvable path, or omitting a contract-required reference is refused before dispatch, with the offending item named. The required footer `agent` value appears in every dispatch. Reproduce all three RUNOFF-013 instances as regression cases, plus the `richard-a` footer case.
+
+### Expected Effect
+Agents spend their turns on the work rather than on diagnosing their instructions. Direction: reviewer or implementer findings that concern the brief rather than the candidate go to zero. The qualitative invariant: anything in a brief that a machine could have checked, was checked.
