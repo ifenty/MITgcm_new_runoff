@@ -30,16 +30,38 @@ on the edit:
 
 Proximity is what makes it usable. Without it the marker ``only`` matches any
 400-character Markdown table row that happens to mention exf: measured, 101
-candidates, almost all noise. With a window the same tree gives the figure
-reported in the issue.
+candidates, almost all noise. With the windows below the same tree gives 72
+candidate hits over 167 swept files, of which 11 are recorded keeps.
 
 Recall is measured, not asserted
 ================================
 
-``--self-test`` runs the predicate over the five sentences that were actually
-must-fixed on RUNOFF-030, verbatim, and over benign lines that must not match.
-A predicate for this class is only worth having if it would have caught the
-class, so that check ships with it rather than being done once by hand.
+``--self-test`` runs the predicate over the eight known claims of this class
+and over benign lines that must not match, and reports 8 of 8 and 0 of 3. Five
+are the sentences review actually must-fixed on RUNOFF-030; three are recall
+gaps found while building the predicate, each kept so its gap cannot reopen.
+Four of the five are verbatim from the pre-change tree; the fifth
+(``open_issues.md:441``) is quoted from review B's provenance check, because
+its pre-fix bytes are in no commit -- that record paragraph was first
+committed only after it had been corrected. A predicate for this class is only
+worth having if it would have caught the class, so the check ships with it
+rather than being done once by hand.
+
+Scope is declared, never derived from VCS state
+===============================================
+
+See :func:`authored_paths`. Round 3 keyed the nested-repository scope on ``git
+status --porcelain``, so committing both repositories dropped
+``pkg/exf/exf_check_range.F`` -- the file carrying this issue's own code
+change -- out of the swept set: 72 candidates fell to 70 and 10 keeps to 9,
+and the exit-2 alarm fired only because that one file happened to hold a
+needle. Review A named the generative premise: **the candidate signature is a
+sufficient guard only for artifacts that are functions of file content.** This
+one was a function of (content, VCS state), so committing changed its
+behaviour while the signature stayed ``6ab98655`` and neither the signature,
+the documentation contract nor the focused suite objected. Hence the scope
+guard below, which asserts the *set* rather than trusting where keeps happen
+to live.
 
 What a hit means
 ================
@@ -51,9 +73,12 @@ the change outgrew. Each candidate is therefore corrected or recorded in
 ``KEEP`` with the reason it stays true, so a later reader can tell a
 deliberate keep from a miss -- the thing the first two rounds could not do.
 
-Exit status: 0 when every candidate is in ``KEEP``, 1 when one is not (triage
-it), 2 when a ``KEEP`` entry matches nothing (a rotted allowlist, which would
-silently lose coverage), 3 when ``--self-test`` fails.
+Exit status: 0 when every candidate hit is covered by ``KEEP`` and all three
+guards pass; 1 when a hit needs triage; 2 when a ``KEEP`` needle matches
+nothing or is multi-line (a rotted allowlist, which would silently lose
+coverage); **3 when a file named in ``KEEP`` is not in the swept set**, which
+is the scope guard that makes scope and recall one check; 4 when
+``--self-test`` fails.
 
 Usage::
 
@@ -220,10 +245,16 @@ KEEP = [
      "A: states the count and then enumerates both sites in the two "
      "sub-bullets that follow, so adding a third site would contradict a "
      "number rather than slip past a vague word."),
+    # Needles are SINGLE LINE by contract, enforced below. This one was
+    # written multi-line in round 3 and could never match, because kept()
+    # compares against one stripped line: that is the second root cause of
+    # the blind guard review B found, independent of the path keying.
     ("esx/project_profile.md",
-     "no *other* exf field's\n    range check\n    changed",
-     "A: round 3 fixed this line, which was a sixth instance of the class "
-     "found by this sweep; it now names both conditioned tests first."),
+     "sflux` bound (next sub-item); no *other* exf field's range check",
+     "A: round 3 fixed this line, which was the sixth instance of the class "
+     "and was found by this sweep rather than by review; it now names both "
+     "conditioned tests before the exclusion, so 'other' has an antecedent "
+     "in the same sentence."),
     ("MITgcm/pkg/exf/exf_check_range.F",
      "every other field's range included, and nothing changes at all",
      "A: the two conditioned tests are enumerated in the bullets "
@@ -254,23 +285,71 @@ KEEP = [
 NESTED = ("MITgcm",)
 
 
-def nested_scope(root, prefix):
-    """Files of a nested repository whose prose this project actually authors.
+#: Paths this project authors inside a nested repository but which
+#: ``esx/project.json`` does not declare: the MITgcm documentation pages we
+#: write. Neither is a build input, so neither is a ``source_path``. Named
+#: individually and not as the ``doc/phys_pkgs/`` prefix, because that prefix
+#: is 29 upstream package pages this project neither wrote nor may edit --
+#: measured, and it was part of round 3's over-coverage. ``rnf.rst`` does not
+#: exist yet (RUNOFF-026 adds it); declaring it now costs nothing and means
+#: the page arrives already in scope.
+DOC_EXTRA = ("doc/phys_pkgs/exf.rst", "doc/phys_pkgs/rnf.rst")
 
-    ``MITgcm/`` is 10k upstream files. Sweeping all of them returns upstream
-    comments this project neither wrote nor may edit ("Otherwise, a single
-    input file contains 12 monthly mean records", in ``pkg/obcs``), which are
-    noise no triage can retire. The authored set is: our own package, the
-    documentation pages we write, and any file we have modified -- which is
-    what keeps ``pkg/exf/exf_check_range.F`` in scope precisely because this
-    issue edited it.
+
+def authored_paths(root, prefix):
+    """The nested-repo paths this project **declares** as its own.
+
+    Read from ``esx/project.json``'s ``source_paths`` and
+    ``configuration_paths``, which already are this project's declarative
+    statement of what it owns, plus :data:`DOC_EXTRA` for the documentation
+    pages that declaration does not cover.
+
+    **This used to be derived from VCS state and that was the defect.** The
+    previous version kept a file if it appeared in ``git status --porcelain``
+    or lay under one of three guessed prefixes, with the premise written out
+    as "any file we have modified -- which is what keeps
+    ``pkg/exf/exf_check_range.F`` in scope precisely because this issue edited
+    it". "A file we have modified" is not a stable property: it is
+    working-tree dirtiness, which empties on exactly the act ``CLAUDE.md``
+    tells this project to perform often. Committing both repositories dropped
+    ``exf_check_range.F`` -- the file carrying this issue's own code change --
+    out of the swept set, measured as 72 candidates falling to 70 and 10 keeps
+    to 9. Scope is therefore **declared**, never computed from history.
+
+    Keying on a merge-base was considered and **refused**, by both reviewers
+    independently and re-measured here: ``git merge-base --is-ancestor master
+    HEAD`` is already true, so the moment ``master`` contains this work -- an
+    upstream PR landing, a merge, a sync fast-forward -- ``base..HEAD`` empties
+    and the failure returns byte for byte. That is deferral, not immunity, and
+    must not be recorded as immunity. ``master`` is also the wrong ref on
+    availability grounds: the clone's only remote is the fork, there is no
+    ``upstream`` remote, and a clone made with ``-b new_runoff`` would have no
+    local ``master`` at all.
+
+    The declaration covers all eleven authored files (``model/inc/PARAMS.h``,
+    seven ``model/src`` hooks, ``pkg/exf/exf_check_range.F``,
+    ``pkg/exf/exf_getffields.F`` and
+    ``pkg/ptracers/ptracers_apply_forcing.F``) plus ``pkg/rnf`` and the
+    verification set. Because ``MITgcm/pkg/exf`` is declared as a *directory*,
+    the swept set includes exf files this project never edited; that
+    over-coverage is the price of using the existing declaration instead of
+    maintaining a parallel list, and it is stated rather than hidden.
     """
-    out = subprocess.run(["git", "status", "--porcelain"],
-                          cwd=os.path.join(root, prefix),
-                          stdout=subprocess.PIPE, text=True, check=True)
-    modified = {line[3:].strip() for line in out.stdout.splitlines()}
-    owned = ("pkg/rnf/", "doc/phys_pkgs/", "verification/lab_sea/")
-    return lambda f: f in modified or f.startswith(owned)
+    import json
+    cfg = json.loads((open(os.path.join(root, "esx", "project.json"))).read())
+    declared = []
+    for key in ("source_paths", "configuration_paths"):
+        for p in cfg.get(key, ()):
+            parts = p.split("/", 1)
+            if parts[0] == prefix and len(parts) == 2:
+                declared.append(parts[1])
+    declared += list(DOC_EXTRA)
+    # A declared directory covers everything under it; a declared file is
+    # itself. Both are matched without touching git.
+    def keep(f):
+        return any(f == d or f.startswith(d.rstrip("/") + "/")
+                   for d in declared)
+    return keep
 
 
 def tracked(root, suffixes):
@@ -282,7 +361,7 @@ def tracked(root, suffixes):
         cwd = os.path.join(root, prefix)
         if not os.path.isdir(os.path.join(cwd, ".git")):
             continue
-        keep = nested_scope(root, prefix)
+        keep = authored_paths(root, prefix)
         out = subprocess.run(["git", "ls-files"], cwd=cwd,
                              stdout=subprocess.PIPE, text=True, check=True)
         names += [os.path.join(prefix, f) for f in out.stdout.split()
@@ -300,6 +379,22 @@ EMPHASIS = re.compile(r"[*_`]+")
 def normalise(text):
     """Drop emphasis punctuation so a marker is not split by formatting."""
     return EMPHASIS.sub("", text)
+
+
+def needle_is_live(name, needle, hits):
+    """Does this one ``KEEP`` needle match a line of its own file's hits?
+
+    Keyed on the **needle**, which is the whole point. The previous version
+    asked ``kept(path, text)``, which returns the *first* matching reason for
+    that path, so a single live needle marked every needle on the same file
+    as used. Measured consequence (review B): entry 7 was dead under every
+    scope, including the sealed one, and was masked by three live needles in
+    ``esx/project_profile.md`` -- so the sealed "0 stale KEEP needles" was an
+    artifact of this defect rather than a property of the allowlist.
+    """
+    flat = " ".join(needle.split())
+    return any(flat in " ".join(text.split())
+               for path, _, text in hits if path == name)
 
 
 def sweep(root, packages=PACKAGES, suffixes=SUFFIXES):
@@ -354,8 +449,23 @@ MUST_MATCH = [
     "upper\nbound is skipped with `useRNF`, that `RNF_srcFluxMax` applies "
     "instead, and that\nthe negative-runoff test and every other field's "
     "range check are unaffected.",
-    "  - every other field's range check is untouched, and **nothing changes "
-    "at all\n    with `useRNF` false**, the dense `runoffFile` path included.",
+    # The genuine fifth, corrected in round 4 on review B's provenance check.
+    # Round 3 listed `docs/package_design.md:404` here, which was NEVER
+    # must-fixed: review B judged that line true in round 1 and the
+    # implementer tightened it voluntarily in round 2. The real fifth lived in
+    # `open_issues.md:441` and Arch fixed it himself.
+    #
+    # WHICH ONE WAS MISSING MATTERS: it is the only must-fixed instance that
+    # lived in a RECORD file, and that is the very reason HISTORY above keeps
+    # `open_issues.md` in scope while excluding the append-only records. A
+    # provenance list that omitted it also quietly undercut that decision.
+    #
+    # Quoted from review B, not verbatim from git: the pre-fix bytes are in no
+    # commit, because this record paragraph was first committed only after it
+    # had been corrected. Labelled as a reconstruction rather than presented
+    # as recovered text.
+    "`useRNF` is `evap - precip`, and no other field's range check was "
+    "touched.",
 ]
 
 #: Three further claims of the same class that the predicate missed when it
@@ -393,15 +503,15 @@ def self_test():
     missed += [t for p, t in MUST_MATCH_PATHED if not candidate(t, path=p)]
     caught = [t for t in MUST_NOT_MATCH if candidate(t)]
     print(f"self-test: {total - len(missed)} of {total} known claims of the "
-          f"class matched ({len(MUST_MATCH)} must-fixed on RUNOFF-030, "
-          f"{len(MUST_MATCH_PATHED)} recall gaps found while building this); "
-          f"{len(caught)} of {len(MUST_NOT_MATCH)} benign lines wrongly "
-          f"matched")
+          f"class matched ({len(MUST_MATCH)} actually must-fixed by review on "
+          f"RUNOFF-030, {len(MUST_MATCH_PATHED)} recall gaps found while "
+          f"building this predicate); {len(caught)} of {len(MUST_NOT_MATCH)} "
+          f"benign lines wrongly matched")
     for t in missed:
         print("  MISSED:", " ".join(t.split())[:100])
     for t in caught:
         print("  FALSE POSITIVE:", " ".join(t.split())[:100])
-    return 0 if not missed and not caught else 3
+    return 0 if not missed and not caught else 4
 
 
 def main(argv=None):
@@ -415,29 +525,58 @@ def main(argv=None):
     if args.self_test:
         return self_test()
 
+    swept = set(tracked(ROOT, SUFFIXES))
     hits = sweep(ROOT, tuple(args.packages))
     triaged, untriaged = [], []
     for name, lineno, text in hits:
         reason = kept(name, text)
         (triaged if reason else untriaged).append(
             {"path": name, "line": lineno, "text": text, "keep": reason})
-    unused = [n for p, n, _ in KEEP
-              if not any(h["path"] == p and kept(p, h["text"]) for h in triaged)]
+
+    # (1) Scope guard. Every file a KEEP entry names must be in the swept
+    # set. Both reviewers proposed this independently and it is what closes
+    # the class, because the exit-2 alarm fired this round only by luck of
+    # placement: of the eleven authored MITgcm files, exactly one
+    # (exf_check_range.F) happens to hold a needle, so a silent shrink in any
+    # region without one would have reported a confident, wrong clean. An
+    # assertion on the SET does not depend on where the keeps happen to live,
+    # and it makes scope and recall one check.
+    absent = sorted({p for p, _, _ in KEEP if p not in swept})
+    # (2) Per-needle liveness, keyed on the needle and not the path.
+    dead = [(p, n) for p, n, _ in KEEP if not needle_is_live(p, n, hits)]
+    # (3) Needles are single-line by contract: kept() compares one stripped
+    # line, so a multi-line needle can never match and would masquerade as a
+    # keep. Enforced rather than documented.
+    multiline = [(p, n) for p, n, _ in KEEP if "\n" in n]
 
     if args.json:
         print(json.dumps({"candidates": len(hits), "untriaged": untriaged,
-                          "triaged": triaged, "unused_keeps": unused},
+                          "triaged": triaged, "swept_files": len(swept),
+                          "absent_keep_paths": absent,
+                          "dead_needles": [n for _, n in dead],
+                          "multiline_needles": [n for _, n in multiline]},
                          indent=1))
     else:
-        print(f"{len(hits)} footprint candidate(s): {len(untriaged)} to "
-              f"triage, {len(triaged)} deliberate keep(s)")
+        print(f"{len(swept)} file(s) swept; {len(hits)} footprint candidate "
+              f"hit(s): {len(untriaged)} to triage, {len(triaged)} covered by "
+              f"{len(KEEP)} KEEP entries")
         for h in untriaged:
             print(f"  TRIAGE {h['path']}:{h['line']}: {h['text'][:110]}")
         for h in triaged:
             print(f"  keep   {h['path']}:{h['line']}: {h['text'][:70]}")
-        for n in unused:
-            print(f"  STALE KEEP matches nothing: {' '.join(n.split())[:70]}")
-    if unused:
+        for path in absent:
+            print(f"  SCOPE SHRANK: {path} names a KEEP entry but is not in "
+                  f"the swept set")
+        for path, n in multiline:
+            print(f"  MULTI-LINE NEEDLE (can never match) {path}: "
+                  f"{' '.join(n.split())[:60]}")
+        for path, n in dead:
+            print(f"  DEAD NEEDLE {path}: {' '.join(n.split())[:70]}")
+    if absent:
+        return 3
+    if multiline:
+        return 2
+    if dead:
         return 2
     return 1 if untriaged else 0
 

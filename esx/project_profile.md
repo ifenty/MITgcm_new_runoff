@@ -466,10 +466,23 @@ This is the scientific contract agents read. Executable paths and commands are i
   to a package, run the sweep and either correct each candidate or add it to
   the script's `KEEP` list with the antecedent that makes it true. The script
   keys on (a package mention) near (an exclusivity marker) near (a footprint
-  word), carries its own measured recall over the known class, and fails if a
-  `KEEP` entry stops matching. Not yet enrolled in a configured suite; that is
-  a one-line `esx/project.json` change and Arch's call, since a nonzero exit
-  means "triage these candidates" rather than "these are defects".
+  word) and carries its own measured recall over the known class (8 of 8).
+  **Its scope is declared, never derived from VCS state**, and that is a
+  correction worth knowing: round 3 keyed the nested-repository scope on
+  `git status --porcelain`, so committing both repositories silently dropped
+  `pkg/exf/exf_check_range.F` — the file carrying the code change — out of the
+  swept set. The nested scope now comes from this file's companion
+  `esx/project.json` (`source_paths` and `configuration_paths`), plus the two
+  MITgcm documentation pages that declaration does not cover. **Merge-base
+  keying was refused** rather than adopted: `master` is already an ancestor of
+  `HEAD`, so `base..HEAD` empties the moment `master` gains this work, which
+  reproduces the same failure — deferral, not immunity. Three guards fail
+  loudly: a dead `KEEP` needle or a multi-line one (exit 2), and **a `KEEP`
+  path that is not in the swept set (exit 3)**, which is the assertion that
+  makes scope and recall one check and does not depend on where the keeps
+  happen to live. Not enrolled in a configured suite; that remains Arch's
+  deliberate decision, since a nonzero exit means "triage these candidates"
+  rather than "these are defects".
 - Domain rule catalogue locations, if used: not used. Conventions are listed above.
 - Documentation/rendering tools and intended renderer: MITgcm docs are Sphinx RST
   under `MITgcm/doc/`, rendered by GitHub Actions and readthedocs. Project records
