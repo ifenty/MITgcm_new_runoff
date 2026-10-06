@@ -157,9 +157,29 @@ def validate_assessment(root, record):
     if check.get('executed') is not True or type(check.get('exit')) is not int or check['exit'] != 0 or not check.get('command'):
         raise ValueError('assessment requires an executed successful compatibility check')
     artifact = check.get('evidence') or {}
-    path = workflow_records.local_file(root, artifact.get('path'))
-    if hashlib.sha256(path.read_bytes()).hexdigest() != artifact.get('sha256'):
-        raise ValueError('compatibility check evidence hash mismatch')
+    # verify.py names its evidence by a canonical-JSON digest and returns that
+    # digest as `sha256`, so hashing the raw file bytes rejects the reference
+    # exactly as returned (TEAM-TRANSITION-EVIDENCE-001: on RUNOFF-010 the first
+    # assessment citing a verify.py reference unchanged failed with
+    # "compatibility check evidence hash mismatch", and passed only after
+    # re-hashing the raw file by hand). Validate it the way footer evidence is
+    # validated, which also checks the run finished successfully on a stable
+    # candidate rather than only that the bytes are intact.
+    import verify
+    try:
+        verify.load_evidence(root, artifact)
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        # A judgment may legitimately cite a non-verify.py artifact, so fall back
+        # to the raw-bytes comparison rather than refusing outright.
+        try:
+            path = workflow_records.local_file(root, artifact.get('path'))
+            matched = hashlib.sha256(path.read_bytes()).hexdigest() == artifact.get('sha256')
+        except (OSError, ValueError, TypeError):
+            matched = False
+        if not matched:
+            raise ValueError('compatibility check evidence hash mismatch: it is neither a valid verify.py '
+                             f'evidence reference ({exc}) nor a readable file whose raw bytes match the '
+                             'given sha256') from exc
     if record.get('changes') and record['changes'][0].get('field') == 'legacy_contract':
         raise ValueError('legacy session has no effective manifest; use an explicit replacement')
 

@@ -1232,9 +1232,33 @@ def main(argv=None):
     sub.add_parser("hook")
     doctor = sub.add_parser("hook-doctor")
     doctor.add_argument("--event", help="exact dispatch event for measured process diagnostics")
-    assess = sub.add_parser("assess-transition")
+    assess = sub.add_parser(
+        "assess-transition",
+        help="record Arch's judgment that a retained session may resume after a runtime-contract change",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""--judgment takes a JSON file with exactly these fields
+(TEAM-TRANSITION-EVIDENCE-001: the format used to be documented only in
+runtime_recovery.validate_assessment, so coordinators guessed it):
+
+  {
+    "decision": "resume",            # the only accepted value
+    "assessor": "arch",              # the only accepted value
+    "reason": "...",                 # >= 40 characters, why the change is compatible
+    "check": {
+      "command": "...",              # the compatibility check actually run
+      "executed": true,
+      "exit": 0,                     # must be 0
+      "evidence": {"path": "...", "sha256": "..."}
+    }
+  }
+
+`check.evidence` may be a verify.py evidence reference exactly as that command
+returned it -- verify.py names its artifact by a canonical-JSON digest, so it is
+validated with verify.load_evidence rather than by hashing the raw file bytes.
+Any other artifact is accepted when its raw bytes match the given sha256.""")
     assess.add_argument("--session", required=True)
-    assess.add_argument("--judgment", type=Path, required=True)
+    assess.add_argument("--judgment", type=Path, required=True,
+                        help="JSON judgment file; see the format in this subcommand's help epilog")
     for command_parser in (start, follow):
         command_parser.add_argument('--tool-timeout', type=float, default=600)
         command_parser.add_argument('--max-tool-calls', type=int, default=60)

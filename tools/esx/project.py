@@ -118,6 +118,72 @@ def administrative(name):
             or (name.startswith(base + 'records/') and Path(name).suffix == '.md'))
 
 
+def record_paths(root):
+    """The project's record documents: swept for stale figures, outside acceptance.
+
+    Records are deliberately excluded from `inventory_paths`, because that set is
+    also the acceptance scope (`source_signature` digests exactly it), and an
+    edit inside the acceptance scope invalidates the sealed documentation report
+    and every reviewer approval in one event. Keeping records out of it is what
+    lets a record-only correction round avoid stranding an approval.
+
+    But "outside acceptance" was being read as "outside every mechanism", so a
+    superseded figure in a record received neither a stale-sweep hit nor a
+    disposition, and nothing could notice. On RUNOFF-013 that left
+    `closed_issues.md:350` carrying, in the present tense, the same two stale
+    tokens that had been a must-fix in `esx/project_profile.md` two rounds
+    earlier (TEAM-DOCINVENTORY-LEDGER-UNINVENTORIED-001). `stale_lines` sweeps
+    this set in addition to the inventory, which closes that hole without moving
+    records into acceptance.
+
+    The membership is **enumerated, never listed**: every Markdown file at the
+    repository root, plus the `administrative()` set. A hand-maintained list is
+    what produced three successive wrong counts of this boundary -- 1, 10 and 44
+    -- so a newly added record document must not be able to land outside both
+    mechanisms because someone forgot to extend a constant (lesson LL-016).
+    """
+    root = Path(root).resolve()
+    names = {path.name for path in root.glob('*.md') if path.is_file()}
+    base = root / 'devel-loop' / 'self-improvement'
+    if base.is_dir():
+        for directory, folders, files in os.walk(base):
+            folders[:] = [f for f in folders if f not in EXCLUDED_PARTS]
+            for name in files:
+                relative = (Path(directory) / name).relative_to(root).as_posix()
+                if administrative(relative):
+                    names.add(relative)
+    return sorted(names)
+
+
+def acceptance_scope(root, name):
+    """Whether editing `name` invalidates the seal and every reviewer approval.
+
+    `source_signature` digests exactly `inventory_paths`, and `doc_inventory.paths`
+    returns the same set, so the documentation seal and the approvals share one
+    invalidation boundary. A coordinator needs to know which side of it an edit
+    falls on *before* making the edit, from the live configuration rather than
+    from a remembered list (TEAM-ACCEPTANCE-POLICY-EDIT-STRANDS-APPROVALS-001:
+    an Arch edit to one policy file after the seal cost a whole correction round
+    for no code change, and three hand-counts of the boundary all disagreed).
+    """
+    cfg = config(root, ready=False)
+    inside = set(inventory_paths(root, cfg))
+    records = set(record_paths(root))
+    in_acceptance = name in inside
+    return {'path': name, 'in_acceptance': in_acceptance,
+            'is_record': name in records and not in_acceptance,
+            'swept_for_stale_figures': name in inside or name in records,
+            'effect': ('editing this during review invalidates the sealed documentation report and '
+                       'every reviewer approval; plan the re-seal and re-affirmation into the round'
+                       if in_acceptance else
+                       'editing this during review invalidates nothing; records are outside acceptance')
+                      + ('. Exception: an issue\'s own "Proposed action and acceptance" paragraph in '
+                         'open_issues.md is policy in substance, because it is what a reviewer judges '
+                         'against, so changing it does require re-affirmation even though the file is '
+                         'a record' if name == 'open_issues.md' else ''),
+            'acceptance_paths': len(inside), 'record_paths': len(records)}
+
+
 def archived(name, cfg):
     """Report whether a path sits under a configured `archive_paths` root.
 
@@ -345,10 +411,16 @@ def main():
     sub = parser.add_subparsers(dest='command', required=True)
     signature = sub.add_parser('signature', help='print source_signature(root) for a footer candidate_signature field')
     signature.add_argument('--scientific', action='store_true', help='use the narrower scientific-paths inventory')
+    scope = sub.add_parser('acceptance-scope',
+                           help='say whether editing a path strands the seal and every reviewer approval')
+    scope.add_argument('path', help='project-relative path, e.g. devel-loop/documentation_contract.md')
     args = parser.parse_args()
     try:
-        result = {'signature': source_signature(args.root, args.scientific)}
-        print(json.dumps(result, indent=2))
+        if args.command == 'acceptance-scope':
+            result = acceptance_scope(args.root, args.path)
+        else:
+            result = {'signature': source_signature(args.root, args.scientific)}
+        print(json.dumps(result, indent=2, sort_keys=True))
         return 0
     except (ValueError, OSError, TypeError, KeyError) as exc:
         print(f'project signature: {exc}', file=sys.stderr)

@@ -27,6 +27,12 @@ from project import (STATE, ROLES, atomic_json, config, json_file, local, now,
 from records import json_lines, save_history, validate_records
 
 PROMISE = 'ESX-LOOP-NO-ACTIONABLE-WORK'
+
+
+def record_error(error):
+    """One-line form of a capture error for the gate's screen."""
+    text = ' '.join(str(error).split())
+    return text if len(text) <= 160 else text[:157] + '...'
 SELF_ASSESSMENT_WINDOW = 10
 
 
@@ -130,12 +136,35 @@ class Gate:
             except ValueError as exc:
                 if not str(exc).startswith('stale arch orientation'):
                     raise
-                raise ValueError(
-                    'the start orientation no longer matches the working tree. If no work on this issue has begun, '
-                    'run --prepare again. If work has already changed these targets, --check-start was skipped: '
-                    'rerun it as `loop_gate.py --check-start --late-reason "<why it was not run before the work '
-                    'began>"`, which validates the orientation as recorded at --prepare and marks the receipt late. '
-                    'Details: ' + str(exc)) from exc
+                # A correction round necessarily stales the prepare-time
+                # orientation, because the work has changed the targets it was
+                # written against. That is not a skipped gate, and treating it
+                # as one left no honest move: --late-reason overwrites an
+                # on-time receipt with one asserting the gate was skipped, and
+                # --prepare destroys the round's review history
+                # (TEAM-LOOPGATE-CHECKSTART-CORRECTION-ROUND-001).
+                #
+                # So: if authorization was already established for this
+                # iteration -- a validated receipt exists -- accept a freshly
+                # re-navigated orientation instead, which is the remedy the
+                # refusal itself recommends. With no prior receipt the work
+                # began unauthorized, and that still requires --late-reason.
+                refreshed = None
+                if loop_iteration.start_status(self.root, start)['validated']:
+                    refreshed = maintenance.latest_orientation(
+                        self.root, start['id'], start['maintenance']['baseline'], 'arch')
+                if refreshed is None:
+                    raise ValueError(
+                        'the start orientation no longer matches the working tree. If no work on this issue has '
+                        'begun, run --prepare again. If work has already changed these targets and this iteration '
+                        'has no start receipt yet, --check-start was skipped: rerun it as `loop_gate.py '
+                        '--check-start --late-reason "<why it was not run before the work began>"`, which '
+                        'validates the orientation as recorded at --prepare and marks the receipt late. If the '
+                        'iteration already passed --check-start and this is a correction round, record a fresh '
+                        'orientation with `doc_contract.py navigate` and rerun --check-start, which accepts it '
+                        'without marking the receipt late. Details: ' + str(exc)) from exc
+                start['maintenance']['orientation'] = refreshed
+                atomic_json(local(self.root, f'{STATE}/issue-start.json'), start)
         announcement(start)
         notifications.synchronize(self.root)
         require(not notifications.pending(self.root), notifications.notice(self.root) or 'pending communication')
@@ -359,6 +388,40 @@ class Gate:
             notices.append('State in the brief which of these triggers apply to this issue and how each is applied.')
         return notices
 
+    def defective_completions(self, start):
+        """Agent turns of this iteration whose completion was not captured.
+
+        `agent_runtime` validates every completion at capture time -- footer
+        identity, required references -- and records the exact error, then tells
+        nobody. On RUNOFF-013 all four completions of one reviewer were recorded
+        `incomplete` with "missing, malformed, or mismatched structured footer",
+        because the footer's `agent` field said `richard-a` (a descriptive name
+        Arch had used in every brief) rather than the registered `agent_type`.
+        Four correct reviews were unavailable to the closeout packet, and it
+        surfaced only hours later when closure needed them
+        (TEAM-BRIEF-UNVALIDATED-INTERFACE-001).
+
+        So the gate reports them on the turn after they happen, while the agent
+        is still resumable and a short follow-up fixes the record.
+        """
+        broken = []
+        for record in json_lines(local(self.root, f'{STATE}/dispatch_log.jsonl')):
+            if record.get('status') not in ('incomplete', 'failed'):
+                continue
+            if record.get('agent_type') not in ROLES or not record.get('agent_id'):
+                continue
+            footer = record.get('footer') if isinstance(record.get('footer'), dict) else {}
+            # A defective footer may carry no issue id at all, so fall back to
+            # the recorded issue on the dispatch itself.
+            issue = footer.get('issue_id') or record.get('issue_id')
+            if issue not in (None, start['id']):
+                continue
+            if footer.get('iteration_timestamp') not in (None, start['timestamp']):
+                continue
+            broken.append((record['agent_type'], record['agent_id'],
+                           record.get('correction_round'), record.get('error') or record['status']))
+        return broken
+
     def rejection_streak(self, start):
         """Correction rounds of the active iteration whose latest review rejected, trailing.
 
@@ -427,6 +490,24 @@ class Gate:
             return None
 
     def next(self):
+        """Report the next instruction, with any communication demand alongside it.
+
+        The communication notice used to print and return, so the gate refused to
+        say what the actual work was until the provider demand was satisfied. On
+        RUNOFF-013 that made every idle cycle pay a probe toll before learning
+        there was nothing new to do, and 73 of 100 loop iterations went to a
+        provider that had never been configured
+        (TEAM-NOTIFY-OUTAGE-NO-BACKOFF-001). The demand is still reported --
+        events must not be lost -- but it no longer hides the work.
+        """
+        self._deferred_notice = None
+        try:
+            return self._next_instruction()
+        finally:
+            if self._deferred_notice:
+                print(self._deferred_notice)
+
+    def _next_instruction(self):
         for notice in team_retrospective.rule_notices(self.root):
             print(notice)
         audit.check(self.root, self.ledger_overrides)
@@ -451,10 +532,9 @@ class Gate:
             print(limit)
         opened, closed, _ = validate_records(self.root, self.ledger_overrides)
         notifications.synchronize(self.root)
-        message = notifications.notice(self.root)
-        if message:
-            print(message)
-            return 0
+        # Held and printed after the primary instruction rather than instead of
+        # it; see next().
+        self._deferred_notice = notifications.notice(self.root)
         start_path = local(self.root, f'{STATE}/issue-start.json')
         history = json_lines(local(self.root, f'{STATE}/loop_history.jsonl'))
         if start_path.exists():
@@ -473,6 +553,11 @@ class Gate:
                           'Before another correction, hold a diagnosis checkpoint with the same agents: reproduce '
                           'the dispute, name the mistaken or unproven premise, and agree the next bounded change '
                           'and its acceptance (ARCHITECT.md). Closeout requires it after two unsuccessful corrections.')
+                for role, agent, round_number, error in self.defective_completions(start):
+                    print(f'UNCAPTURED COMPLETION: {role} {agent} (round {round_number}) is recorded '
+                          f'"{record_error(error)}", so closeout cannot count it. Resume that agent and ask '
+                          'it to re-emit its footer; the footer\'s "agent" field must be exactly the '
+                          f'registered agent_type "{role}", and every reference it cites must resolve.')
                 print(f"NEXT: finish active iteration {start['id']} and run --check-done")
                 return 0
         due = team_retrospective.pending(self.root)
@@ -516,10 +601,9 @@ class Gate:
                 print(f"  {row['id']}: {row['title']}")
             return 0
         notifications.synchronize(self.root, terminal='no actionable work')
-        message = notifications.notice(self.root)
-        if message:
-            print(message)
-            return 0
+        # Held and printed after the primary instruction rather than instead of
+        # it; see next().
+        self._deferred_notice = notifications.notice(self.root)
         print(f'NEXT: no actionable work; {len(opened)} blocked issue(s) remain')
         loop = local(self.root, '.claude/esx-loop.local.md')
         if loop.exists() and re.search(r'(?m)^active:\s*true\s*$', loop.read_text()):

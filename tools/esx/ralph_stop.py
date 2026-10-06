@@ -471,10 +471,19 @@ def _step_locked(root, hook_input):
             queue_loop_event(root, 'loop_paused', f'Loop paused at iteration {n}/{limit}: the provider usage limit '
                              'was reached. It resumes by itself when work is possible again.')
         paused = pause_request(parsed) or ('provider usage limit', None)
-    elif paused is not None and turn == 'working' and pause_source(parsed) == 'provider_limit':
+    elif (paused is not None and turn == 'working' and pause_source(parsed) == 'provider_limit'
+            and paused[1] is None):
         # A turn did real work after an automatic pause: the limit has reset. Lift
         # only this kind of pause, then treat the Stop normally. A pause the owner
         # set is never lifted here.
+        #
+        # Only when the reset time is UNKNOWN (`paused[1] is None`). With a known
+        # reset, that time is authoritative and `pause_request` stops reporting
+        # the pause by itself once it passes. Lifting on a 'working' turn
+        # regardless classified a turn that merely ended with a summary message
+        # under the grace allowance as real work, and resumed the loop about 90
+        # minutes before the reset (TEAM-PAUSE-EARLY-LIFT-001), which then spent
+        # the iteration on a provider that was still refusing.
         parsed, original = set_pause(root, state, parsed, None, None, None)
         log(root, 'AUTO_RESUME', n, 'a turn did real work after a provider-limit pause; pause lifted')
         queue_loop_event(root, 'loop_resumed', f'Loop resumed at iteration {n}/{limit} after the provider '

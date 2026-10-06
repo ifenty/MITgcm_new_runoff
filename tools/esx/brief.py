@@ -165,10 +165,79 @@ def figures_section(root, issue, figures=()):
            f"({len(rows)} figure(s) checked). Correct each line, or keep it deliberately when it quotes the old "
            'value as history and says so.']
     out += [f"  {hit['path']}:{hit['line']}: [{hit['figure']}"
-            + (f" -> {hit['new']}" if hit['new'] else '') + f"] {hit['text'][:160]}" for hit in found['hits']]
+            + (f" -> {hit['new']}" if hit['new'] else '') + f"] {hit['text'][:160]}"
+            for hit in doc_contract.listed(found)]
     if found['truncated']:
         out.append(f"  ... {found['truncated']} more; run doc_contract.py stale --issue {issue}")
     return '\n'.join(out)
+
+
+# Each command runs from its script name up to the next command, end of line, or
+# a closing backtick. Without the lookahead the capture swallowed the flags of a
+# following command on the same line and blamed them on this one.
+COMMAND_PATTERN = re.compile(r'tools/esx/([a-z_]+\.py)((?:(?!tools/esx/)[^\n`])*)')
+
+
+def tool_flags(root, script, subcommand=None):
+    """Flags `script` (optionally its subcommand) accepts, from its own argparse.
+
+    Introspected by running `--help` rather than by importing, so a tool with
+    side effects at import is not executed. A subcommand's flags are not listed
+    by the top-level parser, so they are looked up separately; without that,
+    every legitimate `doc_contract.py navigate --issue ...` in a brief would be
+    refused, and a false refusal is worse than a miss.
+    """
+    import subprocess
+    command = [sys.executable, str(Path(root) / 'tools/esx' / script)]
+    if subcommand:
+        command.append(subcommand)
+    command.append('--help')
+    try:
+        proc = subprocess.run(command, capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    return set(re.findall(r'(--[a-z][\w-]*)', proc.stdout))
+
+
+def interface_errors(root, text):
+    """Every ESX command flag a brief names that the tool does not accept.
+
+    A brief that tells an agent to run a command with flags that do not exist is
+    discovered only by the agent, and only if the agent measures rather than
+    complies. On RUNOFF-013 a brief instructed the implementer to run
+    `loop_gate.py --check-start --issue X --agent bob`; none of `--issue` or
+    `--agent` exists on that command, and the gate is Arch's own rather than a
+    per-agent permission check. A less careful agent would have stalled or used
+    an escape hatch that corrupts a receipt
+    (TEAM-BRIEF-UNVALIDATED-INTERFACE-001).
+
+    Subcommand-only flags are accepted, because `--help` of the top-level parser
+    lists them for most of these tools and a false refusal is worse than a miss.
+    """
+    errors, known = [], {}
+    for script, rest in COMMAND_PATTERN.findall(text or ''):
+        if not (Path(root) / 'tools/esx' / script).is_file():
+            errors.append(f'{script}: no such tool under tools/esx/')
+            continue
+        tokens = rest.split()
+        subcommand = tokens[0] if tokens and re.fullmatch(r'[a-z][a-z-]*', tokens[0]) else None
+        for key in [(script, subcommand), (script, None)]:
+            if key not in known:
+                known[key] = tool_flags(root, key[0], key[1])
+        # A flag is acceptable to either the subcommand or the top-level parser.
+        accepted = set()
+        for key in [(script, subcommand), (script, None)]:
+            if known[key]:
+                accepted |= known[key]
+        if not accepted:
+            continue
+        for flag in re.findall(r'(--[a-z][\w-]*)', rest):
+            if flag not in accepted:
+                errors.append(f'{script} does not accept {flag}'
+                              + (f' for {subcommand}' if subcommand else ''))
+    return sorted(set(errors))
 
 
 def build(root, role, issue, design, question=None, packet=None, correction_round=0, sweep_symbols=(),
@@ -203,7 +272,7 @@ def build(root, role, issue, design, question=None, packet=None, correction_roun
         footer['documentation_review']['report'] = dict(packet['maintenance']['documentation'])
     swept = sweep_section(root, sweep_symbols)
     figures = figures_section(root, issue, sweep_figures)
-    return '\n\n'.join([
+    text = '\n\n'.join([
         '# ' + role + ': ' + issue, '# Design and acceptance\n' + design, *([swept] if swept else []),
         *([figures] if figures else []),
         '# Question\n' + (question or 'Implement the bounded design and report actual focused checks.'),
@@ -224,8 +293,20 @@ def build(root, role, issue, design, question=None, packet=None, correction_roun
         'whoami', '--role', role]) + '` prints it. Evidence sealed under any other owner is refused at closeout. '
         'Richard confirms the exact sealed documentation reference in this packet: ' + json.dumps(packet),
         *([current_seal(packet)] if role == 'richard' else []),
-        '# Report\nKeep actual identity, evidence and limitations. Required values cannot be invented.\n```json\n'
+        '# Report\nKeep actual identity, evidence and limitations. Required values cannot be invented.\n'
+        'The "agent" field must be exactly ' + json.dumps(role) + ': it is compared against your registered '
+        'agent_type at capture, and any other value -- including a descriptive name that distinguishes you from '
+        'another reviewer -- records the whole turn as `incomplete` and makes it unavailable to closeout, '
+        'silently. Every reference you cite must resolve before you answer; the orientation receipt, '
+        'independent_check.evidence (which must be owned by you) and documentation_review.report are checked at '
+        'capture.\n```json\n'
         + json.dumps(footer, indent=2) + '\n```']) + '\n'
+    # A brief that names a flag the tool does not accept is a defect in the
+    # brief, not in the agent that receives it
+    # (TEAM-BRIEF-UNVALIDATED-INTERFACE-001).
+    problems = interface_errors(root, text)
+    require(not problems, 'brief names ESX commands that do not exist: ' + '; '.join(problems))
+    return text
 
 
 def main():

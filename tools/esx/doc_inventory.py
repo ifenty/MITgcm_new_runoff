@@ -85,15 +85,28 @@ def python_units(text, filename):
     module_prose += [c for _, c in comments]
     units['<module>'] = {'sha256': digest(text), 'docs': digest(module_prose),
                          'has_docs': any(module_prose), 'spans': [[1, len(lines)]]}
-    class ModuleContext(ast.NodeTransformer):
-        # Constants/imports and module-level execution can change a function's
-        # interpretation while its own text stays identical.
-        def visit_FunctionDef(self, node):
-            return None
-        visit_AsyncFunctionDef = visit_FunctionDef
-        visit_ClassDef = visit_FunctionDef
-
-    context = digest(ast.dump(ModuleContext().visit(tree), include_attributes=False))
+    # Constants/imports and module-level execution can change a function's
+    # interpretation while its own text stays identical, so every unit carries a
+    # digest of the module's non-definition text.
+    #
+    # This is built textually, by removing the line spans of the top-level
+    # definitions, rather than from `ast.dump` of a definition-stripped tree.
+    # `ast.dump` renders whichever fields the running interpreter's AST carries,
+    # so its output moves between Python versions even for identical source:
+    # sealing a report under one interpreter and checking it under another
+    # reported the tree as stale and blamed the document
+    # (TEAM-DOCCONTRACT-AST-DUMP-DIGEST-001; measured on RUNOFF-005, where the
+    # same unmodified tree digested differently under 3.10.19 and 3.13.12 and
+    # cost two reviewers a must-fix each). Line numbers and the source text are
+    # interpreter-independent, so this form is stable across versions while
+    # still changing whenever module-level code does.
+    dropped = set()
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            first = min([node.lineno] + [d.lineno for d in node.decorator_list])
+            dropped.update(range(first, node.end_lineno + 1))
+    context = digest([line for number, line in enumerate(lines, 1)
+                      if number not in dropped])
     for unit in units.values():
         unit['context'] = context
     return units

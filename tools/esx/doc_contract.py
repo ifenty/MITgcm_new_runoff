@@ -222,7 +222,15 @@ def _reuse_navigate(root, issue, original_ref, use, base_ref=None, role=None):
     words = lambda text: ' '.join(str(text).split()).casefold()
     require(words(use) != words(record['use']),
             '--use repeats the original orientation; write a fresh explanation after reading the current excerpts')
-    declared = set(record['targets']) | set(record['documents'])
+    # The map section is declared by this orientation as surely as its targets
+    # and documents are, so a change confined to it is reusable. Testing
+    # membership against targets+documents alone reported an orientation's own
+    # --map as outside its own scope and sent the caller to re-declare, by hand,
+    # the identical arguments the receipt already holds
+    # (TEAM-DOCCONTRACT-NAVIGATE-REUSE-MAP-001: four reproductions across three
+    # agents on RUNOFF-013, with the code map being the document most likely to
+    # change on an issue that touches it).
+    declared = set(record['targets']) | set(record['documents']) | {record['map']}
     outside, missing, echoed = [], [], {original_ref.get('sha256')}
     for entry in record['references']:
         echoed.add(entry['sha256'])
@@ -244,6 +252,44 @@ def _reuse_navigate(root, issue, original_ref, use, base_ref=None, role=None):
             'run full navigate with the current owning references')
     return _navigate(root, issue, record['baseline'], record['role'], record['map'], record['targets'],
                      record['documents'], use, reused_from=original_ref)
+
+
+def latest_orientation(root, issue, base_ref, role):
+    """The newest recorded orientation for this issue/baseline/role that is fresh.
+
+    `--check-start` validates the orientation recorded at `--prepare`. In a
+    correction round that receipt is necessarily stale, because the work has
+    changed the targets it was written against, and the gate then has no honest
+    way to pass: `--late-reason` overwrites an on-time receipt with one that
+    asserts the gate was skipped, and `--prepare` destroys the round's review
+    history (TEAM-LOOPGATE-CHECKSTART-CORRECTION-ROUND-001, reproduced end to
+    end on RUNOFF-013 after an implementer refused both escape hatches).
+
+    Re-navigating is the honest remedy the refusal already recommends, so this
+    finds the receipt that re-navigation produced. Returns None when no fresh
+    orientation exists, which keeps the genuinely-skipped case refusing.
+    """
+    root = Path(root).resolve()
+    directory = root / 'devel-loop' / 'loop_state' / 'maintenance'
+    if not directory.is_dir():
+        return None
+    best = None
+    for path in directory.glob('*.json'):
+        try:
+            record = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        if (record.get('kind') != 'orientation' or record.get('issue_id') != issue
+                or record.get('role') != role or record.get('baseline') != base_ref):
+            continue
+        ref = {'path': str(path.relative_to(root)), 'sha256': path.stem}
+        try:
+            validate_orientation(root, ref, issue, base_ref, role)
+        except (ValueError, OSError):
+            continue
+        if best is None or record.get('created_at', '') > best[0]:
+            best = (record.get('created_at', ''), ref)
+    return best[1] if best else None
 
 
 def validate_orientation(root, ref, issue, base_ref, role, fresh=True):
@@ -852,10 +898,18 @@ def stale_lines(root, figures, limit=200):
     quotes the old figure as history is listed too.
     """
     from doc_inventory import paths
+    from project import record_paths
     root = Path(root).resolve()
     patterns = [(row, figure_pattern(row['old'])) for row in figures]
     hits = []
-    for name in sorted(paths(root)):
+    # The inventory is the acceptance scope and deliberately omits the project's
+    # record documents, but "outside acceptance" is not "outside every
+    # mechanism": a superseded figure in open_issues.md, lessons_learned.md or a
+    # closed-issue entry has to be findable too
+    # (TEAM-DOCINVENTORY-LEDGER-UNINVENTORIED-001). Sweeping both sets closes
+    # that hole without moving records into acceptance, which is what keeps a
+    # record-only correction round from stranding a reviewer approval.
+    for name in sorted(set(paths(root)) | set(record_paths(root))):
         path = local(root, name)
         # The kit's own tools are not the project's documentation.
         if name.startswith('tools/esx/') or not path.is_file():
@@ -869,8 +923,28 @@ def stale_lines(root, figures, limit=200):
                 if pattern.search(line):
                     hits.append({'figure': row['old'], 'new': row['new'], 'note': row['note'],
                                  'path': name, 'line': number, 'text': line.strip()[:240]})
-    return {'figures': len(figures), 'lines': len(hits), 'hits': hits[:limit],
-            'truncated': max(len(hits) - limit, 0)}
+    # A truncated listing must not be countable as a total
+    # (TEAM-DOCCONTRACT-STALE-HITS-TRUNCATION-001). `lines` and the listing
+    # answer different questions, and the listing is the natural thing to count:
+    # on RUNOFF-005 a figure of 199 reached permanent prose in the documentation
+    # contract because someone counted `hits[:200]` (minus one self-reference)
+    # instead of reading `lines`, which was 335. So the key is renamed when the
+    # list is partial: a caller that reads 'hits' and gets a short list is now a
+    # KeyError instead of a plausible wrong number. Use `listed()` to read the
+    # entries without caring which case applies.
+    result = {'figures': len(figures), 'lines': len(hits), 'limit': limit,
+              'truncated': max(len(hits) - limit, 0)}
+    result['hits' if result['truncated'] == 0 else 'hits_sample'] = hits[:limit]
+    return result
+
+
+def listed(result):
+    """The entries a `stale_lines` result carries, complete or sampled.
+
+    Callers that only want to display the lines use this; callers that report a
+    count must read `result['lines']`, which is always the true total.
+    """
+    return result.get('hits', result.get('hits_sample', []))
 
 
 NAVIGATE_EXAMPLE = '''example:
@@ -955,6 +1029,12 @@ def main():
                 parser.error('give --issue or --figures')
             table = args.figures if args.figures else local(args.root, figures_path(args.issue))
             result = stale_lines(args.root, read_figures(table), args.limit)
+            if result['truncated']:
+                # Say the total next to the listing, so it cannot be inferred by
+                # counting (TEAM-DOCCONTRACT-STALE-HITS-TRUNCATION-001).
+                print(f"documentation contract: {result['lines']} inventoried line(s) match; "
+                      f"'hits_sample' lists the first {result['limit']} and {result['truncated']} are not "
+                      "shown. Read 'lines' for the total; do not count the sample.", file=sys.stderr)
         elif args.command == 'check-orientation':
             validate_orientation(args.root, args.receipt, args.issue, args.baseline, args.role)
             result = {'valid': True, 'evidence': 'reused', 'orientation': args.receipt}

@@ -28,6 +28,33 @@ ROOT = Path(__file__).resolve().parents[2]
 LEDGER = f'{STATE}/notifications.json'
 OUTAGE_PROBE_EVENTS = 10      # covered events allowed between recorded probes
 OUTAGE_RENEW_ITERATIONS = 5   # loop iterations an outage record applies before renewal
+OUTAGE_BACKOFF_MAX = 32       # most iterations a settled outage may go between probes
+
+
+def backoff(outage):
+    """Iterations this outage may go between probes, given how settled it is.
+
+    A provider that has answered `down` to the same question many times is not
+    telling us anything new, and re-asking it costs a loop iteration each time.
+    So the interval doubles with each consecutive `down`, capped at
+    OUTAGE_BACKOFF_MAX: 1, 2, 4, 8, 16, 32, 32, ...
+
+    Measured on RUNOFF-013 (TEAM-NOTIFY-OUTAGE-NO-BACKOFF-001): a Slack provider
+    that had never been configured was probed **73 times** across 85 loop
+    iterations, every probe returning the identical `claude mcp list` output,
+    with 14 renewals on top. Loop iterations 13-85 produced no scientific work
+    at all. Under this backoff the same session would have recorded about 10
+    probes instead of 73.
+
+    The streak counts consecutive `down` results rather than byte-identical
+    evidence, because evidence is free text an agent rewrites each time -- the
+    RUNOFF-013 probes all said the same thing in prose that differed by an
+    iteration number, so an evidence comparison would never have fired. Any
+    `up` clears the outage outright, and a renewal with genuinely new evidence
+    resets the streak, so a provider that might recover keeps the tight cadence.
+    """
+    streak = max(int(outage.get('down_streak', 0)), 0)
+    return min(2 ** streak, OUTAGE_BACKOFF_MAX) if streak else 1
 
 
 @contextmanager
@@ -323,7 +350,9 @@ def active_outage(data, provider, run):
 
 
 def expired(outage, iteration):
-    return iteration >= outage['bound_iteration'] + OUTAGE_RENEW_ITERATIONS
+    # The renewal bound scales with the probe interval, so a settled outage is
+    # not renewed every five iterations forever either.
+    return iteration >= outage['bound_iteration'] + OUTAGE_RENEW_ITERATIONS * backoff(outage)
 
 
 def cover(data, run, iteration):
@@ -341,8 +370,12 @@ def probe_due(outage, iteration):
     if expired(outage, iteration):
         return (f"outage bound of {OUTAGE_RENEW_ITERATIONS} iterations from iteration "
                 f"{outage['bound_iteration']} is spent; renew it with fresh probe evidence or clear it")
-    if iteration > outage['last_probe_iteration']:
-        return f"no probe recorded in loop iteration {iteration}"
+    interval = backoff(outage)
+    if iteration - outage['last_probe_iteration'] >= interval:
+        streak = int(outage.get('down_streak', 0))
+        settled = (f"; {streak} consecutive down probes, so the interval has backed off to "
+                   f"{interval} iteration(s)" if streak > 1 else '')
+        return f"no probe recorded since loop iteration {outage['last_probe_iteration']}{settled}"
     if outage['covered_since_probe'] >= OUTAGE_PROBE_EVENTS:
         return f"{outage['covered_since_probe']} events covered since the last probe (limit {OUTAGE_PROBE_EVENTS})"
     return None
@@ -369,10 +402,15 @@ def outage(root, provider, tool, evidence):
             identity = digest(['outage', provider, run, probe['at']])[:24]
             o = outages[identity] = {'id': identity, 'provider': provider, 'run': run, 'status': 'active',
                                      'declared_at': probe['at'], 'declared_iteration': iteration,
-                                     'covered': [], 'covered_since_probe': 0, 'probes': []}
+                                     'covered': [], 'covered_since_probe': 0, 'probes': [],
+                                     'down_streak': 0}
             probe['result'] = 'declared'
         else:
             probe['result'] = 'renewed'
+            # A renewal is itself an observation that the provider is still
+            # down, so it widens the interval like any other `down` probe
+            # (TEAM-NOTIFY-OUTAGE-NO-BACKOFF-001).
+            o['down_streak'] = int(o.get('down_streak', 0)) + 1
         o['probes'].append(probe)
         o.update(bound_iteration=iteration, last_probe_iteration=iteration)
         cover(data, run, iteration)
@@ -396,6 +434,10 @@ def reprobe(root, provider, tool, result, evidence):
             require(not expired(o, iteration), 'outage bound is spent; renew it with notifications.py outage')
         o['probes'].append({'at': now(), 'iteration': iteration, 'tool': tool, 'result': result, 'evidence': evidence})
         o.update(last_probe_iteration=iteration, covered_since_probe=0)
+        # Each consecutive `down` widens the interval before the next probe is
+        # demanded (TEAM-NOTIFY-OUTAGE-NO-BACKOFF-001). `up` clears the outage,
+        # so the streak only ever grows while the answer is unchanged.
+        o['down_streak'] = int(o.get('down_streak', 0)) + 1 if result == 'down' else 0
         if result == 'up':
             o.update(status='cleared', cleared_at=o['probes'][-1]['at'], cleared_iteration=iteration)
         return o
