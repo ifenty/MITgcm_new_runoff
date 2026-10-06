@@ -680,6 +680,14 @@ def test_brief_interface_check_has_no_false_positives():
         "tools/esx/project.py signature",
         # Two commands on one line: the first must not be blamed for the second's flags.
         "Use tools/esx/project.py signature then tools/esx/verify.py --suite focused --owner X --fresh",
+        # A *project* script after an ESX one: its flags belong to it, not to the
+        # ESX command. This was the second false positive the check produced, on
+        # a real brief, because the boundary only stopped at the next
+        # `tools/esx/` path rather than at any following script.
+        "Run tools/esx/verify.py --suite focused --owner X --fresh then "
+        "tests/rnf/tendency_term_check.py --build",
+        "tools/esx/doc_contract.py draft --issue X --previous P then "
+        "tests/rnf/exf_heat_check.py --control --build",
     ]
     for command in legitimate:
         assert brief.interface_errors(ROOT, command) == [], (
@@ -696,11 +704,18 @@ def test_generated_brief_states_the_required_footer_identity():
     """
     import brief
 
+    # The active issue, not a hardcoded one: brief.build refuses a brief that
+    # names any other issue ("brief must name the active issue"), so hardcoding
+    # one makes this guard fail as soon as the loop moves on -- which it did.
+    start = ROOT / "devel-loop" / "loop_state" / "issue-start.json"
+    if not start.is_file():
+        pytest.skip("no active iteration, so brief.build has no issue to name")
+    issue = json.loads(start.read_text())["id"]
     design = ROOT / "devel-loop" / "loop_state" / "brief-probe-design.txt"
     design.parent.mkdir(parents=True, exist_ok=True)
     design.write_text("Probe design and acceptance for the brief identity guard.\n")
     try:
-        text = brief.build(ROOT, "bob", "RUNOFF-013", design.read_text())
+        text = brief.build(ROOT, "bob", issue, design.read_text())
     finally:
         design.unlink(missing_ok=True)
     assert 'The "agent" field must be exactly "bob"' in text, (

@@ -172,10 +172,13 @@ def figures_section(root, issue, figures=()):
     return '\n'.join(out)
 
 
-# Each command runs from its script name up to the next command, end of line, or
-# a closing backtick. Without the lookahead the capture swallowed the flags of a
-# following command on the same line and blamed them on this one.
-COMMAND_PATTERN = re.compile(r'tools/esx/([a-z_]+\.py)((?:(?!tools/esx/)[^\n`])*)')
+# Each command runs from its script name up to the next script, end of line, or a
+# closing backtick. The lookahead stops at any following `.py`, not just at the
+# next `tools/esx/` one: a brief legitimately names project scripts too
+# (`tests/rnf/tendency_term_check.py --build`), and a narrower boundary blamed
+# their flags on the preceding ESX command. Both false positives this check
+# produced were of that shape, which is why the boundary is now the general one.
+COMMAND_PATTERN = re.compile(r'tools/esx/([a-z_]+\.py)((?:(?!\.py)[^\n`])*)')
 
 
 def tool_flags(root, script, subcommand=None):

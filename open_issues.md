@@ -94,11 +94,10 @@ Scope decision from RUNOFF-012: the skeleton has no `rnf_diagnostics_init.F`. De
 
 Unblocked 2026-10-03: RUNOFF-012 closed (pkg/rnf skeleton, fork ac33291aa).
 
-## BLOCKED: Volume, heat, salt and tracer budget closure checks
+## UNRESOLVED: Volume, heat, salt and tracer budget closure checks
 
 **Date Identified**: 2026-10-02T22:30:00Z
-**Status**: Blocked
-**Blocked-By**: RUNOFF-013 — needs T/S contributions applied
+**Status**: Unresolved
 **UUID**: RUNOFF-016
 **Anchors**: docs/model_contract.md::<module>
 
@@ -115,6 +114,8 @@ The strongest independent oracle for the tendency-based contributions where no d
 Acceptance: checks pass to 1e-12 relative on lab_sea and cs32 sparse cases, single and MPI; deliberately broken fractions fail them.
 
 Adams-Bashforth note (RUNOFF-010 review, 2026-10-03): with forcing inside Adams-Bashforth (`temp_integrate.F:367-372`, `tracForcingOutAB ≠ 1`) the package term is extrapolated like the model's own forcing, so close heat, salt and tracer budgets in the sum over time, or run the check with `tracForcingOutAB=1` or a non-AB scheme.
+
+**Unblocked 2026-10-06:** RUNOFF-013 closed, so the dependency this entry waited on is satisfied. The tendency terms are implemented and measured -- 8 of 8 analytic cases over 10 of 10 decision-3 table rows, every Package figure bitwise zero and the worst Total 1.43e-14 against a 1e-12 acceptance, plus the exf cross-path at 3.559e-16 over 7 cells -- and both acceptance instruments are enrolled in the suites (`tests/rnf/tendency_term_check.py`, `tests/rnf/exf_heat_check.py`). Residual gaps this entry should assume rather than rediscover: every tendency case is single-process, branch N and the lagged time level (`RNF_lagFlds = T`) are executed by nothing, and the tracer term has no numerical oracle.
 
 ## UNRESOLVED: Refusal and negative tests for invalid runoff input
 
@@ -153,7 +154,7 @@ Carry forward from RUNOFF-013 (correction round 1, 2026-10-05) — **three `RNF_
 
 1. **A duplicate `RNF_trPtr` check is NOT needed: the condition is unreachable.** Review B proposed guarding against two runoff-tracer variables mapped to the same ptracer, of which the `iRnf` loop of `RNF_TENDENCY_APPLY_PTR` silently keeps the last. The "keeps the last" half is true, but the premise is not: `RNF_NC_SERIES` trims the variable name with `ILNBLNK`, which treats **only the literal space** as blank (`eesupp/src/utils.F:123-152`), so two *distinct* NetCDF names can collide on the trimmed name only through a trailing blank, and **NetCDF refuses one** — creating `runoff_ptracer_dye ` fails with `NetCDF: Name contains illegal characters` (measured 2026-10-05, netCDF4 1.7.4, libnetcdf 4.10.0). The one route that rule leaves open closes itself: a trailing **NUL** is accepted but collapsed to the same stored name, after which the duplicate name is refused with `NetCDF: String match to name in use` (same measurement, correction round 2). Distinct names therefore trim to distinct tracer names, which match distinct `PTRACERS_names` entries or none (two equal entries give `nMatch ≥ 2`, itself a refusal), so `RNF_trPtr` cannot hold a duplicate. Recorded here so the suggestion is not re-filed; the `iRnf` loop stays as defence in depth. Do **not** attach the `PTRACERS_num ≥ 2` condition to this item — that belongs to the two-matching-names refusal below.
 2. **The two `RNF_NC_SERIES` refusals that still have no case**, both needing another build: a name matching more than one `PTRACERS_names` entry (needs `PTRACERS_num ≥ 2`) and the `#else /* ALLOW_PTRACERS */` branch for a model compiled without pkg/ptracers. Three siblings were enrolled in correction round 1 (`ptracer_name_empty`, `ptracer_name_long`, `ptracer_too_many`), each measured passing on the committed build and failing on a mutant with its guard weakened, and correction round 2 added their at-the-bound counterfactuals (`ptracer_name_min`, `ptracer_name_max`, `ptracer_count_max`), which hold the guards back from `.GE.`; these two refusals are what is left.
-3. **A missing value of `runoff_salinity` or of a tracer** still drives no case, so the per-series naming of that message is unmeasured for those two series even though six flux cases run the same code path. See the matrix refusal row.
+3. **A missing value of `runoff_salinity` or of a tracer** still drives no case, so the per-series naming of that message is unmeasured for those two series even though seven flux cases run the same code path (six until RUNOFF-030 added `flux_above_source_max`). See the matrix refusal row. RUNOFF-030 also widened that code path: `RNF_NC_READ_ONE` now carries an out-of-range refusal with its own per-series count line beside the missing-value one, and that line too is measured for the flux only.
 
 Carry forward from RUNOFF-033 (review A, correction round 2, 2026-10-05): **enrol a non-finite `target_cell_area` case.** Commit `016fdee5d` made the same one-token NaN fail-open fix at **two** sibling comparison sites in `rnf_init_fixed.F` — the cell-centre check and the pre-existing `target_cell_area` check — but only the first got a permanent case (`target_coords_nan`). The existing `cell_area` case is `scale_var("target_cell_area", 0, 1.01)`, a **finite** error, and the coordinate check is reached only *after* the area check passes, so reverting the area comparison to `.GT.` would leave **both** existing cases green and no configured command would notice. The behaviour is correct today — review A measured `area_nan` refused with exit 1 in correction round 1 — and `T09-cell-area-nan` covers the checker side, so what is missing is regression coverage of the model-side backstop, which exists precisely for files that never went through `MITgcmutils.runoff.check`. One line closes it: a `file_case` with `set_var("target_cell_area", 0, float("nan"))` expecting the message the model already prints, `target_cell_area differs from the cell area rA`, confirmed by review A's round-1 probe. See LL-009.
 
@@ -207,11 +208,10 @@ Carry forward from RUNOFF-010 review A: the loops that zero `maskInC` start at t
 
 Unblocked 2026-10-04: RUNOFF-004 closed (sparse reader, per-tile lists, placement by the `mdsio_read_field.F` arithmetic, `GLOBAL_SUM` fraction check and the exf volume flux; fork `610d4cbaf`, final verification receipt `2e11b06d`, all 33 scientific commands passing). Note the reader accepts **one constant record only**: `rnf_init_fixed.F:199-217` stops the run for `RNF_useYearlyFiles` or any `RNF_period` other than 0, naming RUNOFF-005.
 
-## BLOCKED: Runoff on grids with ice-shelf cavities (top wet level below k=1)
+## UNRESOLVED: Runoff on grids with ice-shelf cavities (top wet level below k=1)
 
 **Date Identified**: 2026-10-02T22:30:00Z
-**Status**: Blocked
-**Blocked-By**: RUNOFF-013 — needs the tendency-based contributions
+**Status**: Unresolved
 **UUID**: RUNOFF-020
 **Anchors**: MITgcm/verification/isomip/input.icefront/data::<module>; MITgcm/pkg/shelfice/shelfice_init_depths.F::<module>
 
@@ -228,6 +228,8 @@ Glacier runoff near ice fronts is a core use case; a k=1 assumption would put wa
 Acceptance: cases with sources at the ice front and in open water; budgets closed; land/dry-target refusal checked.
 
 Moving shelf edge (RUNOFF-010 design, decision 5): with `SHI_update_kTopC` (`ALLOW_SHELFICE_REMESHING` and `SHELFICEMassStepping`) `kTopC` is reset every step (`shelfice_thermodynamics.F:239-256`), so a target open at init can come under the shelf. `RNF_CHECK` refuses `useRNF` with `SHI_update_kTopC` until the `addMass` path exists (RUNOFF-025); test that refusal here.
+
+**Unblocked 2026-10-06:** RUNOFF-013 closed, so the dependency this entry waited on is satisfied. The tendency terms are implemented and measured -- 8 of 8 analytic cases over 10 of 10 decision-3 table rows, every Package figure bitwise zero and the worst Total 1.43e-14 against a 1e-12 acceptance, plus the exf cross-path at 3.559e-16 over 7 cells -- and both acceptance instruments are enrolled in the suites (`tests/rnf/tendency_term_check.py`, `tests/rnf/exf_heat_check.py`). Residual gaps this entry should assume rather than rediscover: every tendency case is single-process, branch N and the lagged time level (`RNF_lagFlds = T`) are executed by nothing, and the tracer term has no numerical oracle.
 
 ## UNRESOLVED: LLC grid coverage
 
@@ -271,11 +273,10 @@ Synchronous restart case (RUNOFF-010 review, 2026-10-03): add a restart without 
 
 Unblocked 2026-10-05: RUNOFF-005 closed (sparse time handling, all five modes plus hold-exact; fork `a81f290f0`, final verification receipt `6e2a5194`, all 57 scientific commands passing). Record selection is delegated to the `pkg/exf` routines themselves, and the suite measures 0 of 49/769/1465/1465/1201 forcing steps disagreeing with `pkg/exf`, largest weight error 0.0e+00.
 
-## BLOCKED: Thread, MPI and tile-layout independence (do_tst_2+2)
+## UNRESOLVED: Thread, MPI and tile-layout independence (do_tst_2+2)
 
 **Date Identified**: 2026-10-02T22:30:00Z
-**Status**: Blocked
-**Blocked-By**: RUNOFF-013 — needs the full model path
+**Status**: Unresolved
 **UUID**: RUNOFF-023
 **Anchors**: MITgcm/tools/do_tst_2+2::<module>
 
@@ -291,11 +292,12 @@ Required for upstream acceptance and for correctness on large machines.
 ### Proposed action and acceptance
 Acceptance: same results across at least three layouts per grid; do_tst_2+2 clean.
 
-## BLOCKED: Runoff with sea ice (runoff into ice-covered cells)
+**Unblocked 2026-10-06:** RUNOFF-013 closed, so the dependency this entry waited on is satisfied. The tendency terms are implemented and measured -- 8 of 8 analytic cases over 10 of 10 decision-3 table rows, every Package figure bitwise zero and the worst Total 1.43e-14 against a 1e-12 acceptance, plus the exf cross-path at 3.559e-16 over 7 cells -- and both acceptance instruments are enrolled in the suites (`tests/rnf/tendency_term_check.py`, `tests/rnf/exf_heat_check.py`). Residual gaps this entry should assume rather than rediscover: every tendency case is single-process, branch N and the lagged time level (`RNF_lagFlds = T`) are executed by nothing, and the tracer term has no numerical oracle.
+
+## UNRESOLVED: Runoff with sea ice (runoff into ice-covered cells)
 
 **Date Identified**: 2026-10-02T22:30:00Z
-**Status**: Blocked
-**Blocked-By**: RUNOFF-013 — needs the tendency-based contributions
+**Status**: Unresolved
 **UUID**: RUNOFF-024
 **Anchors**: MITgcm/verification/lab_sea/input/data.seaice::<module>
 
@@ -315,11 +317,10 @@ Inherited residual (RUNOFF-010 review, 2026-10-03): under ice fraction `a` with 
 
 Carry forward from RUNOFF-010 review B: the under-ice residual `a·m(temp_EvPrRn − θ)μ` was derived for `pkg/seaice` with `SEAICE_EXTERNAL_FLUXES` only; under `pkg/thsice` the ice-covered share comes from thsice itself, so the residual may be absent. Measure both packages.
 
-## BLOCKED: Subsurface discharge at depth (target_level > 1, schema 1.1)
+## UNRESOLVED: Subsurface discharge at depth (target_level > 1, schema 1.1)
 
 **Date Identified**: 2026-10-02T22:30:00Z
-**Status**: Blocked
-**Blocked-By**: RUNOFF-013 — builds on the tendency-based contributions
+**Status**: Unresolved
 **UUID**: RUNOFF-025
 **Anchors**: docs/runoff_schema.md::<module>; MITgcm/pkg/icefront/icefront_tendency_apply.F::<module>
 
@@ -403,11 +404,10 @@ Final gate before proposing the package upstream (owner approval still required 
 ### Proposed action and acceptance
 Acceptance: tr_out diff clean; 2+2 clean; checklist complete.
 
-## BLOCKED: Time modes for T, S and tracer series (all five modes for every series)
+## UNRESOLVED: Time modes for T, S and tracer series (all five modes for every series)
 
 **Date Identified**: 2026-10-02T22:30:00Z
-**Status**: Blocked
-**Blocked-By**: RUNOFF-013 — needs the temperature, salinity and tracer series to exist before their time modes can be exercised
+**Status**: Unresolved
 **UUID**: RUNOFF-029
 **Anchors**: MITgcm/pkg/exf/exf_getffieldrec.F::<module>
 
@@ -436,13 +436,36 @@ Reconsidered 2026-10-05 on RUNOFF-005's closure. The flux time handling this iss
 `EXF_CHECK_RANGE` stops the run if `runoff` exceeds 1e-6 m/s on a wet cell, and `useExfCheckRange` defaults to true. A 1000 m³/s river into one 2 km cell is 2.5e-4 m/s. Decide between documenting `useExfCheckRange=.FALSE.`, skipping the runoff upper bound when `useRNF` is true (one more guarded exf line), or a package-specific bound.
 
 ### Evidence
-RUNOFF-010 design, decision 2: `exf_check_range.F:175-191`, `211-216`; default `exf_readparms.F:307`.
+RUNOFF-010 design, decision 2: `exf_check_range.F:175-191`, `211-216`; default `exf_readparms.F:307`. Those two line ranges are the **pre-change** ones and no longer resolve; after correction round 1 the runoff block is `exf_check_range.F:215-261`, the freshwater-flux block `84-109` and the stop `280-285`.
+
+**Implemented 2026-10-06 (RUNOFF-030, round 0).** The present tense of the question above describes the code *before* this change. What the code does now: the runoff **upper** bound of `EXF_CHECK_RANGE` carries `.AND. .NOT.useRNF`, the negative-runoff test is unchanged and fires either way, the four-line m/yr advisory of that block prints only with `.NOT.useRNF` (its text unchanged), and no other field's range check was touched. The package-side bound is `RNF_srcFluxMax` = 1e7 m³/s on the volume flux of one source, enforced in `RNF_NC_READ_ONE` as each record is read and reported by `RNF_SUMMARY` in three lines naming which bound the run was held to. Both enrolled tendency instruments (`tests/rnf/tendency_term_check.py`, `tests/rnf/exf_heat_check.py`) had been switching `useExfCheckRange` off to work around the bug; both overrides are removed and both still pass (8 of 8 cases over 10 of 10 decision-3 rows; 7 cells at 3.559e-16). `refusal_check.py` grew 64 → 66 cases with `flux_above_source_max` (shown failing on a mutant with the bound weakened fourfold) and its at-the-bound control `flux_at_source_max`. Derivation of the number, and what a per-source bound does not cover, are in [package design](docs/package_design.md) decision 2.
+
+**Correction round 1 widened the scope to a second condition in the same routine, after round 0 measured that the first was not sufficient, and the issue's stated problem is now actually fixed.** `EXF_CHECK_RANGE` also stops the run when `ABS(sflux)` exceeds 1e-6 m/s (`exf_check_range.F:84-109`), and `EXF_GETFORCING` subtracts runoff into `sflux` at `exf_getforcing.F:313` before calling the check at `:346-349`, so skipping the runoff upper bound alone left every point source refused anyway. That bound is now applied to `sflux + runoff` when `useRNF`, re-adding exactly what `:313` subtracted, so what is tested is `evap - precip` — the part of `sflux` the bound exists for — and an out-of-range `evap - precip` is **still refused**, which the new case `sflux_out_of_range` measures with `useRNF` on, no runoff at all and `precipconst = 1e-4` m/s. The coordinator verified the three source sites independently before widening the scope.
+
+Measured acceptance, now enrolled rather than a hand probe: `flux_at_source_max` applies 3.21e-4 m/s, 321 times the exf bound, and **ends normally with `useExfCheckRange` at the lab_sea default `.TRUE.`**, on 1 and on 2 processes. Each condition is necessary and was attributed separately by reverting it alone: with the `sflux` restore disabled the case fails on the `sflux` warning; with the runoff skip reverted it fails on `EXF WARNING: runoff out of range ... 0.321307089844219D-03`, the model's own print of the applied field. Replacing the restore by a removal (`.AND. .NOT.useRNF` on the whole `sflux` test) leaves that case passing and fails `sflux_out_of_range` on exactly the missing `sflux` warning, so the pair separates "restore" from "remove". `refusal_check.py` is 64 → 67 cases, 67 of 67 passing single-process (86 s) and on `-mpi 2` (110 s).
+
+**Deliberately not widened:** the dense path. A dense `runoffFile` above 1e-6 m/s is still refused by both bounds and still needs `useExfCheckRange=.FALSE.`, because both conditions are guarded by `useRNF` alone. The same pair has always fired for the dense path, so that defect is wider than `pkg/rnf` and belongs in the eventual upstream discussion.
+
+Two corrections to the premises this issue was dispatched with, both measured: (1) `tendency_term_check.py` does **not** exercise the runoff bound at all — the check is called only at `nIter0` and the case's first record is dry under `RNF_holdRecord`, so the one call sees zero runoff (retained `L_set` run: `exf_debugLev = 2`, `it= 0` selects `rec0 = 1` with `fac = 1.0`, 0 `EXF WARNING` lines) — and `exf_heat_check.py` applies 4.0e-7 to 7.6e-7 m/s, under the bound on both paths. Both overrides were unnecessary; removing them measures that nothing regressed, not that the relaxation works, and both instruments are unchanged (8 of 8 over 10 of 10 rows; 7 cells at 3.559e-16). (2) The round-0 limit that no enrolled case could assert an `EXF_CHECK_RANGE` outcome is now **lifted for the cases that matter**, because `flux_at_source_max` asserts a normal end rather than a stop, and `sflux_out_of_range` is built with a uniform `precipconst` so that every process has out-of-range cells of its own and prints its own `STOP` line. The limit still holds for any case whose breach would be confined to one tile, since `EXF_CHECK_RANGE` calls `STOP` without `ALL_PROC_DIE`.
 
 ### Scientific or engineering impact
 Without a decision every realistic point-source configuration on a fine grid stops at the first step, or users disable all exf range checks.
 
 ### Proposed action and acceptance
 Recommend skipping only the runoff upper bound when `useRNF` (other exf checks stay), with a package-side sanity bound reported in the summary. Acceptance: a lab_sea case with a point source above 1e-6 m/s runs with default `useExfCheckRange`; the dense path behaviour is unchanged.
+
+
+**Scope widened by Arch, 2026-10-06, on an escalation from round 0 that I verified myself.** Skipping the `runoff` upper bound is **not sufficient** and the issue's own acceptance is unreachable without a second change, so the scope now includes it.
+
+`EXF_CHECK_RANGE` has a second bound that refuses the same configuration: `ABS(sflux) .GT. 1.E-6` (`exf_check_range.F:74-75`), and `exf_getforcing.F:313` does `sflux = sflux - runoff` inside `#ifdef ALLOW_RUNOFF` **before** the check is called at `:346-349`. Measured by the implementer on the committed build: a source applying 3.21e-4 m/s draws no `runoff out of range` line at all — the skip works — and then stops on `EXF WARNING: sflux out of range for bi,bj,i,j,it= 2 1 3 3 1 -0.321319428044935D-03`. I confirmed all three source sites independently before deciding.
+
+So with only the runoff bound relaxed, this issue's stated problem — "every realistic point-source configuration on a fine grid stops at the first step" — remains true, and a point-source user must still set `useExfCheckRange=.FALSE.`, which is exactly the outcome the issue exists to avoid. Closing on the half change would deliver none of its value.
+
+The scope therefore adds the implementer's proposed minimal form: **compare `ABS(sflux + runoff)` when `useRNF`**, which re-adds the quantity `:313` subtracted so the check still guards `evap - precip`, the part of `sflux` it is actually for. Unchanged: the workflow policy (still `scientific_change` / `guard_relaxation`, so no `workflow_amendment`), the `sflux` bound for every non-`useRNF` run, and every other field's check.
+
+**Deliberately not widened:** the same pair fires for a dense `runoffFile` above 1e-6 m/s, so the upstream defect is wider than `pkg/rnf`. Relaxing it for the dense path too is an upstream change beyond this project's remit and is not in scope; it belongs in the eventual upstream discussion, and the dense behaviour stays exactly as it is today.
+
+**Two premises of my round-0 brief were wrong, both corrected by the implementer's measurement, and the corrected figures are what this issue now carries.** I had claimed the two enrolled tendency instruments exercise the check because they disable it. They do disable it, but: `EXF_CHECK_RANGE` is called only at `myIter.EQ.nIter0` or `exf_debugLev.GE.debLevC` (`exf_getforcing.F:346-349`), and `tendency_term_check.py` presents **zero** runoff to it at `nIter0` because record 1 is dry under `RNF_holdRecord`; `exf_heat_check.py` applies 4.0e-7 to 7.6e-7 m/s, **under** the bound. Removing their overrides therefore measures that nothing regressed, not that the skip works. The applied field of the tendency cases is **3.21e-5 m/s (32x the bound)**, not the "about 4e-5, forty times" that I took from a source comment instead of measuring.
 
 ## UNRESOLVED: KPP and surface diagnostics do not see tendency-based runoff heat and salt
 
@@ -482,11 +505,10 @@ Users of pressure-coordinate or ice-shelf configurations get false land errors, 
 ### Proposed action and acceptance
 Add a surface-level option to all three tools: `--surface-level top|bottom|kSurfC`, or detect it from `data` (`buoyancyRelation`) when a run directory is given, and document it. Acceptance: the cs32 `input.in_p` grid checks cleanly with the converted cs32 file; a shelfice grid uses `kSurfC`; the existing tests are unchanged.
 
-## BLOCKED: cs32 sparse-runoff oracle (exch2 volume path; runoff temperature cell-by-cell)
+## UNRESOLVED: cs32 sparse-runoff oracle (exch2 volume path; runoff temperature cell-by-cell)
 
 **Date Identified**: 2026-09-29T21:30:00Z
-**Status**: Blocked
-**Blocked-By**: RUNOFF-013 — the cell-by-cell runoff-temperature comparison needs the tendency term; the 12-record volume oracle and the no-`pkg/cal` coverage below are actionable now
+**Status**: Unresolved
 **UUID**: RUNOFF-006
 **Anchors**: MITgcm/pkg/exf/exf_mapfields.F::<module>; tests/mitgcm_oracle.sh::<module>
 
@@ -540,11 +562,10 @@ Phase 1 default: every process reads the full record. Owner to decide whether a 
 
 From RUNOFF-002 (review A): this issue owns the measured chunking read benchmark (docs/runoff_schema.md §8, docs/model_contract.md scale requirement). The converter writes the §8 default layout: one record per chunk, deflate, about 4 MB pieces along `source`.
 
-## BLOCKED: Passive-tracer runoff contributions (ptracers tendency term)
+## UNRESOLVED: Passive-tracer runoff contributions (ptracers tendency term)
 
 **Date Identified**: 2026-09-29T21:30:00Z
-**Status**: Blocked
-**Blocked-By**: RUNOFF-013 — the tracer term reuses the T/S tendency routine and its tests
+**Status**: Unresolved
 **UUID**: RUNOFF-008
 **Anchors**: MITgcm/pkg/ptracers/ptracers_apply_forcing.F::<module>; docs/package_design.md::<module>
 
@@ -625,3 +646,46 @@ No current defect: all six entries exist, and both reviewers judged this optiona
 Make a missing entry fail loudly, or treat the build as unconditionally stale. Acceptance: `newest_source_time` with a nonexistent entry raises or forces a rebuild rather than returning a smaller maximum; the six current entries still resolve and still produce today's reference (`pkg/rnf/rnf_nc_utils.F`); and the existing plain-file and directory branches are unchanged. Add a negative control that a nonexistent entry is detected, since all three instances of this class were found by perturbing the mechanism and none by inspecting the list.
 
 **The generalisable lesson, worth carrying beyond this function:** a listed entry that looks like coverage and measures nothing is invisible to inspection. Check such a list by measuring the output change when an entry is perturbed, never by reading it.
+
+## UNRESOLVED: exf runoff-temperature range check tests the wrong array
+
+**Date Identified**: 2026-10-06T07:20:00Z
+**Status**: Unresolved
+**UUID**: RUNOFF-037
+**Anchors**: MITgcm/pkg/exf/exf_check_range.F::<module>
+
+### Issue or research question
+`EXF_CHECK_RANGE`'s runoff-temperature check compares the wrong array. At `exf_check_range.F:264-271`, inside `#ifdef ALLOW_RUNOFTEMP`, the upper bound reads `runoff(i,j,bi,bj) .GT. 36` where it means `runoftemp`, and the message then prints `runoff` rather than the temperature it is reporting on. The lower bound of the same `IF` does test `runoftemp`.
+
+### Evidence
+Found by the implementer during RUNOFF-030 (2026-10-06) while relaxing the runoff upper bound in the same routine, and deliberately left untouched there because RUNOFF-030 is scoped to one guard relaxation. This is upstream MITgcm code, not `pkg/rnf`.
+
+### Scientific or engineering impact
+Two defects in one condition, in opposite directions. A runoff temperature above 36 degC is **not** caught, because the array tested is a volume flux in m/s and never exceeds 36. And a *volume flux* above 36 m/s would be reported as a temperature error with a misleading message. Neither is likely to be hit by a realistic configuration — which is why it has survived — but the check silently does not do what its name and message claim, and `pkg/rnf` is about to make `runoftemp` configurations more common.
+
+### Scope note
+Out of RUNOFF-030's scope by construction: that issue relaxes a guard, and this would tighten a different one. It also affects the dense `runoffFile` + `runoftempfile` path identically, so it is a candidate for the eventual upstream report rather than a `pkg/rnf` change.
+
+### Proposed action and acceptance
+Compare `runoftemp` in both halves of the condition and print `runoftemp` in the message. Acceptance: a `runoftemp` above 36 degC with `useExfCheckRange` at its default is refused and the message names the temperature and its value; a volume flux of any magnitude is not reported as a temperature error; `tests/rnf/exf_heat_check.py`, which is the only instrument that builds with `ALLOW_RUNOFTEMP`, still passes at its measured 3.559e-16 over 7 cells. Since this is upstream code, decide with the owner whether to carry it as a local fix or report it upstream only.
+
+## UNRESOLVED: refusal_check.py has no build-staleness rule and relies on suite ordering
+
+**Date Identified**: 2026-10-06T08:10:00Z
+**Status**: Unresolved
+**UUID**: RUNOFF-038
+**Anchors**: tests/rnf/refusal_check.py::main; tests/rnf/tendency_term_check.py::build_if_stale
+
+### Issue or research question
+`refusal_check.py` reads `lab_sea/build_esx/mitgcmuv` and never checks that the binary postdates its sources. It is correct only because the configured suites happen to run `tests/mitgcm_oracle.sh lab_sea input` before it. Any command that rebuilds a *different* directory breaks that assumption: `mitgcm_oracle.sh lab_sea input -mpi 2` rebuilds only `build_esx_mpi2`, and the two enrolled tendency instruments build `build_esx_noatm` and `build_esx_roft`. A single-process `refusal_check.py` run after any of those can read a `build_esx` that predates the current source.
+
+### Evidence
+RUNOFF-030, 2026-10-06. The implementer hit it: after running `mitgcm_oracle.sh lab_sea input -mpi 2`, a single-process `refusal_check.py` read a stale mutant `build_esx` and reported a spurious `flux_at_source_max` failure. It recorded the cause in the verification matrix rather than working around it, and recommended filing this.
+
+`tests/rnf/tendency_term_check.py` already solves exactly this with `build_if_stale`, which compares the binary against `BUILD_SOURCES` (widened on RUNOFF-013 to six entries, with plain-file handling) and rebuilds when needed. It is importable.
+
+### Scientific or engineering impact
+The direction that bit us is the cheap one — a stale binary producing a spurious *failure*, which is loud and gets investigated. The dangerous direction is the same mechanism producing a **pass**: `refusal_check.py` is the instrument that carries 67 refusal expectations, including the two new cases that are RUNOFF-030's whole acceptance, so a stale binary could report a guard as working when the current source has broken it. That is the lesson class LL-014 names — a mechanism that looks like coverage and measures the wrong bytes — and LL-011, which exists because a figure came from a binary predating its own source.
+
+### Proposed action and acceptance
+Call `build_if_stale` from `refusal_check.main` before the first case, or at minimum compare the binary's mtime against `BUILD_SOURCES` and exit 2 with the comparison printed. Acceptance: with `build_esx/mitgcmuv` stamped older than the newest `BUILD_SOURCES` entry, `refusal_check.py` either rebuilds or exits 2 and says so, and does not run a single case; with a current binary its 67 cases and their timings are unchanged. Audit the other `tests/rnf` instruments for the same assumption while there: `applied_field_check.py` and `timing_field_check.py` also read `build_esx` without a staleness rule, and RUNOFF-036 is the related finding that a nonexistent `BUILD_SOURCES` entry contributes nothing.
