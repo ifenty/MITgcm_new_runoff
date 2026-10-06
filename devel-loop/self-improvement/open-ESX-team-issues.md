@@ -643,3 +643,80 @@ Every notice the gate emits describes a condition that is true when it is
 printed. Direction: notices naming already-repaired records go to zero. The
 qualitative invariant: a gate notice is actionable, so it can be trusted without
 re-deriving whether it still holds.
+
+## 🔴 PROPOSED: the loop hold condition ignores Arch's own long-running work and drains the iteration budget
+
+**Date Identified**: 2026-10-06  20:05
+**Status**: Proposed
+**UUID**: TEAM-LOOPHOLD-ARCH-BACKGROUND-WORK-001
+**Category**: workflow_integrity
+**Severity**: High
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
+**Anchors**: tools/esx/loop_control.py:run; tools/esx/ralph_stop.py:main
+
+### Issue
+
+The Stop-hook loop driver holds the iteration counter while a **native subagent**
+is running, and advances it otherwise. It does not recognise Arch's own
+long-running background work. The final scientific verification is Arch-owned by
+workflow design (`final_verify_owner: arch`), runs ~60 commands over roughly 110
+minutes, and is **mandatory for every `scientific_change` issue** — so the
+longest required step of the standard workflow is precisely the step that spends
+the iteration budget fastest, at about one iteration per Stop cycle while no work
+can proceed.
+
+This is the structural half of LL-018 ("bookkeeping can cost more than the
+science, and the loop will not tell you so"). LL-018 records the *mitigation* —
+`loop_control.py pause` preserves the budget — but the mitigation requires Arch
+to notice, and the failure is silent and fast, so the default outcome is a
+quietly drained budget.
+
+### Evidence
+
+RUNOFF-030, 2026-10-06, from `.claude/esx-loop-exit.log`, which states the rule
+in its own words on every line. Every turn with a subagent running:
+
+    17:51:22  HOLD iteration=3 native subagent running: richard (1 min); iteration not advanced
+
+The two turns after the subagents finished and the Arch-owned final verification
+started as a background shell command:
+
+    18:19:13  CONTINUE iteration=4 budget=20
+    18:20:33  CONTINUE iteration=5 budget=20
+
+Eighty seconds apart, with no work possible in between. Two iterations of an
+owner-granted 20-iteration budget spent waiting on Arch's own required run. The
+run itself took 6628.9 s (110 min) across 59 commands.
+
+### Potential Impact
+
+At the observed ~80 s per iteration, a single mandatory verification run can
+exhaust a 20-iteration budget before the issue it is verifying closes. The budget
+would read "spent" with one issue delivered, and the owner's instruction to run N
+iterations would silently mean something far smaller than N issues. It also
+penalises the correct behaviour: an issue that reaches final verification — i.e.
+one that is nearly done — is the one that burns budget.
+
+### Proposed Fix
+
+Extend the hold condition to cover Arch-owned background work the loop itself
+requires, not only native subagents. The cheapest sufficient form is to hold
+while a `final_verification.py` or `verify.py` process belonging to this run is
+alive, which is the same `ps`-based liveness check the kit already performs for
+container and suite clearance elsewhere. Alternatively, have `final_verification.py
+run` take the pause itself and release it on exit, so the protection does not
+depend on Arch remembering.
+
+### Acceptance Criteria
+
+A Stop cycle during a live Arch-owned `final_verification.py` or `verify.py` run
+logs `HOLD` with the process named and does not advance the iteration.
+Reproduce the RUNOFF-030 sequence: two consecutive Stop cycles 80 s apart during
+a running final verification must consume zero iterations. A Stop cycle with no
+subagent and no Arch-owned run still advances, so the loop cannot stall.
+
+### Expected Effect
+
+The iteration budget measures work attempted rather than turns taken. Direction:
+iterations consumed while no work can proceed go to zero. The qualitative
+invariant: an owner who grants N iterations gets N units of work, not N polls.
