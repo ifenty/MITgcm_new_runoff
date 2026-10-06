@@ -722,3 +722,71 @@ subagent and no Arch-owned run still advances, so the loop cannot stall.
 The iteration budget measures work attempted rather than turns taken. Direction:
 iterations consumed while no work can proceed go to zero. The qualitative
 invariant: an owner who grants N iterations gets N units of work, not N polls.
+
+## 🔴 PROPOSED: the brief's interface check scans the embedded packet's prose
+
+**Date Identified**: 2026-10-06  22:40
+**Status**: Implemented — awaiting publication/effectiveness evidence
+**UUID**: TEAM-BRIEF-COMMAND-SPAN-QUOTES-001
+**Category**: workflow_integrity
+**Severity**: Medium
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
+**Anchors**: tools/esx/brief.py:COMMAND_PATTERN; tools/esx/brief.py:interface_errors
+**Implementation-Reference**: project commit 59fe9a7; guard in tests/esx/test_framework_fixes.py
+
+### Issue
+
+`brief.build` embeds the whole reviewed packet as JSON, so every command
+recorded in a captured footer appears in the brief followed by that footer's own
+prose. `COMMAND_PATTERN` ended a command span at a newline, a backtick or the
+next `.py`, and none of those separates a JSON string from the next key, so the
+span absorbed the prose and attributed any `--flag` in it to the command.
+
+This blocks dispatch rather than degrading quietly: `interface_errors` is wired
+to `require`, so a false positive refuses to produce the brief at all.
+
+### Evidence
+
+RUNOFF-040, 2026-10-06. The implementer's footer recorded
+`independent_check.cmd` as `tools/esx/verify.py --suite focused --owner
+a6516df3eaa40a944 --fresh`, and its `coverage` then said "refusal_check --mpi 2
+was run outside verify.py". With no `.py` between them, building either reviewer
+brief failed with `brief names ESX commands that do not exist: verify.py does
+not accept --mpi` — a flag the brief never names on that command. Both review
+dispatches were blocked until the pattern was fixed.
+
+This is the third false positive of this check, and the first two (`ffca56b`)
+were span-boundary errors too. The comment it replaced said "both false
+positives this check produced were of that shape" — a count made false by a
+later instance, which is the same claim class RUNOFF-030 spent four rounds on.
+The replacement states the shape rather than the count.
+
+### Potential Impact
+
+A blocked review dispatch on a correct candidate, and the cost is out of
+proportion to the defect: fixing `tools/esx/` invalidates the framework
+component of `verify.fingerprint` and every module-context digest, so on this
+issue the fix staled the implementer's sealed report AND its focused-suite
+evidence, forcing a full re-emission with a fresh 16-minute suite run.
+
+### Proposed Fix
+
+Terminate the command span at a quote as well, so a command inside embedded JSON
+cannot absorb the payload around it. A span that ends early and checks fewer
+flags is the right trade for this check, whose own docstring already states that
+a false refusal is worse than a miss. The deeper fix, if this recurs, is to run
+`interface_errors` over the brief's instruction text only, excluding the
+serialized packet — the packet is quoted payload, not an instruction.
+
+### Acceptance Criteria
+
+A footer-shaped payload whose command is followed by prose containing a flag
+produces no error, measured against the real tree so the tools are actually
+introspected rather than passing vacuously on a scratch root. The real error the
+check exists for is still caught: `loop_gate.py --check-start --issue X --agent
+bob` must still report both flags. Reproduce the RUNOFF-040 payload verbatim.
+
+### Expected Effect
+
+No brief is refused for a flag it does not instruct. Direction: false positives
+from this check go to zero while its true positives are unchanged.
