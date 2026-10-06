@@ -142,9 +142,21 @@ THETA_FILE = "theta0_rnfterm.bin"
 SALT_FILE = "salt0_rnfterm.bin"
 #: Total source flux into the one target cell [m^3/s]. Large on purpose:
 #: the term has to dominate the round-off of the state difference the
-#: TOTTTEND diagnostic is built from. With the lab_sea cell area this is
-#: about 4e-5 m/s, which the exf range check would refuse, so the cases
-#: switch useExfCheckRange off; nothing else depends on it.
+#: TOTTTEND diagnostic is built from. With the lab_sea cell area
+#: (3.112287e10 m^2 at the target of ``sparse_info()["wet_cell"]``) this
+#: is 3.21e-5 m/s, 32 times the 1e-6 m/s the pkg/exf range check allows.
+#: The cases used to switch ``useExfCheckRange`` off for that reason.
+#: They no longer do (RUNOFF-030), and the override turns out never to
+#: have been needed: ``EXF_CHECK_RANGE`` is called only at ``nIter0``
+#: (``pkg/exf/exf_getforcing.F:346-349``, unless ``exf_debugLev`` is 3 or
+#: more), and under ``RNF_holdRecord`` record 1 of :func:`write_sparse`
+#: is dry, so the one call sees zero runoff and this flux arrives at the
+#: second step when the check is no longer running. Measured on a
+#: retained ``L_set`` run: ``exf_debugLev = 2``, the ``it= 0`` trace
+#: selects ``rec0 = 1`` with ``fac = 1.0``, and the log holds no
+#: ``EXF WARNING`` line. So these cases say nothing about the RUNOFF-030
+#: skip either way. The bound that does apply to the flux is
+#: ``RNF_srcFluxMax`` = 1e7 m^3/s on one source, ten times this value.
 FLUX = 1.0e6
 #: Steps each run takes. Only the **second** one is measured (see
 #: :func:`dump_at`); the first is there to put the two runs of a case
@@ -615,12 +627,13 @@ def write_input(case, input_dir, zero_flux):
     with open(os.path.join(input_dir, "data.pkg"), "w") as fh:
         fh.write(pkg)
 
-    # No dense runoff, and no exf range check: the flux of these cases is
-    # above the 1e-6 m/s the check allows (package design, decision 2).
+    # No dense runoff. useExfCheckRange is left at the setting of
+    # lab_sea/input (.TRUE.); see the FLUX comment at the top for why
+    # the override that used to be here was unnecessary, and for the
+    # measurement that says so. pkg/rnf bounds the source flux itself
+    # (RNF_srcFluxMax, package design decision 2, RUNOFF-030).
     with open(os.path.join(base, "data.exf")) as fh:
         exf = fh.read()
-    exf = replace_line(exf, "useExfCheckRange",
-                       " useExfCheckRange  = .FALSE.,")
     exf = set_namelist(exf, "EXF_NML_02", "runoffFile",
                        " runoffFile        = ' ',")
     if not case.get("atm_temp", True):

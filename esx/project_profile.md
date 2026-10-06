@@ -214,6 +214,67 @@ This is the scientific contract agents read. Executable paths and commands are i
   - both a sparse file and a dense `runoffFile` set (they are mutually exclusive)
   - missing required variables
   - grid mismatch (the file's grid-identity check is proposed in RUNOFF-001)
+  - a `runoff_flux` value that is present but above `RNF_srcFluxMax` = 1e7 m³/s
+    in absolute value — **implemented in RUNOFF-030**, in `RNF_NC_READ_ONE`
+    (`rnf_nc_utils.F`), which names the source, the record, the value and the
+    limit and stops on the record that breaches it. This is not refused at
+    init: `RNF_CHECK` runs before any record is read. It is the package's
+    replacement for the `pkg/exf` runoff upper bound of 1e-6 m/s, which
+    `EXF_CHECK_RANGE` now skips when `useRNF` is true, because a sparse point
+    source exceeds that bound by construction (1000 m³/s into one 2 km cell is
+    2.5e-4 m/s). The exf **negative**-runoff test is not skipped, so the sign
+    of the applied field is still guarded per cell. **Two** exf range tests
+    were conditioned on `useRNF` in all, the runoff upper bound and the
+    `sflux` bound (next sub-item); no *other* exf field's range check
+    changed. The number comes from the physics: 1e7 m³/s is 48
+    Amazons or all the world's rivers together with a factor of 8 to spare,
+    while a flux given per year rather than per second (3.2e7 times too large)
+    is refused above 0.32 m³/s. **Read it as a file-scale unit-error filter,
+    not as a per-cell safety bound** (review B, correction round 2): it does
+    not see the cell, and four sources each carrying exactly the bound with
+    every target on one lab_sea cell apply 1.285228e-3 m/s — 1285 times the
+    exf bound that was relaxed — ending normally with no `EXF WARNING` at all,
+    while a control at twice the bound per source is refused. N is 10⁵–10⁶ in
+    the intended global 2 km case, so the aggregate headroom is five to six
+    orders of magnitude, and a converter index bug collapsing sources onto one
+    cell reaches it — the same family as the wrong-tile-mapping and
+    dropped-fraction risks listed below. At 2 km the bound admits 2.5 m/s per
+    cell against a real Amazon's 5.25e-2 m/s, so it constrains the file rather
+    than the applied field, and a grid of smaller cells admits proportionally
+    more. That gap needs `rA`, the top-layer thickness and `deltaT` to close,
+    i.e. a different check rather than a different number, so **no `data.rnf`
+    parameter was added**: a fixed header constant is the right mechanism and a
+    scalar would be cost without benefit. Measured by execution
+    (`refusal_check.py --case flux_above_source_max`, demonstrated failing on a
+    mutant with the bound weakened fourfold, with `flux_at_source_max` as the
+    at-the-bound control that must get past the guard at exactly the bound and
+    then apply the record).
+  - **`EXF_CHECK_RANGE` conditions TWO tests on `useRNF`, and a point source
+    needs both.** Skipping the runoff upper bound alone achieves nothing,
+    which RUNOFF-030 found by measurement: the same routine stops the run when
+    `ABS(sflux)` exceeds 1e-6 m/s, and `exf_getforcing.F:313` subtracts runoff
+    into `sflux` before the check at `:346-349`, so any wet cell above 1e-6
+    m/s of runoff breaches that bound whatever the runoff test says. The
+    `sflux` bound is therefore applied to `sflux + runoff` when `useRNF` —
+    a restore, not a removal: what is tested is `evap - precip`, the part the
+    bound exists for, and an out-of-range `evap - precip` is still refused
+    (`refusal_check.py --case sflux_out_of_range`). Both conditions are
+    guarded by `useRNF` alone and nothing changes with it false, so a **dense**
+    `runoffFile` above 1e-6 m/s is still refused by both bounds and still
+    needs `useExfCheckRange=.FALSE.`; that is deliberate, since the same pair
+    has always fired for the dense path and the wider defect belongs to an
+    upstream discussion. Measured: `flux_at_source_max` applies 3.21e-4 m/s,
+    321 times the exf bound, and ends normally with `useExfCheckRange` at its
+    default on 1 and on 2 processes, and fails against a build with either
+    condition reverted — on the `sflux` warning or on the runoff warning
+    respectively.
+  - Neither enrolled tendency instrument measures the relaxation, although
+    both now run with `useExfCheckRange` at its default:
+    `tendency_term_check.py` presents a dry record to the one call at
+    `nIter0`, and `exf_heat_check.py` stays under the bound (its dense half
+    runs with `useRNF` false, where both bounds apply in full, so it checks
+    the unchanged dense path). What carries the relaxation is the enrolled
+    `refusal_check.py` pair above.
 - Floating-point precision, parallel reductions and reproducibility expectations:
   - `_RL` (real*8) in the model, `float32` allowed in the file.
   - The global fraction check uses MITgcm `GLOBAL_SUM_*`.
@@ -359,8 +420,20 @@ This is the scientific contract agents read. Executable paths and commands are i
 
 - Include `*_OPTIONS.h` first. Use `_RL`/`_RS`, `myThid` and `bi,bj` tile loops.
 - New code lives in `pkg/rnf` under `#ifdef ALLOW_RNF` with run-time switch
-  `useRNF`; the only exf change is one guarded call in `exf_getffields.F`
-  (package design, decision 2).
+  `useRNF`. The exf footprint is **two** files and nothing else in `pkg/exf`
+  (package design, decision 2):
+  - one guarded call in `exf_getffields.F` (`RNF_EXF_RUNOFF`, which fills the
+    exf `runoff` array);
+  - two tests conditioned on `useRNF` in `EXF_CHECK_RANGE`
+    (`exf_check_range.F`): the runoff **upper** bound is skipped, and the
+    `sflux` bound is applied to `sflux + runoff` so that it still refuses an
+    out-of-range `evap - precip`. Both are guarded by `useRNF` alone, so a run
+    without `pkg/rnf` is byte-for-byte unaffected, and the negative-runoff
+    test and every other field's range check are untouched.
+
+  This is a convention, so read it as the permitted footprint: editing
+  `exf_check_range.F` in those two places is *allowed and done*, not
+  off-limits. Any further exf edit needs its own decision.
 - Put new parameters in `data.rnf` (`RNF_PARM01`), read in `rnf_readparms.F` and
   reported in the package summary.
 
@@ -379,6 +452,24 @@ This is the scientific contract agents read. Executable paths and commands are i
 
 - Specialist skill paths and triggers: none yet. Candidate skill: "MITgcm exf
   record timing", triggered by edits to `exf_set_gen.F` or `exf_getffieldrec.F`.
+- **Footprint-claim sweep, required whenever a change adds a site to a
+  package** (`tests/footprint_claim_sweep.py`; run
+  `--self-test` first, then the sweep). This project states in many places
+  that some package is touched in exactly one place. Adding a second place
+  makes every such sentence false, and the ordinary stale-figure sweep cannot
+  find them, because **a footprint claim never names the site that was
+  added**: keyed on the changed path it returns zero. RUNOFF-030 paid two
+  review rounds and five must-fix items for that, all one sentence class and
+  none of them a code defect, and the sweep then found a sixth instance those
+  rounds had missed. So the trigger is the *shape of the change*, not the
+  files it touched: if a patch adds a hook, a guard, a call or an edited file
+  to a package, run the sweep and either correct each candidate or add it to
+  the script's `KEEP` list with the antecedent that makes it true. The script
+  keys on (a package mention) near (an exclusivity marker) near (a footprint
+  word), carries its own measured recall over the known class, and fails if a
+  `KEEP` entry stops matching. Not yet enrolled in a configured suite; that is
+  a one-line `esx/project.json` change and Arch's call, since a nonzero exit
+  means "triage these candidates" rather than "these are defects".
 - Domain rule catalogue locations, if used: not used. Conventions are listed above.
 - Documentation/rendering tools and intended renderer: MITgcm docs are Sphinx RST
   under `MITgcm/doc/`, rendered by GitHub Actions and readthedocs. Project records

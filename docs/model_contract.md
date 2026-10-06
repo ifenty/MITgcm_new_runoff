@@ -123,6 +123,27 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
   source and time (owner decision, 2026-09-29). A `_FillValue` or
   `missing_value` attribute of the flux that cannot be read as one number
   (text, for instance) also stops the run: it is not treated as absent.
+- A flux that is present but larger in absolute value than `RNF_srcFluxMax`
+  = 10⁷ m³/s also stops the run, naming the source, the record and the value
+  (`RNF_NC_READ_ONE`, RUNOFF-030). That is the package's own sanity bound on
+  the input, and it is the reason `EXF_CHECK_RANGE` may skip its runoff upper
+  bound of 10⁻⁶ m/s when `useRNF` is true: see
+  [package design](package_design.md) decision 2 for the derivation of the
+  number and for what a per-source bound does and does not cover. The
+  per-cell *sign* is still guarded by exf, whose negative-runoff test is not
+  skipped — but note the coverage, because it is easy to state backwards: that
+  sign test is inside `EXF_CHECK_RANGE`, which runs at `nIter0` only unless
+  `exf_debugLev` ≥ `debLevC` (`exf_getforcing.F:346-349`), so it is checked
+  once per run. So was the upper bound it sits beside, before this change;
+  `RNF_srcFluxMax` in `RNF_NC_READ_ONE` is the one with per-record coverage.
+  The asymmetry — magnitude every record, sign once — is therefore real but
+  pre-existing, and this change does not alter it. The skip alone is not
+  sufficient, so the exf `sflux` bound is
+  conditioned on `useRNF` as well — it is applied to `sflux + runoff`, since
+  `exf_getforcing.F:313` subtracts runoff into `sflux` before the check — and
+  with both conditions a point source runs with `useExfCheckRange=.TRUE.`
+  while an out-of-range `evap - precip` is still refused. The dense
+  `runoffFile` path is untouched by both.
 - Read the static index and fraction arrays (~10⁶ entries) once at init.
 
 ## Model behavior
@@ -270,8 +291,15 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
 
 - Fortran 77 fixed-form with CPP, in a package `pkg/rnf`: compile switch
   `ALLOW_RNF`, runtime switch `useRNF` in `data.pkg`, parameters in `data.rnf`
-  (read in `rnf_readparms.F`, reported in `rnf_summary.F`). The only edit inside
-  exf is one guarded call in `exf_getffields.F`.
+  (read in `rnf_readparms.F`, reported in `rnf_summary.F`). The edits inside exf
+  are **two**, and this is the footprint the upstream PR carries: one guarded
+  call in `exf_getffields.F` (`RNF_EXF_RUNOFF`), and two tests conditioned on
+  `useRNF` in `EXF_CHECK_RANGE` (`exf_check_range.F`) — the runoff upper bound
+  skipped, and the `sflux` bound applied to `sflux + runoff` so an out-of-range
+  `evap - precip` is still refused. Both exf conditions are guarded by `useRNF`
+  alone, so a build without `pkg/rnf` in use behaves exactly as before, the
+  dense `runoffFile` path included. Nothing else in `pkg/exf` changed. See
+  [package design](package_design.md) decision 2.
 - No pickup file: the record state is a function of model time. The
   previous-step fields of the time-level rule are zero at a start from
   iteration 0 and are evaluated from the records at a restart.

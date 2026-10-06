@@ -330,7 +330,10 @@ build without exf and is not scheduled.
   where no source discharges. Assignment is needed because `EXF_SET_FLD` does
   nothing when `runofffile` is blank (`pkg/exf/exf_set_fld.F:117-121`), so
   nothing else resets the array, and the control block adds to it each step.
-- This call is the only change to exf code. `exf_mapfields.F` is not edited.
+- This call is **one of the two** changes to exf code; the other is the pair of
+  tests conditioned on `useRNF` in `EXF_CHECK_RANGE`, described under "Known
+  effects inherited from the dense path" below. Those two are the whole exf
+  footprint. `exf_mapfields.F` is not edited.
 
 **Mutual exclusion and other refusals in `RNF_CHECK`** (each a fatal error
 through `PRINT_ERROR` and the package error count):
@@ -367,12 +370,228 @@ without NetCDF. `RNF_READPARMS`, called from `PACKAGES_READPARMS`
 
 **Known effects inherited from the dense path.**
 
-- `EXF_CHECK_RANGE` stops the run at the first step if `runoff` exceeds
-  10⁻⁶ m/s on a wet cell (`pkg/exf/exf_check_range.F:175-191`, `211-216`), and
-  `useExfCheckRange` defaults to true (`pkg/exf/exf_readparms.F:307`). A river
-  of 1000 m³/s into one 2 km cell is 2.5·10⁻⁴ m/s. Users of point sources on
-  fine grids must set `useExfCheckRange=.FALSE.`, or the upper bound must be
-  skipped when `useRNF` is true. The second needs one more guarded line in exf.
+- **`EXF_CHECK_RANGE`: two tests are conditioned on `useRNF`, and it takes
+  both** (RUNOFF-030, implemented; the second half was added in correction
+  round 1 after measurement showed the first was not sufficient). Before the
+  change the routine stopped the run at the first step if `runoff` exceeded
+  10⁻⁶ m/s on a wet cell, with `useExfCheckRange` defaulting to true
+  (`pkg/exf/exf_readparms.F:307`), and a river of 1000 m³/s into one 2 km cell
+  is 2.5·10⁻⁴ m/s — so every realistic point-source configuration on a fine
+  grid stopped at its first step, and the only workaround was
+  `useExfCheckRange=.FALSE.`, which disables the range checks of *every* exf
+  field. Two conditions changed, in two `IF`s of
+  `pkg/exf/exf_check_range.F`:
+  - **the runoff upper bound** (the `ALLOW_RUNOFF` block, `:215-261`) now
+    carries `.AND. .NOT.useRNF`;
+  - **the `sflux` bound** (the freshwater-flux block, `:84-109`) is applied to
+    `sflux + runoff` instead of to `sflux` when `useRNF`, re-adding what
+    `EXF_GETFORCING` subtracted at `exf_getforcing.F:313` immediately before
+    calling the routine at `:346-349`. Without this, relaxing the runoff bound
+    achieves nothing: `sflux = evap - precip - runoff`, so any wet cell above
+    10⁻⁶ m/s of runoff breaches `ABS(sflux) > 10⁻⁶` whatever the runoff test
+    says. **It is a restore and not a removal:** what is tested with `useRNF`
+    is `evap - precip`, which is the part of `sflux` this bound exists for,
+    and an out-of-range `evap - precip` is still refused. The restore is
+    written as a one-line `IF ( useRNF )` inside `#ifdef ALLOW_RUNOFF`,
+    because the `runoff` array exists only under that option while the
+    `sflux` test does not. The message literal is unchanged and now prints the
+    quantity tested, which equals `sflux` itself on every non-`useRNF` run.
+  - the **negative-runoff** test is unchanged and fires with `useRNF` true or
+    false, so the sign of the applied field is still guarded per cell;
+  - the four-line m/yr advisory of the runoff block is printed only when
+    `.NOT.useRNF`. Its text is unchanged. With `useRNF` the only trigger left
+    in the block is a negative value, and `exf_inscal_runoff` — the parameter
+    the advisory names — is an argument of the `EXF_SET_FLD` call for the dense
+    file and does not touch the sparse field at all, so printing it would name
+    an unrelated setting;
+  - every range check of every field other than those two is untouched — the
+    two above are the whole exf footprint of this change — and **nothing
+    changes at all with `useRNF` false**, the dense `runoffFile` path included. A dense
+    `runoffFile` above 10⁻⁶ m/s is still refused twice over, by the runoff
+    bound and by the `sflux` bound, and still needs
+    `useExfCheckRange=.FALSE.`. That is a deliberate decision of correction
+    round 1, not an oversight: the same pair has always fired for the dense
+    path, so the defect is wider than `pkg/rnf` and belongs to the eventual
+    upstream discussion.
+  - `useRNF` is declared unconditionally in `model/inc/PARAMS.h:1080`, which
+    `exf_check_range.F` already includes, so this pulls no new include into a
+    routine compiled without `pkg/rnf` (`pkg/exf/exf_getffields.F:455` already
+    tests `useRNF` the same way).
+
+  **Why this relaxation is safe: it is strictly narrower than the status quo
+  it replaces** (review B of correction round 2; this framing is its
+  reasoning, and it is the justification the decision was missing). The
+  question for a guard relaxation is not "is the guard weaker?" but "is the
+  configuration better guarded than it was?", and here it demonstrably is:
+  - **Before.** Every sparse configuration above 10⁻⁶ m/s had to set
+    `useExfCheckRange=.FALSE.` and so lost the range check of *every* exf
+    field — `hflux`, `sflux`, both wind stresses, the wind speeds, `atemp`,
+    `aqh`, `precip`, `snowprecip`, `swflux` and `runoff` alike. That is not
+    hypothetical: both enrolled tendency instruments did exactly that, and it
+    was the only documented workaround.
+  - **After.** Such a run keeps all of them. One test is skipped (the runoff
+    upper bound) and one is narrowed to the quantity it is actually about
+    (`sflux` to `evap - precip`); every other field is still checked, and the
+    negative-runoff test still applies per cell.
+  - **And the coverage of the magnitude check improves.** `EXF_CHECK_RANGE`
+    runs at `nIter0` only, unless `exf_debugLev` ≥ `debLevC`
+    (`exf_getforcing.F:346-349`), so the bound it replaced was tested once per
+    run. `RNF_NC_READ_ONE` tests `RNF_srcFluxMax` on **every record as it is
+    read**, for the whole run. A file whose later records are bad was not
+    caught before and is now.
+
+  Net: the sparse path is better guarded after this patch than before it, and
+  it also gains an input bound that `pkg/exf` never had.
+
+  **One asymmetry, stated in the right direction because it is easy to invert**
+  (corrected 2026-10-06; an earlier framing had it backwards). The surviving
+  negative-runoff test lives in `EXF_CHECK_RANGE`, so it is checked at
+  `nIter0` only — magnitude is now checked on every record, sign once per run.
+  That asymmetry is **pre-existing and unchanged by this patch**: the upper
+  bound this change skips sat under the same `IF` and the same call gate, so it
+  too was first-step-only. What the patch did was *add* per-record coverage of
+  the magnitude, not remove per-record coverage of the sign, which never
+  existed. Closing the sign gap would need a per-record sign test, which is a
+  different check and not part of this issue.
+
+  **Why a volume bound is the right *shape*, not merely a convenient number**
+  (review B, same round). 10⁻⁶ m/s is a bound on a *rate*, and a rate bound on
+  a point source is a statement about the grid rather than about the water: the
+  same river is 2.5·10⁻⁴ m/s in a 2 km cell and 2.5·10⁻⁸ m/s in a 2° one, so no
+  single value of a rate bound can serve both, and `pkg/rnf` must work on every
+  MITgcm grid. The grid-independent quantity is the source volume flux in m³/s
+  — which is what a river *is*, and what the file actually carries. That is why
+  `RNF_srcFluxMax` is in m³/s and why it needs no retuning between grids or
+  resolutions, and it is a stronger argument for the design than the
+  "generous enough, tight enough" one it supersedes.
+
+  **Measured, and each condition attributed separately** (2026-10-06, lab_sea,
+  `tests/rnf/refusal_check.py`):
+  - With both relaxations, `flux_at_source_max` — one source of 10⁷ m³/s on
+    the lab_sea target cell, 3.21·10⁻⁴ m/s applied, 321 times the exf bound —
+    **ends normally with `useExfCheckRange` at the lab_sea default `.TRUE.`**,
+    on 1 and on 2 processes, printing neither warning and no m/yr advisory.
+    This is the acceptance of the issue and it is an enrolled case.
+  - Revert the `sflux` restore alone (`IF ( .FALSE. )`) and that case fails on
+    the **`sflux`** warning; revert the runoff skip alone (`.AND. .TRUE.`) and
+    it fails on the **runoff** warning, `0.321307089844219D-03`, which is the
+    model's own print of the applied field and agrees with the 3.213071·10⁻⁴
+    m/s computed from the file. So each condition is necessary and the two are
+    attributed independently.
+  - Replace the restore by a removal (`.AND. .NOT.useRNF` on the whole `sflux`
+    test) and `sflux_out_of_range` fails on exactly the missing `sflux`
+    warning while `flux_at_source_max` still passes. That pair is what
+    separates "restore" from "remove".
+  - `sflux_out_of_range` is the positive control of the restore: `useRNF`
+    true, every flux of the file zeroed so the restored term is identically
+    zero, `precipfile` blanked and `precipconst = 1·10⁻⁴` m/s, which is out of
+    range on every wet cell of every tile — so every process stops with its
+    own `STOP` line and the case is judgeable under `--mpi 2` as well.
+
+  **The replacement bound.** With the exf upper bound skipped, the package
+  bounds the *input* instead: `RNF_srcFluxMax` = 10⁷ m³/s on the volume flux of
+  one source, enforced in `RNF_NC_READ_ONE` as each record is read and reported
+  by `RNF_SUMMARY`. The number comes from the physics: the Amazon, the largest
+  river on Earth, carries about 2.1·10⁵ m³/s and all the world's rivers
+  together about 1.2·10⁶ m³/s, so one source id may hold 48 Amazons, or every
+  river on Earth with a factor of 8 to spare, while a flux given per year
+  rather than per second (3.2·10⁷ times too large) is refused above
+  0.32 m³/s and a factor of 1000 (mm, or kg/s read as m³/s) above
+  10⁴ m³/s, i.e. for any source the size of a real river. What the *applied*
+  field may then reach depends on the grid, because the package applies
+  `flux·frac/rA` with `frac` in [0,1]: 10⁷ m³/s is 3.2·10⁻⁴ m/s into the
+  lab_sea target cell (`rA` = 3.112287·10¹⁰ m², measured) and 2.5 m/s into a
+  2 km cell (4.0·10⁶ m²); a per-cell value of 10⁹ m/s, the kind of figure a
+  unit error produces, would need a cell smaller than 10⁻² m² to get past the
+  bound. **`RNF_srcFluxMax` is a file-scale unit-error filter, not a per-cell
+  safety bound, and the record should not be read as implying otherwise**
+  (sharpened by review B of correction round 2, whose measured counterexample
+  this is). It does not see the cell, and the consequence is larger than "N
+  sources may add up":
+  - **Measured, not argued.** Review B built four sources each carrying
+    exactly `RNF_srcFluxMax` and collapsed every target onto one lab_sea cell:
+    **1.285228·10⁻³ m/s applied, 1285 times the bound that was relaxed, and
+    the run ended normally with zero `EXF WARNING` lines**, the volume
+    confirmed by the model's own `RNF_INIT_VARIA` flux sums. Its control at
+    twice the bound per source *is* refused, so the guard was live and the
+    aggregate simply is not what it bounds. That figure reproduces exactly
+    from the cell area measured here: 4·10⁷ m³/s over
+    `rA` = 3.112287377·10¹⁰ m² is 1.285228·10⁻³ m/s.
+  - **N is not small in the intended use case.** It is 10⁵–10⁶ sources (the
+    global 2 km daily case of the model contract), so the aggregate headroom
+    is five to six orders of magnitude, not a factor of a few.
+  - **And the aggregate is reachable by a plausible fault, not only by a
+    malicious file:** a converter index bug that collapses many sources onto
+    one cell. Wrong tile/process mapping and silently dropped fractions are on
+    this project's own highest-risk list, and this is the same family.
+  - **At the intended resolution the bound sits above the operable per-cell
+    value entirely.** `RNF_srcFluxMax` admits 2.5 m/s into a 2 km cell, while
+    a physically correct Amazon in one 2 km cell is 5.25·10⁻² m/s — so even
+    for a *single* source the bound is 48 times any real per-cell rate, and it
+    constrains the file rather than the applied field.
+  - A grid with cells far smaller than the ones quoted admits proportionally
+    more still.
+
+  **The gap is not closable by a different number, which is why no parameter
+  was added.** Review B's judgment, accepted: a fixed header constant is the
+  right mechanism and a `data.rnf` scalar would be cost without benefit,
+  because the missing check is a different *shape* — a meaningful per-cell
+  bound needs `rA`, the top-layer thickness and `deltaT` (it is a statement
+  about how much water a column can take in one step), not a larger or smaller
+  m³/s threshold. That is filed as its own follow-up rather than grown into
+  this issue.
+
+  **How the second relaxation came to be in scope, kept because the reasoning
+  is the useful part.** Round 0 implemented only the runoff skip, as the issue
+  recommended, and then measured that it achieves nothing on its own: the
+  `sflux` bound refused the same cell, so a point-source user would still have
+  had to set `useExfCheckRange=.FALSE.`, which is the outcome the issue exists
+  to prevent. Round 0 refused to relax a second field's check unasked and
+  escalated instead; the coordinator verified the three source sites
+  independently and widened the scope. Closing on the half change would have
+  shipped something that does not work.
+
+  **One `STOP` per process, now measured rather than inferred.**
+  `EXF_CHECK_RANGE` calls `STOP` without `ALL_PROC_DIE`, so a refusal that
+  only one tile can see would leave the other processes waiting and could not
+  be enrolled (`judge` requires one `STOP` line per process). Round 0 recorded
+  that as a permanent limit on any case asserting an `EXF_CHECK_RANGE` stop.
+  Correction round 1 removes the limit for the case that matters, in two ways:
+  `flux_at_source_max` now ends **normally**, so it asserts no stop at all;
+  and `sflux_out_of_range` is built so that every process has out-of-range
+  cells of its own (a uniform `precipconst`), so each prints its own `STOP`
+  line. Both pass on 1 and on 2 processes. The general limit still holds for
+  any hypothetical case whose breach is confined to one tile.
+
+  **What the two tendency instruments do and do not measure.** The enrolled
+  case above is what carries the relaxation; the instruments the issue
+  expected to carry it do **not**: `tests/rnf/tendency_term_check.py`
+  presents *zero* runoff to `EXF_CHECK_RANGE`, because the check is called
+  only at `nIter0` (or at every step with `exf_debugLev` ≥ `debLevC`), and
+  under `RNF_holdRecord` the case's first record is dry by construction — the
+  10⁶ m³/s arrives at the second step, when the check is no longer called.
+  Measured on a retained `L_set` run: `nIter0 = 0`, `exf_debugLev = 2`, the
+  `RNF_FIELDS_LOAD` trace at `it= 0` selects `rec0 = 1` with `fac = 1.0`
+  (the dry record), and the log holds 0 occurrences of `EXF WARNING`. So the
+  override that case used to carry was never needed for the runoff bound
+  either, and removing it is correct but measures nothing about the skip.
+  `tests/rnf/exf_heat_check.py` likewise applies 4.0·10⁻⁷ to 7.6·10⁻⁷ m/s,
+  under the bound on both paths, so its override was also unnecessary; what
+  it does now measure is that the **dense** path is still held to both exf
+  bounds in full, since it runs with `useRNF` false. Both are re-measured
+  unchanged with the check at its default: 8 of 8 cases over 10 of 10
+  decision-3 rows, and 7 cells at 3.559·10⁻¹⁶ with the control at
+  3.446·10⁻².
+
+  **Why the bound is enforced at the record read and not in `RNF_CHECK`.**
+  `RNF_CHECK` runs from `PACKAGES_CHECK`, before `RNF_INIT_VARIA` reads the
+  first record, so no flux value exists when it is called. Checking at the read
+  also covers a file whose *later* records are the bad ones, which an
+  init-time check could not. The read is the only place where all three
+  conditions hold at once: the file is open (so `RNF_NC_SOURCE_ID` can name the
+  source), every process examines every value of the record (so a refusal is
+  reached by all processes and `ALL_PROC_DIE` is sound, with no global
+  reduction and no per-step cost), and the value is still the file's own.
 - The model volume grows by `flux · rhoConstFresh / rhoConst` (see "Volume"
   above). The invariant "applied volume equals source flux" holds for the
   `runoff` field in m/s times `rA`.
@@ -395,7 +614,13 @@ RUNOFF-011 must give every testbed an exf build: `isomip` and
 `global_ocean.90x40x15` do not compile exf
 (`verification/isomip/code/packages.conf`,
 `verification/global_ocean.90x40x15/code/packages.conf`) and need it added in a
-test variant. RUNOFF-026 documents `useExfCheckRange`.
+test variant. RUNOFF-026 documents `useExfCheckRange`: that **two** of its tests are
+conditioned on `useRNF` — the runoff upper bound skipped, and the `sflux` bound
+applied to `sflux + runoff` so an out-of-range `evap - precip` is still refused
+— that `RNF_srcFluxMax` applies instead, and that the negative-runoff test and
+every range check of every *other* field are unaffected. This candidate's own
+`doc/phys_pkgs/exf.rst` already states all of that, so RUNOFF-026 inherits a
+complete description rather than half of one.
 
 ## Decision 3: temperature and salinity contributions
 
@@ -1258,7 +1483,7 @@ this document was written and should be re-resolved from live source.
 | `pkg/exf/exf_mapfields.F` | 89-90, 116-121, 132-198, 139-140, 175-185, 199-211 | `EmPmR`; heat of runoff |
 | `pkg/exf/exf_init_varia.F`, `exf_init_fld.F`, `exf_init_fixed.F` | 357-366; 90-92; 306-317 | runoff init; start time |
 | `pkg/exf/exf_check.F` | 322-329 | runoff macro check |
-| `pkg/exf/exf_check_range.F`, `exf_readparms.F` | 175-191, 211-216; 307, 717 | range stop; default of `useExfCheckRange`; default of `exf_outscal_sflux` |
+| `pkg/exf/exf_check_range.F`, `exf_readparms.F` | 215-261, 280-285; 307, 717 | range stop (the runoff block, whose upper bound carries `.AND. .NOT.useRNF` since RUNOFF-030, and the stop that ends the routine); default of `useExfCheckRange`; default of `exf_outscal_sflux` |
 | `pkg/exf/exf_diagnostics_fill.F`, `exf_diagnostics_init.F`, `exf_monitor.F` | 72-73; 204-216; 189-198 | output |
 | `pkg/exf/EXF_FIELDS.h` | 273-278 | `runoff` under `ALLOW_RUNOFF` |
 | `pkg/exf/exf_ad_check_lev1_dir.h` | 85-87 | adjoint stores |

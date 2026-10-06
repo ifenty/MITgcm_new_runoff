@@ -531,3 +531,42 @@ A brief naming a nonexistent flag, an unresolvable path, or omitting a contract-
 
 ### Expected Effect
 Agents spend their turns on the work rather than on diagnosing their instructions. Direction: reviewer or implementer findings that concern the brief rather than the candidate go to zero. The qualitative invariant: anything in a brief that a machine could have checked, was checked.
+
+## 🔴 PROPOSED: capture accepts a stale orientation receipt that check-orientation refuses
+
+**Date Identified**: 2026-10-06  13:40
+**Status**: Proposed
+**UUID**: TEAM-FOOTER-ORIENTATION-FRESHNESS-001
+**Category**: workflow_integrity
+**Severity**: Medium
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
+**Anchors**: tools/esx/footer_contract.py:reference_errors; tools/esx/agent_runtime.py:stop_record; tools/esx/doc_contract.py:validate_orientation
+
+### Issue
+
+**Corrected 2026-10-06 by review A, which measured the gate rather than reading it, and the correction narrows the claim: the gap is path-dependent.** `agent_runtime.py:246` — the native-subagent capture path — calls `footer_contract.reference_errors` only. `agent_runtime.py:977` — the retained/dispatched-turn path — calls `footer_contract.validate`. Review A measured both legs with everything else fresh so the orientation receipt was the only stale reference: `reference_errors` returned `[]` while `validate` returned the stale-orientation error, naming the same three changed selections as `check-orientation`. So capture **does** enforce orientation freshness on the dispatcher path and **does not** on the native path. The original text below said "accepted at capture" without qualification; that is true for native subagents and false for dispatched turns.
+
+The same asymmetry covers the **sealed documentation report**: `reference_errors` takes no `expected_report` parameter, so on the native path a footer citing a superseded report is accepted. Review A measured that too, in round 1, with report `66a3634d`. That makes a brief's instruction to read the current sealed report *load-bearing* rather than belt-and-braces, which is worth knowing given that two briefs on the previous issue omitted it entirely.
+
+The comment at `agent_runtime.py:238-239` states that the native path exists to give native turns the same capture-time contract a retained turn gets (citing TEAM-NATIVE-FOOTER-VALIDATION-001). So parity is the stated intent and the measured behaviour falls short of it in exactly two respects. Review A's minimal fix: have that path call `validate`, which needs only `correction_round` and the packet documentation reference beyond what it already reads.
+
+`footer_contract.reference_errors` validates a footer's orientation receipt by calling `doc_contract.validate_orientation` with `fresh=False`, so a receipt whose selected targets have since moved is **accepted at capture**. The same receipt is refused by `doc_contract.py check-orientation`, which validates it fresh. So the two gates disagree about the same artifact, and the lenient one is the one that decides whether a turn is recorded `completed`.
+
+The practical consequence: an agent that does not voluntarily run `check-orientation` can report work against an orientation it took before the targets changed, and nothing in the capture path objects. The footer then carries a receipt that the closeout gate — which does validate fresh for the current implementer and approving reviewers — may later refuse, or that simply misrepresents what was read.
+
+### Evidence
+RUNOFF-030 correction round 2, 2026-10-06. The implementer's documentation edits changed three of its own declared selections (`docs/code_map.md#pipeline`, `docs/package_design.md`, `docs/model_contract.md`). `check-orientation` refused the round-1 receipt and named all three with before/after hashes, so it re-navigated. It then ran the capture validator against a footer citing the **stale** receipt as a deliberate control, and recorded the result: **no error**. Its own words: "capture would have accepted the stale receipt silently and `check-orientation` is what caught it."
+
+This is the mirror of the error Arch made earlier in the same issue, and the pairing is what makes it worth filing. Arch measured that the *review packet* does not re-fingerprint verification evidence and generalised that to "nothing re-fingerprints it"; capture does, and an instruction based on that generalisation would have produced a third rejected footer. Here the asymmetry runs the other way: `check-orientation` is strict and capture is lenient. In both directions the lesson is the same and is now recorded twice — **two gates that validate the same artifact need not agree, and knowing which one decides is part of knowing the answer.**
+
+### Potential Impact
+A completion recorded as valid against an orientation that no longer describes what the agent read. The failure is silent at the moment it matters and surfaces, if at all, at closeout — the same shape as TEAM-BRIEF-UNVALIDATED-INTERFACE-001's footer-identity defect, which voided four reviews before anything reported it. It also rewards not checking: an agent that runs `check-orientation` discovers work to do, while one that does not is captured clean.
+
+### Proposed Fix
+Decide which semantics capture should have, and make the two gates agree or make the difference explicit. If `fresh=False` is deliberate — plausibly it is, so that a historical completion retains its own orientation — then capture should still record a warning naming the changed targets, and the closeout gate's stricter check should be the only place staleness is fatal. If it is not deliberate, validate fresh for the *current* round's completions and keep `fresh=False` only for completions imported from earlier rounds. Either way, state the rule where an agent reads it: `devel-loop/documentation_contract.md` describes `check-orientation` as the reuse test without saying that capture applies a weaker one.
+
+### Acceptance Criteria
+A footer citing an orientation whose selected targets have moved is either refused at capture, or accepted with the changed targets named in the recorded completion. Reproduce the RUNOFF-030 round-2 case: the round-1 receipt, after three declared documentation selections changed, must not be silently accepted. A completion imported from an earlier correction round keeps its own orientation without a new refusal.
+
+### Expected Effect
+The two gates agree, or their disagreement is visible in the record. Direction: completions recorded against a stale orientation go to zero. The qualitative invariant: no artifact is valid at one gate and invalid at another without the record saying so.

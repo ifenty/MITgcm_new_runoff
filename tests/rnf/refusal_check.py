@@ -39,6 +39,24 @@ There are three kinds of case.
     ``missing_value`` or to the ``_FillValue`` of a float32 variable, and a
     ``missing_value`` stored as text, which must stop the run and not be
     taken as absent;
+  - the flux above ``RNF_srcFluxMax``, the package's own magnitude bound
+    (``flux_above_source_max``, RUNOFF-030). It is the negative control of
+    the relaxations that issue makes in ``EXF_CHECK_RANGE``, which with
+    ``useRNF`` skips its runoff upper bound of 1e-6 m/s and exempts the
+    runoff from its ``sflux`` bound, so without this refusal nothing would
+    stop an absurd flux. Its at-the-bound companion
+    ``flux_at_source_max`` is among the normal-end runs below;
+  - the exf freshwater bound with ``useRNF`` on and **no** runoff at all
+    (``sflux_out_of_range``, RUNOFF-030 correction round 1): the ``sflux``
+    test is applied to ``sflux + runoff`` with ``useRNF``, and this case
+    holds that to being a *restore* rather than a removal. ``precipfile``
+    is blanked, ``precipconst`` is 1e-4 m/s and every flux of the file is
+    zeroed, so the quantity the test sees is exactly ``evap - precip`` and
+    must still stop the run. It is judged on ``pkg/exf``'s standard-output
+    warnings and on ``ABNORMAL END: S/R EXF_CHECK_RANGE``; the uniform
+    ``precipconst`` is what makes every process stop with its own ``STOP``
+    line, which is required under ``--mpi N`` because ``EXF_CHECK_RANGE``
+    calls ``STOP`` without ``ALL_PROC_DIE``;
   - more sources or more target entries on one tile than ``RNF_nSrcTile`` or
     ``RNF_nTgtTile``;
   - the runoff tracer series (``RNF_NC_SERIES``, RUNOFF-013): a tracer name
@@ -51,7 +69,15 @@ There are three kinds of case.
     a weakened-guard mutant cannot measure.
 * **Runs that must end normally**: the positive control (the valid file on
   ``lab_sea/input``; the flux sums that the model prints must equal the sum
-  of the file), ``cells_equal_dense`` (the one-source-per-cell file must
+  of the file), ``flux_at_source_max`` (one source carrying exactly
+  ``RNF_srcFluxMax``: the magnitude guard must stay silent at the bound
+  and the record must then be applied. It is also the enrolled
+  acceptance of the exf relaxation, because the applied field is
+  3.21e-4 m/s, 321 times what pkg/exf allows, and the run must finish
+  with ``useExfCheckRange`` at the lab_sea default ``.TRUE.``, printing
+  neither range warning and no m/yr advice. No case here switches
+  ``useExfCheckRange`` off),
+  ``cells_equal_dense`` (the one-source-per-cell file must
   reproduce the dense reference ``results/output.rnof_const.txt``),
   ``zero_flux_differs`` (the same run with every flux set to zero must NOT
   reproduce it, which shows that the comparison is sensitive to the runoff),
@@ -267,14 +293,48 @@ def size_bound(name, header=None):
     return int(match.group(1))
 
 
+def real_bound(name, header=None):
+    """Return the real ``PARAMETER`` ``name`` set in a ``pkg/rnf`` header.
+
+    ``header`` defaults to ``RNF.h``, which holds the constants fixed by
+    the model contract. The Fortran literal carries MITgcm's ``_d``
+    exponent macro (``1. _d 7``), which this turns into a Python float.
+    Reading the value from the source rather than repeating it keeps a
+    case that drives a bound, or quotes it in an expected message, from
+    drifting away from the code, exactly as :func:`size_bound` does for
+    the integer bounds.
+    """
+    path = header or RNF_HEADER
+    with open(path) as fh:
+        match = re.search(
+            rf"PARAMETER\s*\(\s*{name}\s*=\s*"
+            rf"([-+]?[0-9]*\.?[0-9]*)\s*_d\s*([-+]?\d+)\s*\)", fh.read())
+    if not match:
+        raise ValueError(f"{name} not found in {path}")
+    return float(match.group(1)) * 10.0**int(match.group(2))
+
+
+def e16_8(value):
+    """Render ``value`` as Fortran's ``1PE16.8`` edit descriptor does.
+
+    One digit before the point, eight after it, a two-digit exponent,
+    right-justified in sixteen columns. Used to build the expected text
+    of a message that prints a real with that descriptor, so the case
+    asserts the figure the model prints and not merely a substring in
+    front of it.
+    """
+    return f"{value:.8E}".rjust(16)
+
+
 def sparse_info():
     """Return what the cases need to know about the valid sparse file.
 
     The result has ``ids`` (source ids in file order), ``target_source``
     (the source index of each target entry), ``nx``, ``ny``, ``flux_sum``
-    (sum of the one flux record, m^3/s), ``wet_cell`` (the cell of the first
-    target) and ``land_cell`` (a land cell of the western half of the grid,
-    which one process owns in a two-process run). Land is where
+    (sum of the one flux record, m^3/s), ``flux0`` (the flux of the first
+    source, which the flux-bound cases replace), ``wet_cell`` (the cell of
+    the first target) and ``land_cell`` (a land cell of the western half of
+    the grid, which one process owns in a two-process run). Land is where
     ``input/bathy.labsea1979`` is not negative.
 
     It also has the three values of the ``target_coords`` case, which moves
@@ -296,7 +356,9 @@ def sparse_info():
         target_source = [int(s) for s in ds["target_source"][:]]
         nx = int(ds.getncattr("mitgcm_grid_nx"))
         ny = int(ds.getncattr("mitgcm_grid_ny"))
-        flux_sum = float(np.asarray(ds["runoff_flux"][0], dtype="f8").sum())
+        flux = np.asarray(ds["runoff_flux"][0], dtype="f8")
+        flux_sum = float(flux.sum())
+        flux0 = float(flux[0])
         cells = np.asarray(ds["target_cell"][:]).astype(int)
         wet_cell = int(cells[0])
     bathy = np.fromfile(os.path.join(VERIF, EXPERIMENT, "input", "bathy.labsea1979"),
@@ -313,7 +375,7 @@ def sparse_info():
                          f"case has no one-cell move to make")
     moved_entry, moved_cell = moved[0]
     return {"ids": ids, "target_source": target_source, "nx": nx, "ny": ny,
-            "flux_sum": flux_sum, "wet_cell": wet_cell,
+            "flux_sum": flux_sum, "flux0": flux0, "wet_cell": wet_cell,
             "land_cell": i + nx * j,
             "moved_entry": moved_entry, "moved_cell": moved_cell,
             "moved_source": ids[target_source[moved_entry]]}
@@ -774,6 +836,50 @@ def cases(data_pkg, data_exf, info=None):
     # is the ``:6d`` in the expected strings below.
     tr_bound = size_bound("RNF_nTr")
     id_bound = size_bound("RNF_idLen", RNF_HEADER)
+    # The package's own bound on the volume flux of one source
+    # (RUNOFF-030). It is what replaces the pkg/exf runoff upper bound
+    # of 1e-6 m/s, which EXF_CHECK_RANGE skips when useRNF is true, so
+    # the pair of cases below is the negative control of that
+    # relaxation: with the bound gone, nothing would refuse an absurd
+    # flux at all. Both the value and the limit are quoted as the
+    # model prints them (``1PE16.8``), from the value in RNF.h.
+    flux_bound = real_bound("RNF_srcFluxMax")
+    over_msg = [
+        f"RNF_NC_READ_FLUX: RNF: runoff_flux out of range: source"
+        f" {ids[0]}, record{1:8d}, value{e16_8(2.0*flux_bound)},"
+        f" limit{e16_8(flux_bound)}",
+        f"RNF_NC_READ_FLUX: RNF:{1:8d} value(s) of runoff_flux out of"
+        f" range (not allowed)"]
+    # A one-step run, for the at-the-bound companion below: a flux of
+    # exactly RNF_srcFluxMax has to be applied, and over the nine steps
+    # of lab_sea/input it would add 3.2e11 m^3 to one cell, i.e. 10 m
+    # of water. One step is enough -- EXF_CHECK_RANGE is called at
+    # nIter0 (pkg/exf/exf_getforcing.F:346-349) -- and keeps the case a
+    # measurement of the guard rather than of the model's response.
+    #
+    # lab_sea/input runs from startTime = 3600 to endTime = 36000, so
+    # ONE step is endTime = 7200 and not 3600: with 3600 the model
+    # reports nTimeSteps = 0 and takes no step at all (measured), which
+    # would make the run a check of initialisation only.
+    with open(os.path.join(VERIF, EXPERIMENT, "input", "data")) as fh:
+        data_one_step = replace_line(fh.read(), "endTime", " endTime=7200.,")
+    # The control of the second half of RUNOFF-030: an out-of-range
+    # evap - precip must STILL be refused, with useRNF true, now that
+    # the sflux bound is tested on sflux + runoff. precipfile is
+    # blanked so precipconst becomes the field, and the sparse file has
+    # every flux zeroed, so the restored term is identically zero and
+    # the quantity tested is exactly evap - precip. 1e-4 m/s is two
+    # orders above the 1e-6 m/s sflux bound on every wet cell of every
+    # tile, which is what lets this case be judged under --mpi 2: each
+    # process has out-of-range cells of its own, so each prints its own
+    # STOP line and none waits for another (EXF_CHECK_RANGE calls STOP
+    # without ALL_PROC_DIE, so a refusal seen on one tile only could
+    # not be enrolled).
+    exf_wet = replace_line(
+        replace_line(data_exf, "precipfile", " precipfile        = ' ',"),
+        "precipperiod", " precipperiod      = 0.0,")
+    exf_wet = add_to_namelist(exf_wet, "EXF_NML_03",
+                              " precipconst = 1.E-4,")
 
     out += [
         file_case("cell_negative",
@@ -981,6 +1087,37 @@ def cases(data_pkg, data_exf, info=None):
                   edit=set_var("runoff_flux", (0, 0), float("inf"))),
         file_case("flux_huge", missing_msg, stop=stop_flux,
                   edit=set_var("runoff_flux", (0, 0), 1.0e31)),
+        # Twice RNF_srcFluxMax: present, finite, far below the
+        # missing-value sentinel RNF_fluxMax, and refused for its
+        # magnitude alone. This is the case that makes the pkg/exf
+        # relaxation safe, so its ``forbid`` list (set below) excludes
+        # every adjacent reason it could pass for.
+        file_case("flux_above_source_max", over_msg, stop=stop_flux,
+                  edit=set_var("runoff_flux", (0, 0), 2.0*flux_bound)),
+        # The control of the sflux half of RUNOFF-030: with useRNF
+        # true and NO runoff at all, an out-of-range evap - precip
+        # must still stop the run. The sflux bound is now tested on
+        # sflux + runoff, and this is the case that holds it to being
+        # a restore rather than a removal: a diff that dropped the
+        # test when useRNF would pass everything else here.
+        # The precip bound fires as well at 1e-4 m/s, and both
+        # messages are asserted so neither can vanish unnoticed; what
+        # makes the case decisive for sflux is the presence of the
+        # sflux line, because a removed sflux test would leave the
+        # precip line and the stop exactly as they are.
+        {"name": "sflux_out_of_range",
+         "files": {"data.pkg": pkg_on, "data.rnf": rnf_bad,
+                   "data": data_one_step, "data.exf": exf_wet},
+         "nc": {"bad.nc": {"edit": scale_var("runoff_flux",
+                                             slice(None), 0.0)}},
+         "stderr": [], "stdout": ["EXF WARNING: sflux out of range",
+                                  "EXF WARNING: precip out of range",
+                                  "EXF WARNING: then set"
+                                  " useExfCheckRange=.FALSE."],
+         "stop": "ABNORMAL END: S/R EXF_CHECK_RANGE",
+         "forbid": ["EXF WARNING: runoff out of range",
+                    "m/s not m/yr",
+                    "runoff_flux out of range"]},
         file_case("missing_value_numeric", missing_msg, stop=stop_flux,
                   edit=marker("missing_value", -9999.0, -9999.0)),
         file_case("fill_value_float32", missing_msg, stop=stop_flux,
@@ -1189,11 +1326,38 @@ def cases(data_pkg, data_exf, info=None):
     # end normally, which "refused target(s)" above already excludes.
     next(c for c in out if c["name"] == "target_coords_nan")["forbid"] = \
         forbid_file + ["the target cell centres are not checked against"]
+    # The magnitude refusal must be the package's own and not any of
+    # the three things it sits between: the missing-value tests that
+    # share the loop (the value is present and finite), the record
+    # being accepted at all, and the pkg/exf range check, whose runoff
+    # upper bound is skipped here and must not be what stops the run.
+    next(c for c in out if c["name"] == "flux_above_source_max")["forbid"] = [
+        "RNF_INIT_VARIA: runoff flux",
+        "missing runoff_flux",
+        "missing value(s) of runoff_flux",
+        "EXF WARNING: runoff out of range"]
 
     # Runs that must end normally.
     no_error = list(MESSAGES.values()) + ["fatal error(s)", "ABNORMAL END"]
     stdout_ok = ["pkg/rnf", "Sparse runoff (RNF) configuration >>> START",
                  PASSED]
+    # The four "which bounds applied" lines of RNF_SUMMARY, asserted on every
+    # normal-end case. Review B of correction round 2 found them unenrolled:
+    # nothing observed them, so deleting the whole report would have failed
+    # no case, and its own inertness argument cuts both ways -- the lines are
+    # inert because nothing reads them. They exist so that a reader of
+    # STDOUT.0000 can tell which runoff bounds a run was held to after
+    # RUNOFF-030 conditioned two exf tests on useRNF, which is exactly the
+    # kind of claim this project does not leave unmeasured.
+    bounds_report = [
+        "RNF_SUMMARY: pkg/exf skips its runoff upper bound (1.E-6 m/s)",
+        "RNF_SUMMARY: RNF_NC_READ_ONE refuses a source flux above"
+        " RNF_srcFluxMax =",
+        "RNF_SUMMARY: its sflux bound tests sflux+runoff, i.e. evap-precip,"
+        " with useRNF=.TRUE.",
+        "RNF_SUMMARY: the negative-runoff test of EXF_CHECK_RANGE still"
+        " applies per cell (at nIter0)"]
+    stdout_ok = stdout_ok + bounds_report
     dense = {name: None for name in ("data", "data.exf")}
     out += [
         {"name": "positive_control",
@@ -1243,6 +1407,46 @@ def cases(data_pkg, data_exf, info=None):
          "summary": {"RNF_nTrUse": "0", "RNF_usePtracers": "F"},
          "flux_sum": info["flux_sum"], "stop": "ABNORMAL END",
          "forbid": no_error},
+        # The at-the-bound companion of flux_above_source_max, and the
+        # acceptance of RUNOFF-030 as a whole. The first source carries
+        # exactly RNF_srcFluxMax, so:
+        #   o the pkg/rnf magnitude guard must stay silent, which is
+        #     what holds its `.GT.` back from becoming a `.GE.` -- the
+        #     direction a weakened-bound mutant cannot measure -- and
+        #     the record must then be applied, which the flux sums
+        #     assert;
+        #   o the applied field at that cell is 3.21e-4 m/s, 321 times
+        #     the 1e-6 m/s pkg/exf allows, and the run must end
+        #     normally with useExfCheckRange at the lab_sea default
+        #     .TRUE. That takes BOTH relaxations: the runoff upper
+        #     bound skipped, and the sflux bound tested on
+        #     sflux + runoff. Measured against a build with either one
+        #     reverted, this case fails.
+        #   o neither the runoff nor the sflux warning may be printed,
+        #     and nor may the m/yr advice, which with useRNF could only
+        #     be triggered by a negative value and names
+        #     exf_inscal_runoff, a parameter that does not touch the
+        #     sparse field.
+        # One time step, from a data with endTime=7200.: lab_sea/input
+        # starts at 3600, so 7200 is one step and 3600 would be zero
+        # steps (measured), which would never reach EXF_CHECK_RANGE.
+        {"name": "flux_at_source_max",
+         "files": {"data.pkg": pkg_on, "data.rnf": rnf_bad,
+                   "data": data_one_step},
+         "nc": {"bad.nc": {"edit": set_var("runoff_flux", (0, 0),
+                                           flux_bound)}},
+         "normal_end": True, "stderr": [], "stdout": stdout_ok,
+         "summary": {"RNF_nSrcFile": str(len(ids)), "RNF_nTgtOwned": "7",
+                     # the parameter line of the bound this case sits at, so
+                     # the reported value and the enforced one cannot drift
+                     # apart unnoticed (review B, correction round 2).
+                     # WRITE_0D_RL prints 15 decimals, not the 8 of the
+                     # 1PE16.8 messages, so this is not e16_8: measured
+                     # "1.000000000000000E+07" in a run's own output.
+                     "RNF_srcFluxMax": f"{flux_bound:.15E}"},
+         "flux_sum": info["flux_sum"] - info["flux0"] + flux_bound,
+         "stop": "ABNORMAL END",
+         "forbid": no_error + ["out of range", "m/s not m/yr"]},
         {"name": "cells_equal_dense",
          "copy_from": DENSE_INPUT, "copy": dense,
          "files": {"data.pkg": pkg_on, "data.rnf": DATA_RNF.format(CELLS_REL)},

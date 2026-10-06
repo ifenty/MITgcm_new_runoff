@@ -275,10 +275,18 @@ def write_input(input_dir, sparse, dt=3600.0):
     with open(os.path.join(input_dir, "data.pkg"), "w") as fh:
         fh.write(pkg)
 
+    # useExfCheckRange is left at the setting of lab_sea/input
+    # (.TRUE.) in both runs. It used to be switched off here, copied
+    # from tests/rnf/tendency_term_check.py, but these runs never
+    # needed it: the runoff of the committed per-cell file is 4.0e-7
+    # to 7.6e-7 m/s, under the 1e-6 m/s pkg/exf allows, on both paths
+    # (measured from input.rnof_const/runoff_sparse_cells.nc). The
+    # dense run has useRNF false and so is held to the exf bound in
+    # full, which is what makes it a check of the unchanged dense path
+    # as well as of the heat term (RUNOFF-030). It is not a check of
+    # the skip: the sparse run is under the bound too.
     with open(os.path.join(base, "data.exf")) as fh:
         exf = fh.read()
-    exf = replace_line(exf, "useExfCheckRange",
-                       " useExfCheckRange  = .FALSE.,")
     for name, value in (("runoffFile", "' '" if sparse
                          else f"'{DENSE_RUNOFF}'"),
                         ("runoftempfile", "' '" if sparse
