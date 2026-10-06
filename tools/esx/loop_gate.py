@@ -403,11 +403,38 @@ class Gate:
 
         So the gate reports them on the turn after they happen, while the agent
         is still resumable and a short follow-up fixes the record.
+
+        A defect is suppressed once the record shows it was repaired, because a
+        notice that cannot clear teaches the operator to read past it, and the
+        next real one is skipped too. Two forms of repair are recognised, both
+        measured on RUNOFF-030 where this method reported two defects for the
+        whole iteration and BOTH were false
+        (TEAM-GATE-DEFECT-NOTICE-NOT-SUPERSEDED-001):
+
+        * **Re-emission.** A later `completed` record for the same agent AND the
+          same correction round means the agent already re-emitted what this
+          record complains about. The log held one `incomplete` bob round-1
+          record followed by three `completed` round-1 records, and the gate was
+          still advising a resume to re-emit a footer re-emitted five records
+          earlier. The sibling method below, ``rejection_streak``, already keys
+          per round so the latest state wins; this now does the same.
+
+        * **A footer-less turn the agent later superseded.** A record with no
+          footer at all carries no round, so it cannot be matched per round. The
+          richard record of that iteration dated to the diagnosis checkpoint,
+          where the brief said verbatim "Answer in plain prose. No footer, no
+          orientation receipt, no suite run." That is not a defective completion
+          at all -- it is a turn correctly instructed to produce none, and the
+          capture gate cannot tell it from a malformed footer. A consultation
+          turn is the cheapest correct way to hold a checkpoint, so logging it
+          as a permanent defect penalises the best practice the loop has. Any
+          later `completed` record from the same agent on this issue settles it:
+          the agent demonstrably reported, so nothing is uncaptured. A turn that
+          never reported again is still flagged, which is the case the notice
+          exists for.
         """
-        broken = []
+        records = []
         for record in json_lines(local(self.root, f'{STATE}/dispatch_log.jsonl')):
-            if record.get('status') not in ('incomplete', 'failed'):
-                continue
             if record.get('agent_type') not in ROLES or not record.get('agent_id'):
                 continue
             footer = record.get('footer') if isinstance(record.get('footer'), dict) else {}
@@ -418,9 +445,29 @@ class Gate:
                 continue
             if footer.get('iteration_timestamp') not in (None, start['timestamp']):
                 continue
-            broken.append((record['agent_type'], record['agent_id'],
-                           record.get('correction_round'), record.get('error') or record['status']))
-        return broken
+            records.append(record)
+
+        repaired, reported = set(), set()
+        for position, record in enumerate(records):
+            if record.get('status') != 'completed':
+                continue
+            agent = (record['agent_type'], record['agent_id'])
+            repaired.add(agent + (record.get('correction_round'),))
+            reported.add(agent)
+
+        broken = {}
+        for record in records:
+            if record.get('status') not in ('incomplete', 'failed'):
+                continue
+            agent = (record['agent_type'], record['agent_id'])
+            round_number = record.get('correction_round')
+            if agent + (round_number,) in repaired:
+                continue
+            if not isinstance(record.get('footer'), dict) and agent in reported:
+                continue
+            broken[agent + (round_number,)] = (record['agent_type'], record['agent_id'], round_number,
+                                               record.get('error') or record['status'])
+        return list(broken.values())
 
     def rejection_streak(self, start):
         """Correction rounds of the active iteration whose latest review rejected, trailing.

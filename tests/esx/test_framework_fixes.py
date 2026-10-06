@@ -22,6 +22,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -808,3 +809,123 @@ def test_assess_transition_help_shows_the_judgment_format():
         assert field in proc.stdout, (
             f"assess-transition --help does not document {field}, so the judgment "
             "format is still source-only (TEAM-TRANSITION-EVIDENCE-001)")
+
+
+def _gate_with_log(tmp_path, rows):
+    """A Gate rooted at tmp_path whose dispatch log holds exactly `rows`."""
+    import loop_gate
+    state = tmp_path / 'devel-loop/loop_state'
+    state.mkdir(parents=True)
+    (state / 'dispatch_log.jsonl').write_text(
+        ''.join(json.dumps(r) + '\n' for r in rows))
+    gate = loop_gate.Gate.__new__(loop_gate.Gate)
+    gate.root = tmp_path
+    return gate
+
+
+START = {'id': 'X-1', 'timestamp': '2026-01-01T00:00:00+00:00'}
+
+
+def _record(status, *, agent='bob', agent_id='a1', rnd=1, footer=True, error=None):
+    row = {'agent_type': agent, 'agent_id': agent_id, 'status': status,
+           'issue_id': 'X-1', 'correction_round': rnd}
+    if footer:
+        row['footer'] = {'issue_id': 'X-1', 'iteration_timestamp': START['timestamp'],
+                         'correction_round': rnd}
+    if error:
+        row['error'] = error
+    return row
+
+
+def test_defective_completion_cleared_by_reemission(tmp_path):
+    """An incomplete record followed by a completed one for the same round is silent.
+
+    TEAM-GATE-DEFECT-NOTICE-NOT-SUPERSEDED-001. Measured on RUNOFF-030: the log
+    held one incomplete bob round-1 record and three completed round-1 records,
+    and the gate still advised resuming the agent to re-emit a footer it had
+    re-emitted five records earlier.
+    """
+    gate = _gate_with_log(tmp_path, [
+        _record('incomplete', error='evidence is stale'),
+        _record('completed'),
+        _record('completed'),
+    ])
+    assert gate.defective_completions(START) == []
+
+
+def test_defective_completion_still_reported_when_never_repaired(tmp_path):
+    """The case the notice exists for must survive the suppression."""
+    gate = _gate_with_log(tmp_path, [_record('incomplete', error='stale orientation')])
+    assert gate.defective_completions(START) == [('bob', 'a1', 1, 'stale orientation')]
+
+
+def test_defective_completion_suppression_is_per_round(tmp_path):
+    """Repairing round 1 must not vouch for a broken round 2."""
+    gate = _gate_with_log(tmp_path, [
+        _record('incomplete', rnd=1, error='bad'),
+        _record('completed', rnd=1),
+        _record('incomplete', rnd=2, error='round two broken'),
+    ])
+    assert gate.defective_completions(START) == [('bob', 'a1', 2, 'round two broken')]
+
+
+def test_footerless_consultation_turn_is_not_a_defect(tmp_path):
+    """A turn instructed to emit no footer, later superseded, is not uncaptured.
+
+    The RUNOFF-030 diagnosis checkpoint brief said verbatim "Answer in plain
+    prose. No footer, no orientation receipt, no suite run." The capture gate
+    recorded the result as a malformed footer, and the notice then advised
+    resuming an agent that had done exactly as instructed -- penalising the
+    cheapest correct way to hold a checkpoint.
+    """
+    rows = [
+        _record('completed', agent='richard', agent_id='r1', rnd=3),
+        {'agent_type': 'richard', 'agent_id': 'r1', 'status': 'incomplete',
+         'issue_id': 'X-1', 'error': 'missing, malformed, or mismatched structured footer'},
+        _record('completed', agent='richard', agent_id='r1', rnd=4),
+    ]
+    assert _gate_with_log(tmp_path, rows).defective_completions(START) == []
+
+
+def test_footerless_turn_reported_when_agent_never_reports_again(tmp_path):
+    """A genuinely lost completion is not excused by the footer-less rule."""
+    rows = [{'agent_type': 'richard', 'agent_id': 'r9', 'status': 'incomplete',
+             'issue_id': 'X-1', 'error': 'missing, malformed, or mismatched structured footer'}]
+    assert _gate_with_log(tmp_path, rows).defective_completions(START) == [
+        ('richard', 'r9', None, 'missing, malformed, or mismatched structured footer')]
+
+
+def test_verification_run_holds_the_iteration(tmp_path):
+    """A live project-owned verification run is detected, so the loop can hold it.
+
+    TEAM-LOOPHOLD-ARCH-BACKGROUND-WORK-001. The final scientific verification is
+    Arch-owned by workflow design and runs about two hours, so before this check
+    every Stop cycle during it advanced the iteration: measured on RUNOFF-030 as
+    CONTINUE iteration=4 and iteration=5 eighty seconds apart during a 6629 s
+    run. The negative control is the point of the test -- a run in a DIFFERENT
+    checkout must not hold this loop.
+    """
+    import ralph_stop
+    script = tmp_path / 'tools/esx/final_verification.py'
+    script.parent.mkdir(parents=True)
+    script.write_text('import time\ntime.sleep(30)\n')
+    other = tmp_path / 'other'
+    other.mkdir()
+
+    proc = subprocess.Popen([sys.executable, str(script)], cwd=tmp_path)
+    foreign = subprocess.Popen([sys.executable, str(script)], cwd=other)
+    try:
+        for _ in range(50):
+            found = ralph_stop.verification_running(tmp_path)
+            if found:
+                break
+            time.sleep(0.1)
+        assert [r['script'] for r in found] == ['tools/esx/final_verification.py']
+        # The same script running in another checkout is not this loop's work.
+        assert ralph_stop.verification_running(other) == [
+            {'script': 'tools/esx/final_verification.py', 'minutes': 0}]
+        assert len(ralph_stop.verification_running(tmp_path)) == 1
+    finally:
+        proc.kill(); foreign.kill()
+        proc.wait(); foreign.wait()
+    assert ralph_stop.verification_running(tmp_path) == []

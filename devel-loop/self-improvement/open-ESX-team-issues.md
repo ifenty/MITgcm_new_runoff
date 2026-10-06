@@ -576,12 +576,13 @@ The two gates agree, or their disagreement is visible in the record. Direction: 
 ## 🔴 PROPOSED: the defective-completion notice never clears after the agent fixes it
 
 **Date Identified**: 2026-10-06  14:20
-**Status**: Proposed
+**Status**: Implemented — awaiting publication/effectiveness evidence
 **UUID**: TEAM-GATE-DEFECT-NOTICE-NOT-SUPERSEDED-001
 **Category**: workflow_integrity
 **Severity**: Medium
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
 **Anchors**: tools/esx/loop_gate.py:defective_completions; tools/esx/loop_gate.py:rejection_streak
+**Implementation-Reference**: project commit to follow in this change; guards in tests/esx/test_framework_fixes.py
 
 ### Issue
 
@@ -647,12 +648,13 @@ re-deriving whether it still holds.
 ## 🔴 PROPOSED: the loop hold condition ignores Arch's own long-running work and drains the iteration budget
 
 **Date Identified**: 2026-10-06  20:05
-**Status**: Proposed
+**Status**: Implemented — awaiting publication/effectiveness evidence
 **UUID**: TEAM-LOOPHOLD-ARCH-BACKGROUND-WORK-001
 **Category**: workflow_integrity
 **Severity**: High
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
 **Anchors**: tools/esx/loop_control.py:run; tools/esx/ralph_stop.py:main
+**Implementation-Reference**: project commit to follow in this change; guards in tests/esx/test_framework_fixes.py
 
 ### Issue
 

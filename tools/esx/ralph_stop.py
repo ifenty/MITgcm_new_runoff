@@ -157,6 +157,15 @@ def loop_lock(root):
 
 MAX_DISPATCH_WAITS = 3
 NATIVE_STALE_SECONDS = 6 * 3600
+
+#: Verification entry points whose runs the loop must wait out rather than
+#: charge for. Both are long by nature: the scientific suite is ~60 commands.
+VERIFICATION_SCRIPTS = ('tools/esx/final_verification.py', 'tools/esx/verify.py')
+
+#: Upper bound on how long such a run may hold the loop. Above it the process is
+#: treated as abandoned so a wedged run cannot stall the loop forever; the
+#: per-command timeout is an hour and a full scientific pass is about two.
+VERIFICATION_STALE_SECONDS = 5 * 3600
 # No real iteration of work ends in under about 20 s, so this many loop advances
 # inside the window means something other than the coordinator is driving the loop.
 MAX_ADVANCES = 6
@@ -332,6 +341,51 @@ def work_in_progress(root):
         except (ValueError, OSError, KeyError, TypeError):
             return None
     return None
+
+
+def verification_running(root):
+    """Verification runs this project owns that are still executing.
+
+    The final scientific verification is Arch's own by workflow design
+    (``final_verify_owner``), takes about two hours over ~60 commands, and is
+    MANDATORY for every scientific change. It is not a subagent, so
+    :func:`native_running` cannot see it, and without this check every Stop
+    cycle during it advanced the iteration. Measured on RUNOFF-030: ``CONTINUE
+    iteration=4`` and ``CONTINUE iteration=5`` eighty seconds apart during a
+    6629 s run, two of an owner-granted twenty spent on waiting. At that rate a
+    single run can exhaust a whole budget before the issue it verifies closes,
+    so the longest required step of the standard workflow was also the one that
+    spent the budget fastest (TEAM-LOOPHOLD-ARCH-BACKGROUND-WORK-001).
+
+    Read from ``/proc`` rather than from ``ps`` output, and skip this process:
+    a ``pgrep -f``-style pattern matches the scanning command itself, which is
+    how an earlier attempt at exactly this check reported its own shell as the
+    running process. Binding to ``cwd`` keeps a run in another checkout from
+    holding this loop.
+    """
+    root = Path(root).resolve()
+    running, mine = [], {str(os.getpid()), str(os.getppid())}
+    try:
+        entries = [p for p in Path('/proc').iterdir() if p.name.isdigit()]
+    except OSError:
+        return []
+    for entry in entries:
+        if entry.name in mine:
+            continue
+        try:
+            arguments = [a for a in entry.joinpath('cmdline').read_bytes().split(b'\0') if a]
+            if len(arguments) < 2 or b'python' not in arguments[0].rsplit(b'/', 1)[-1]:
+                continue
+            script = next((s for s in VERIFICATION_SCRIPTS
+                           if any(a.decode('utf-8', 'replace').endswith(s) for a in arguments[1:])), None)
+            if not script or Path(os.readlink(entry / 'cwd')).resolve() != root:
+                continue
+            age = clock() - entry.stat().st_mtime
+        except (OSError, ValueError, IndexError):
+            continue
+        if 0 <= age < VERIFICATION_STALE_SECONDS:
+            running.append({'script': script, 'minutes': int(age // 60)})
+    return running
 
 
 def native_running(root, session_id):
@@ -543,6 +597,16 @@ def _step_locked(root, hook_input):
         log(root, 'HOLD', n, f'native subagent running: {who}; stop allowed, iteration not advanced')
         return {'systemMessage': f'ESX loop holding at iteration {n}/{limit}: {who} still running. '
                                  'The loop resumes when it reports; nothing is wrong.'}
+    verifying = verification_running(root)
+    if verifying:
+        # Arch's own verification run is work in progress, not a turn of work:
+        # waiting for it must cost nothing, or the mandatory final suite spends
+        # the budget faster than the issues it qualifies
+        # (TEAM-LOOPHOLD-ARCH-BACKGROUND-WORK-001).
+        what = ', '.join(f"{r['script']} ({r['minutes']} min)" for r in verifying)
+        log(root, 'HOLD', n, f'verification running: {what}; stop allowed, iteration not advanced')
+        return {'systemMessage': f'ESX loop holding at iteration {n}/{limit}: {what} still running. '
+                                 'The loop resumes when it finishes; nothing is wrong.'}
     raw_waits = parsed['header_fields'].get('dispatch_waits', '0')
     waits = int(raw_waits) if raw_waits.isdigit() else MAX_DISPATCH_WAITS
     if waits < MAX_DISPATCH_WAITS and retained_in_flight(root):
