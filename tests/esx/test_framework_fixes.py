@@ -929,3 +929,29 @@ def test_verification_run_holds_the_iteration(tmp_path):
         proc.kill(); foreign.kill()
         proc.wait(); foreign.wait()
     assert ralph_stop.verification_running(tmp_path) == []
+
+
+def test_command_span_stops_at_a_quote():
+    """A command inside embedded JSON must not absorb that payload's prose.
+
+    TEAM-BRIEF-COMMAND-SPAN-QUOTES-001. `brief.build` embeds the whole reviewed
+    packet, so a command recorded in a captured footer is followed by the
+    footer's own prose. On RUNOFF-040 an implementer's independent_check held
+    `tools/esx/verify.py --suite focused --owner ... --fresh` and its coverage
+    then mentioned `--mpi 2`; with no `.py` between them the span swallowed the
+    prose and the brief was refused for a flag it never named, blocking the
+    review dispatch. This check validates commands a brief tells an agent to
+    run, not payload it quotes.
+    """
+    import brief
+    payload = ('"cmd": "python tools/esx/verify.py --suite focused --owner a1 --fresh", '
+               '"coverage": "refusal_check --mpi 2 was run outside verify.py"')
+    # Rooted at the real tree, so the tools resolve and the flags are really
+    # introspected; rooted at a scratch dir this would pass vacuously.
+    assert brief.interface_errors(ROOT, payload) == []
+
+    # The real flag error this check exists for is still caught.
+    assert brief.interface_errors(
+        ROOT, 'run tools/esx/loop_gate.py --check-start --issue X --agent bob') == [
+        'loop_gate.py does not accept --agent',
+        'loop_gate.py does not accept --issue']

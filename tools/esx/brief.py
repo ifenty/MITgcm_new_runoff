@@ -172,13 +172,24 @@ def figures_section(root, issue, figures=()):
     return '\n'.join(out)
 
 
-# Each command runs from its script name up to the next script, end of line, or a
-# closing backtick. The lookahead stops at any following `.py`, not just at the
-# next `tools/esx/` one: a brief legitimately names project scripts too
-# (`tests/rnf/tendency_term_check.py --build`), and a narrower boundary blamed
-# their flags on the preceding ESX command. Both false positives this check
-# produced were of that shape, which is why the boundary is now the general one.
-COMMAND_PATTERN = re.compile(r'tools/esx/([a-z_]+\.py)((?:(?!\.py)[^\n`])*)')
+# Each command runs from its script name up to the next script, end of line, a
+# closing backtick, or a closing quote. The lookahead stops at any following
+# `.py`, not just at the next `tools/esx/` one: a brief legitimately names
+# project scripts too (`tests/rnf/tendency_term_check.py --build`), and a
+# narrower boundary blamed their flags on the preceding ESX command. Both false
+# positives this check produced early were of that shape.
+#
+# The quote characters are in the terminator set because `build` embeds the
+# whole reviewed packet as JSON, so a command in a captured footer is followed
+# by that footer's own prose. On RUNOFF-040 an implementer's `independent_check`
+# recorded `tools/esx/verify.py --suite focused --owner ... --fresh` and its
+# `coverage` then said "refusal_check --mpi 2 was run outside verify.py"; with
+# no `.py` in between, the span swallowed the prose and the brief was refused
+# for naming `--mpi` on `verify.py`, which it never did. This check exists to
+# validate commands a brief tells an agent to RUN, not payload it quotes, and a
+# false refusal is worse than a miss -- so a span that ends at the quote and
+# checks fewer flags is the right trade (TEAM-BRIEF-COMMAND-SPAN-QUOTES-001).
+COMMAND_PATTERN = re.compile(r'tools/esx/([a-z_]+\.py)((?:(?!\.py)[^\n`"\'])*)')
 
 
 def tool_flags(root, script, subcommand=None):
