@@ -160,12 +160,13 @@ No implementation turns lost to the default timeout.
 ## 🔴 PROPOSED: assess-transition rejects verify.py evidence references as returned
 
 **Date Identified**: 2026-10-02  21:30
-**Status**: Proposed
+**Status**: Implemented — awaiting publication/effectiveness evidence
 **UUID**: TEAM-TRANSITION-EVIDENCE-001
 **Category**: runtime_recovery
 **Severity**: Low
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-02-runoff-010/assessment.md
 **Anchors**: tools/esx/runtime_recovery.py
+**Implementation-Reference**: af5165f (runtime_recovery validates check evidence via verify.load_evidence with a raw-bytes fallback; format documented in assess-transition --help)
 
 ### Issue
 `verify.py` names its evidence file by a canonical-JSON digest and returns that digest as `sha256`. `runtime_recovery.validate_assessment` hashes the raw file bytes, so a judgment citing the `verify.py` evidence reference unchanged fails with "compatibility check evidence hash mismatch". The judgment file format (decision, assessor, reason of at least 40 characters, and a check with command, executed, exit and evidence) is documented only in the source.
@@ -188,12 +189,13 @@ Transitions are recorded on the first attempt.
 ## 🔴 PROPOSED: Provider-limit pause lifts before its known reset on a real-output Stop
 
 **Date Identified**: 2026-10-03  07:40
-**Status**: Proposed
+**Status**: Implemented — awaiting publication/effectiveness evidence
 **UUID**: TEAM-PAUSE-EARLY-LIFT-001
 **Category**: loop_pause
 **Severity**: Medium
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-02-runoff-010/assessment.md
 **Anchors**: tools/esx/ralph_stop.py
+**Implementation-Reference**: af5165f (ralph_stop: the provider-limit auto-lift now requires an unknown reset time)
 
 ### Issue
 A retained Bob turn hit the session limit, and `pause_for_provider_limit` correctly paused the loop with `paused_until` set to the reset. The coordinator then ended its turn with a real summary message under the grace allowance. The Stop hook classified that turn as 'working', lifted the provider_limit pause and advanced the iteration from 1 to 2, about 90 minutes before the reset.
@@ -216,12 +218,13 @@ No iterations are lost to the grace-allowance summary turn.
 ## 🔴 PROPOSED: Provider-limit pause time still shortens later role turns
 
 **Date Identified**: 2026-10-03  09:50
-**Status**: Proposed
+**Status**: Implemented — awaiting publication/effectiveness evidence
 **UUID**: TEAM-PAUSE-DEADLINE-CLAMP-001
 **Category**: loop_pause
 **Severity**: Medium
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-02-runoff-010/assessment.md
 **Anchors**: tools/esx/team_budget.py
+**Implementation-Reference**: af5165f (team_budget.USABLE_TURN_FRACTION: a scope deadline bounds a turn only while it leaves half of it)
 
 ### Issue
 `team_budget.reserve` clamps each turn to the issue scope's nominal deadline (`started + minutes`) while that deadline is still in the future. The scope clock keeps running through a provider-limit pause. After the 07:37–09:10Z outage, the first resumed Bob turn (`--timeout 5400`) was killed at 09:46Z. That was the original issue deadline (09:36Z) plus grace, after 33 minutes of work. Bob also reported that the resumed brief carried the old deadline, so the turn before it stopped at once.
@@ -246,12 +249,13 @@ No turns are lost after an outage.
 ## 🔴 PROPOSED: doc_contract digests `ast.dump` output, so a valid sealed report reads as stale under a different Python
 
 **Date Identified**: 2026-10-04  18:10
-**Status**: Proposed
+**Status**: Implemented — awaiting publication/effectiveness evidence
 **UUID**: TEAM-DOCCONTRACT-AST-DUMP-DIGEST-001
 **Category**: evidence_integrity
 **Severity**: High
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-04-runoff-004/assessment.md
 **Anchors**: tools/esx/doc_inventory.py:python_units; tools/esx/doc_contract.py:validate_report
+**Implementation-Reference**: af5165f (doc_inventory.python_units: textual module-context digest; tests/esx guards incl. a 3.10.19-vs-3.13.12 cross-interpreter check)
 
 ### Issue
 `doc_inventory.python_units` digests `context = digest(ast.dump(ModuleContext().visit(tree)))` for every inventoried `.py` file. `ast.dump` is explicitly not a stable cross-version serialization, so the same unmodified source tree yields a different inventory digest under different interpreters. A documentation report sealed under one Python and checked under another is reported `stale; regenerate the change inventory` with **no file changed**, and conversely a genuinely stale report could be accepted. Byte `sha256`s and `project.py signature` are interpreter-independent; the coupling is confined to the documentation contract.
@@ -278,12 +282,13 @@ No reviewer spends a must-fix item, or a wrong diagnosis, on an accurate report 
 ## 🔴 PROPOSED: doc_contract stale returns a truncated hits list that reads as complete
 
 **Date Identified**: 2026-10-05  12:40
-**Status**: Proposed
+**Status**: Implemented — awaiting publication/effectiveness evidence
 **UUID**: TEAM-DOCCONTRACT-STALE-HITS-TRUNCATION-001
 **Category**: tool_ergonomics
 **Severity**: Medium
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-005/assessment.md
 **Anchors**: tools/esx/doc_contract.py:stale_lines; devel-loop/documentation_contract.md
+**Implementation-Reference**: af5165f (doc_contract.stale_lines returns 'hits_sample' when truncated, plus doc_contract.listed(); guard requires no caller indexes 'hits')
 
 ### Issue
 `stale_lines` returns `{'lines': len(hits), 'hits': hits[:limit], 'truncated': max(len(hits)-limit, 0)}` with `limit=200`. The total and the truncation count are both reported, but the returned `hits` list is the natural thing to count and carries nothing at the point of use that says it is partial. Counting entries of `hits` rather than reading `lines` understates a sweep silently, by up to the cap.
@@ -314,12 +319,13 @@ A figure derived from a sweep listing is either right or visibly unavailable. Di
 ## 🔴 PROPOSED: loop_gate --check-start cannot pass in a correction round, and both escape hatches corrupt the record
 
 **Date Identified**: 2026-10-05  21:30
-**Status**: Proposed
+**Status**: Implemented — awaiting publication/effectiveness evidence
 **UUID**: TEAM-LOOPGATE-CHECKSTART-CORRECTION-ROUND-001
 **Category**: workflow_integrity
 **Severity**: Medium
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
 **Anchors**: tools/esx/loop_gate.py:Gate._check_start; tools/esx/doc_contract.py:navigate
+**Implementation-Reference**: af5165f (doc_contract.latest_orientation; loop_gate._check_start accepts a re-navigated orientation when a validated receipt exists)
 
 ### Issue
 `--check-start` compares the orientation receipt recorded at `--prepare` against the current working tree. That is the right check at the start of an iteration. But it is bound to the *prepare-time* receipt, so once any work has legitimately changed an oriented target — i.e. in every correction round — it can never pass again, and the gate's own remedy text does not fit the situation it is printing for.
@@ -354,12 +360,13 @@ A correction round can re-establish orientation honestly. Direction: receipts ma
 ## 🔴 PROPOSED: navigate --reuse-args refuses when the changed target is the orientation's own declared map
 
 **Date Identified**: 2026-10-05  21:30
-**Status**: Proposed
+**Status**: Implemented — awaiting publication/effectiveness evidence
 **UUID**: TEAM-DOCCONTRACT-NAVIGATE-REUSE-MAP-001
 **Category**: tool_ergonomics
 **Severity**: Medium
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
 **Anchors**: tools/esx/doc_contract.py:navigate
+**Implementation-Reference**: af5165f (doc_contract: the reuse-args 'declared' set now includes the orientation's own map)
 
 ### Issue
 `navigate --reuse-args` reloads the map, targets and documents of a prior orientation receipt. It refuses if a changed target lies "outside the original orientation's declared targets and documents" — but it tests membership against `targets` and `documents` only, and the **map** is stored in a third field, `map`. So when the thing that changed is the orientation's own `--map` section, the tool reports that section as outside its own declared scope and sends the caller to a full `navigate` to re-declare, by hand, the identical arguments it already holds on disk.
@@ -384,12 +391,13 @@ Re-orienting after a round that edited the declared map section costs one comman
 ## 🔴 PROPOSED: doc_inventory omits every project record document, so the ledgers, lessons and assessments get no stale sweep and no disposition
 
 **Date Identified**: 2026-10-05  23:55
-**Status**: Proposed
+**Status**: Implemented — awaiting publication/effectiveness evidence
 **UUID**: TEAM-DOCINVENTORY-LEDGER-UNINVENTORIED-001
 **Category**: coverage_gap
 **Severity**: Medium
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
 **Anchors**: tools/esx/doc_inventory.py:paths; devel-loop/documentation_contract.md
+**Implementation-Reference**: af5165f (project.record_paths, enumerated not listed; doc_contract.stale_lines sweeps inventory + records while acceptance keeps excluding them)
 
 ### Issue
 `doc_inventory.paths` returns 355 paths. `esx/project_profile.md`, `CLAUDE.md`, `esx/project.json` and all of `docs/` are in it. **Every project record document is outside it** — the eleven enumerated under Evidence plus the whole `devel-loop/self-improvement/assessments/` tree. They are prose documents that make claims about the code, and none receives a `doc_contract.py stale` sweep or a disposition row in a sealed documentation report. So a figure in any of them can go stale with no mechanism able to notice, and an issue can be closed without anything having checked that its own ledger entry still describes the code. (The two first noticed, and the ones that make the cost concrete, are `open_issues.md` and `long_term_goals.md`; do not read the pair as the boundary — that mistake is the subject of the fourth Evidence paragraph.)
@@ -426,12 +434,13 @@ No project prose is both unswept and undeclared. Direction: documents that are n
 ## 🔴 PROPOSED: A structurally dead provider is probed every iteration and gates the loop before any other instruction
 
 **Date Identified**: 2026-10-06  05:50
-**Status**: Proposed
+**Status**: Implemented — awaiting publication/effectiveness evidence
 **UUID**: TEAM-NOTIFY-OUTAGE-NO-BACKOFF-001
 **Category**: loop_cost
 **Severity**: High
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
 **Anchors**: tools/esx/notifications.py:active_outage; tools/esx/loop_gate.py:Gate.next; devel-loop/communication.md
+**Implementation-Reference**: af5165f (notifications.backoff doubling per consecutive down, capped at 32; loop_gate defers the communication notice instead of returning on it)
 
 ### Issue
 While an outage is active, `--next` demands a recorded re-probe **every loop iteration**, and separately the outage record expires after `OUTAGE_RENEW_ITERATIONS` and must be renewed with fresh evidence. Both demands are emitted *before* any other instruction, so each iteration pays the toll before the gate will say what the actual work is. Neither mechanism distinguishes a transient provider fault from a structural one — a provider that has never been configured is re-probed on exactly the same cadence as one that might come back in a minute.
@@ -458,12 +467,13 @@ Loop budget is spent on work. Direction: iterations whose only activity is a pro
 ## 🔴 PROPOSED: The documentation seal and every reviewer approval share one invalidation set, so any policy edit mid-review strands them
 
 **Date Identified**: 2026-10-06  05:50
-**Status**: Proposed
+**Status**: Implemented — awaiting publication/effectiveness evidence
 **UUID**: TEAM-ACCEPTANCE-POLICY-EDIT-STRANDS-APPROVALS-001
 **Category**: workflow_integrity
 **Severity**: High
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
 **Anchors**: tools/esx/project.py:source_signature; tools/esx/project.py:administrative; tools/esx/doc_inventory.py:paths
+**Implementation-Reference**: af5165f (project.acceptance_scope and `project.py acceptance-scope PATH`)
 
 ### Issue
 `project.source_signature` digests exactly `inventory_paths(root, cfg, scientific)`, and `doc_inventory.paths` returns `inventory_paths(root, config(root, ready=False))` — measured to be the **identical** 355-path set, empty symmetric difference. So the sealed documentation report and every reviewer approval are invalidated by precisely the same files, in one event. Because `FRAMEWORK_PATHS` places all of `tools/esx`, `.claude`, `devel-loop`, `docs`, `esx`, `CLAUDE.md` and `.gitignore` inside that set, **44 policy and instruction documents** sit inside the candidate beside 49 executable witnesses. Editing any one of them during review — including to fix a defect a reviewer just asked for — strands every approval and forces a re-affirmation round.
@@ -492,12 +502,13 @@ Re-affirmation rounds are caused by changed work, not by changed prose. Directio
 ## 🔴 PROPOSED: Briefs are hand-written and cite tool interfaces that do not exist, while brief.py goes unused
 
 **Date Identified**: 2026-10-06  05:50
-**Status**: Proposed
+**Status**: Implemented — awaiting publication/effectiveness evidence
 **UUID**: TEAM-BRIEF-UNVALIDATED-INTERFACE-001
 **Category**: dispatch_quality
 **Severity**: Medium
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
 **Anchors**: tools/esx/brief.py:build; tools/esx/footer_contract.py:reference_errors; devel-loop/team_operations.md
+**Implementation-Reference**: af5165f (brief.interface_errors refuses unknown ESX commands/flags, subcommand-aware; brief states the required footer agent; loop_gate.defective_completions reports uncaptured turns)
 
 ### Issue
 `brief.py build` exists to assemble a dispatch brief with the baseline, orientation suggestions, figures and sweep sections. Briefs are nonetheless written by hand, and nothing validates the interfaces, paths or required references they cite. A brief that instructs an agent to run a command with flags that do not exist, or omits a reference the receiving contract requires, is discovered only by the agent — if the agent is careful enough to measure rather than comply.

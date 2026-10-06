@@ -328,12 +328,32 @@ This is the scientific contract agents read. Executable paths and commands are i
   host for runtime fingerprint `1d9758f9`, with both halves of the witness: a
   project-allowed Bash command ran and a disallowed one was blocked and recorded.
   Re-run it after any ESX upgrade, permission change or machine move (LL-002).
-- Notification provider: **Slack is unavailable on this host.** `claude mcp list`
-  reports no MCP servers, there is no `slack` CLI, no `SLACK_*` variable and no
-  slack entry in `.claude/settings*.json`; the machine move did not carry the MCP
-  configuration. A session outage is recorded, so loop events queue instead of
-  being delivered. The owner's standing authorization to post routine updates to
-  `C0C5EV9TFCJ` is unchanged and applies as soon as a provider exists.
+- Notification provider: **disabled by the owner on 2026-10-06** ("cancel the
+  slack for now"). `esx/project.json` now sets `communication.provider` to
+  `disabled`, which stops the loop generating events at all; the channel and
+  prefix are kept, with the previous value in `provider_before_disable`, so
+  restoring it is a one-word edit once a provider exists.
+  - Slack was never reachable on this host: `claude mcp list` reports no MCP
+    servers, and there is no `slack` CLI, no `SLACK_*` variable and no slack
+    entry in `.claude/settings*.json` — the machine move did not carry the MCP
+    configuration. The remedy was always a one-time owner action
+    (`claude mcp add`), which no agent can perform.
+  - Measured cost of not disabling it sooner, recorded because it is the whole
+    argument for the `disabled` setting: **73 probes across loop iterations
+    1-85**, every one returning the same output, under an outage renewed 14
+    times, and **loop iterations 13-85 produced no scientific work**. The gate
+    demanded a probe before reporting any other instruction, so each idle cycle
+    paid the toll first. Both halves are now fixed in the kit
+    (`TEAM-NOTIFY-OUTAGE-NO-BACKOFF-001`): the probe interval backs off per
+    consecutive `down`, and the communication notice no longer pre-empts the
+    work.
+  - All **102** queued events were recorded `unauthorized` rather than `failed`
+    or `unavailable`, because the owner revoked authorization — that is a
+    revocation, not a provider fault. Nothing is queued now.
+  - To re-enable: register a Slack MCP server, then set
+    `communication.provider` back to `slack`. The owner's standing
+    authorization to post routine issue start/resolution updates to
+    `C0C5EV9TFCJ` is unchanged and applies again at that point.
 
 **MITgcm conventions:**
 

@@ -566,10 +566,12 @@
     ]
   },
   "communication": {
-    "provider": "slack",
+    "provider": "disabled",
     "channel": "C0C5EV9TFCJ",
     "message_prefix": "[new-runoff]",
-    "authorization_reference": "esx/project_profile.md#runtime-and-operations (communication)"
+    "authorization_reference": "esx/project_profile.md#runtime-and-operations (communication)",
+    "provider_before_disable": "slack",
+    "disabled_reason": "Owner instruction, 2026-10-06: \"cancel the slack for now\". No Slack MCP server was ever registered for this project, so there was never an authenticated message-posting tool to discover: 73 probes across loop iterations 1-85 all returned `claude mcp list`: \"No MCP servers configured\", under an outage renewed 14 times, and iterations 13-85 produced no scientific work. All 102 queued events were recorded `unauthorized` (a revocation, not a provider fault). The channel and prefix are kept so this is reversible: set provider back to \"slack\" after `claude mcp add` registers a Slack MCP server."
   },
   "commit_policy": {
     "mode": "owner_authorization",
