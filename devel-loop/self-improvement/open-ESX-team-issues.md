@@ -815,3 +815,92 @@ bob` must still report both flags. Reproduce the RUNOFF-040 payload verbatim.
 
 No brief is refused for a flag it does not instruct. Direction: false positives
 from this check go to zero while its true positives are unchanged.
+
+## 🔴 PROPOSED: an externally killed verification run is recorded as a candidate failure
+
+**Date Identified**: 2026-10-07  03:40
+**Status**: Proposed
+**UUID**: TEAM-VERIFY-SIGNAL-MISCLASSIFIED-001
+**Category**: evidence_integrity
+**Severity**: High
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
+**Anchors**: tools/esx/verify.py:interruption; tools/esx/verify.py:execute
+
+### Issue
+
+`interruption()` names why a non-zero run never reached a verdict, and it
+recognises signal death only through `rc < 0`. When the run is killed by a
+SIGTERM delivered to the **process group**, the intermediate shell reports a
+**positive** 124 instead, so `interruption()` falls through to `return None`,
+`stable` stays `true`, and control reaches the `rc != 0` branch that raises
+`verification failed (exit {rc})` — the scientific-verdict bucket.
+
+`verify.py:173` states the opposite intent: a per-command timeout is meant to be
+a verdict on a hung candidate, and an interruption is meant to be distinguished
+from one. For a process-group signal the code does not deliver that intent.
+
+The consequence is a record that says the wrong thing about the science. A
+reader meeting "verification failed (exit 124)" against a candidate that two
+reviewers approved would reasonably conclude the implementation broke.
+
+### Evidence
+
+RUNOFF-040 final scientific verification, 2026-10-07. The run executed
+02:27:36 → 03:26:39 UTC (3542.95 s), covering 36 of 59 commands, and was then
+terminated externally. The persisted record
+`devel-loop/loop_state/verification/1036c757…json` carries `suite: "scientific"`,
+`owner: "bob"`, `exit: 124`, **`stable: true`** and 59 commands, with no
+`EXECUTED PASS` and no evidence reference.
+
+Four independent facts establish the termination was external rather than a
+candidate failure, all confirmed by Arch:
+
+- the log's last line is `verification received signal 15` — `execute()`'s own
+  SIGTERM handler message (`verify.py:192-196`);
+- the implementer's trailing `echo` of the exit code never ran, so the shell
+  itself was terminated, and the harness annotated the task killed;
+- `command_timeout_seconds` (3600) is applied **per command**
+  (`verify.py:149`), and no single command approached it in a 3543 s run;
+- **zero `FAIL` tokens in 249,970 bytes of log**; 35 of the 36 started commands
+  completed and all passed.
+
+So the one record that would survive as the issue's history asserts a
+scientific failure that did not occur.
+
+### Potential Impact
+
+Evidence integrity, in the direction that matters least recoverably. A
+qualification attempt killed by an execution limit is indistinguishable in the
+record from a candidate that failed its scientific suite, and `stable: true`
+actively reinforces the wrong reading. The misreading survives the session: the
+record is content-addressed and permanent, while the knowledge that a harness
+limit fired is not written anywhere.
+
+### Proposed Fix
+
+Recognise a positive exit as a probable signal when the run's own handler left
+its marker: treat `verification received signal N` in the captured text as an
+interruption regardless of the sign of `rc`, which is the authoritative witness
+since `execute()` writes it itself. Record such a run as `INTERRUPTED` rather
+than as a failure, and keep `stable` false for it so no later reader or gate can
+mistake it for a verdict.
+
+Also worth considering, since it is the same root: have the per-command timeout
+path and the signal path produce visibly different statuses, because the current
+message says `exit 124` for both and 124 is conventionally a timeout.
+
+### Acceptance Criteria
+
+A run killed by a process-group SIGTERM is recorded as interrupted, not failed,
+with `stable` false, and its record carries no scientific verdict. A run whose
+single command genuinely exceeds `command_timeout_seconds` is still recorded as
+a verdict on the candidate, with a message that does not read as an
+interruption. Reproduce the RUNOFF-040 case: positive `rc` 124 plus the
+`received signal 15` marker in the text must classify as interrupted.
+
+### Expected Effect
+
+No record asserts a scientific failure that did not happen. Direction:
+externally terminated runs recorded as candidate failures go to zero. The
+qualitative invariant: a verification record distinguishes "the candidate
+failed" from "the run did not finish".
