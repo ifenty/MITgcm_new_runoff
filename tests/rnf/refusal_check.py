@@ -451,16 +451,28 @@ def surface_bound(experiment_input="input"):
       set it. A ``data`` that did would make that default wrong, so
       this raises rather than return a stale figure.
 
-    **This is only valid on a linear free surface, which lab_sea is**
-    (``nonlinFreeSurf`` = 0, ``select_rStar`` = 0, as its own run
-    reports). The guard compares against the *live* ``hFacC``, and the
-    only run-time writer of ``hFacC`` is ``update_r_star.F:55-57``
-    (``hFacC = h0FacC*rStarFacC``), so with no r\\* the live thickness
-    stays the reference one for the whole run and the limit returned
-    here is the limit enforced at every step. On an r\\* grid it would
-    not be: 26% of cs32's target cells run more than 1% thinner than
-    their reference, so a caller that took this figure there would be
-    computing a limit the model does not enforce.
+    **The validity condition is ``nonlinFreeSurf`` = 0, which lab_sea
+    satisfies** (and ``select_rStar`` = 0 with it, as its own run
+    reports). The guard compares against the *live* ``hFacC``, and
+    nothing updates ``hFacC`` at run time only when
+    ``nonlinFreeSurf`` = 0 -- that is the arm where
+    ``update_surf_dr.F:125`` resets it to ``h0FacC``. There the live
+    thickness is the reference one for the whole run and the limit
+    returned here is the limit enforced at every step.
+
+    **Do not read the condition as "no r\\*".** With
+    ``nonlinFreeSurf`` > 0 and ``select_rStar`` = 0 there is no r\\*
+    and the live thickness is still not the reference: ``CALC_SURF_DR``
+    computes ``hFac_surfC`` and ``UPDATE_SURF_DR`` installs it into
+    ``hFacC`` (``update_surf_dr.F:56``, ``:92``), the
+    ``select_rStar`` = 0 arm of the ``IF`` at ``forward_step.F:832``.
+    So this helper is **not** valid there either, and an earlier
+    version of this docstring said "with no r\\*" and would have told a
+    maintainer adding such an experiment that it was. Measured on the
+    one r\\* grid here: 26% of cs32's target cells run more than 1%
+    thinner than their reference, so a caller that took this figure to
+    any ``nonlinFreeSurf`` > 0 set-up would be computing a limit the
+    model does not enforce.
     """
     path = os.path.join(VERIF, EXPERIMENT, experiment_input, "data")
     with open(path) as fh:

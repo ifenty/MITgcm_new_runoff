@@ -281,13 +281,23 @@ This is the scientific contract agents read. Executable paths and commands are i
     `model/inc/PARAMS.h:762`), but that band bounds the **fraction**, not its
     per-step change, and runoff *thickens* the cell, so from a full cell the
     band is first crossed at +1.0 and `f` = 0.2 crosses nothing.
-    The thickness in the denominator is the **live** one: `_hFacC` resolves to
-    `hFacC`, whose only run-time writer is `model/src/update_r_star.F:55-57`
-    (`hFacC = h0FacC·rStarFacC`). So the guard is state-consistent, and on an
-    r\* grid the limit moves with the state — one file can pass at `nIter0`
-    and be refused later, deliberately. With `nonlinFreeSurf` and
-    `select_rStar` = 0 the reverse holds, `CALC_SURF_DR` writing `hFac_surfC`
-    and not `hFacC`, so there the guard under-states the departure.
+    The thickness in the denominator is the **live** one in every regime:
+    `_hFacC` resolves to `hFacC`, and the surface-level `hFacC` the guard
+    divides by is maintained at run time by `UPDATE_R_STAR` when
+    `select_rStar` > 0 (`model/src/update_r_star.F:55`, `:90`) and by
+    `UPDATE_SURF_DR` when `select_rStar` = 0
+    (`model/src/update_surf_dr.F:56`, `:92`), the two arms of one `IF` at
+    `model/src/forward_step.F:832`. So the guard is state-consistent, one
+    step behind — it reads what the previous step's end-of-step update
+    installed — and on an
+    r\* grid the limit moves with the state: one file can pass at `nIter0`
+    and be refused later, deliberately. The two nonlinear regimes differ in
+    how far that drifts, not in which thickness is used: with
+    `select_rStar` = 0 the live thickness has a thin-side floor
+    (`model/src/calc_surf_dr.F:109-116` clamps to `Rmin_surf`) while under
+    r\* `model/src/calc_r_star.F:185-198` only counts, so the drift is
+    bounded below in the first regime and unbounded in the second. No
+    experiment here runs `nonlinFreeSurf` > 0 with `select_rStar` = 0.
     On the lab_sea target cell the limit
     is 5.5556e-4 m/s (82 Amazons), where reference and live agree because
     that grid is a linear free surface. On cs32, an r\* grid, the

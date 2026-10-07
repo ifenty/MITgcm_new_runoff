@@ -718,15 +718,30 @@ without NetCDF. `RNF_READPARMS`, called from `PACKAGES_READPARMS`
     `drF(ks)·hFacC/deltaTFreeSurf`, so a collapse onto a thick top layer with
     a short step gets further. `RNF.h` carries the same list beside the
     constant.
-  - **The thickness is the live one** — a strength, not a caveat, with two
-    consequences the record has to state. `_hFacC` resolves to `hFacC`
+  - **The thickness is the live one, in every regime** — a strength, not a
+    caveat. `_hFacC` resolves to `hFacC`
     (`model/inc/HFACC_MACROS.h:37-39`, the macro also adapting to the
-    reduced-memory `HFACC_*` options), and the only run-time writer of
-    `hFacC` is `model/src/update_r_star.F:55-57`, which sets
-    `hFacC = h0FacC·rStarFacC`. So:
-    - With `select_rStar` the guard enforces the r\*-stretched thickness of
-      the **current state**, with no `rStarFacC` factor left to apply. But
-      that limit is **not clipped**: `calc_r_star.F:185-198` only *counts*
+    reduced-memory `HFACC_*` options), and the surface-level `hFacC` the
+    guard divides by is **maintained at run time in every regime**: by
+    `UPDATE_R_STAR` when `select_rStar` > 0 (`update_r_star.F:55` and `:90`,
+    `hFacC = h0FacC·rStarFacC`) and by `UPDATE_SURF_DR` when
+    `select_rStar` = 0 (`update_surf_dr.F:56` and `:92`,
+    `hFacC = hFac_surfC` / `hFac_surfNm1C`) — the two being the two arms of
+    one `IF` in `model/src/forward_step.F` (`:832`, installs at `:839` and
+    `:852`). That is deliberately a claim about the **surface level in the
+    regimes that apply**, not a claim that nothing else writes the array:
+    `UPDATE_SIGMA`, `UPDATE_MASKS_ETC` and `pkg/shelfice`'s remesh also
+    assign `hFacC`, 11 assignment statements over 5 run-time routines as
+    measured here. An earlier version of this item said
+    `update_r_star.F:55-57` was the *only* run-time writer, which is false.
+
+    What the guard reads is therefore not quite the current state: it is the
+    thickness installed by the **previous step's end-of-step update**, i.e.
+    the state at the end of step n−1, and with `doResetHFactors` the
+    begin-of-step install of the `Nm1` fields puts it a further step back.
+    Either way it lags by at least one step and is never current.
+    - **The limit is not clipped under r\***: `calc_r_star.F:185-198` only
+      *counts*
       cells outside `[hFacInf, hFacSup]`, so the limit drifts with the state
       and **one file can pass at `nIter0` and be refused later**. That
       mid-run abort is deliberate: an init-only check would be unsound in the
@@ -734,12 +749,21 @@ without NetCDF. `RNF_READPARMS`, called from `PACKAGES_READPARMS`
       thickness is not either), and bounding by `h0FacC·hFacInf` instead
       would be 5× stricter than the physics above and would refuse
       legitimate configurations at init.
-    - With `nonlinFreeSurf` and `select_rStar` = 0 the **opposite** holds:
-      `CALC_SURF_DR` writes `hFac_surfC` and *not* `hFacC`
-      (`model/src/calc_surf_dr.F:120-122`), so there the guard uses the
-      reference thickness and **under**-states the actual departure. No test
-      experiment runs that combination, so it is unmeasured here.
-    - Under a linear free surface nothing updates `hFacC` at all and live
+    - **The two nonlinear regimes differ, and not in the direction an earlier
+      version of this item claimed.** It said the `select_rStar` = 0 regime
+      uses the reference thickness and *under*-states the departure, on the
+      strength of `CALC_SURF_DR` writing only `hFac_surfC`. That is wrong —
+      `UPDATE_SURF_DR` installs it into `hFacC` immediately afterwards — and
+      acting on it would invite multiplying in a stretch factor that `hFacC`
+      already contains, i.e. double-counting. The real difference is that
+      under `select_rStar` = 0 the live thickness has a thin-side **floor**
+      (`calc_surf_dr.F:105-108` has its `STOP` commented out and `:109-116`
+      clamps `rSurftmp` to `Rmin_surf`), whereas under r\* nothing clamps. So
+      the drift above is **bounded below in the surf_dr regime and unbounded
+      in the r\* one**. No experiment here runs `nonlinFreeSurf` > 0 with
+      `select_rStar` = 0, so that regime is unmeasured in this project.
+    - Under a linear free surface nothing updates `hFacC` at run time at all
+      (`update_surf_dr.F:125` resets it to `h0FacC`) and live
       equals reference for the whole run. That is lab_sea, and it is the
       premise the 0.99-of-the-bound control case relies on.
   - **Open points, recorded rather than closed** (review A and review B,
@@ -760,7 +784,20 @@ without NetCDF. `RNF_READPARMS`, called from `PACKAGES_READPARMS`
       processes.
     - `RNF_tgtK` is fixed at init while the guard re-evaluates `kSurfC` each
       step; the two could diverge under `pkg/shelfice` remeshing. Not
-      reachable today, since a shelfice target is refused at init.
+      reachable today, since a shelfice target is refused at init — and
+      `pkg/shelfice/shelfice_remesh_c_mask.F:226-227` is itself a run-time
+      writer of `hFacC`, which is the mechanism that would make them diverge.
+    - **`doResetHFactors` is not uniformly off in this project**, which is
+      worth recording because the correction-round-3 analysis assumed it was.
+      It defaults to `.FALSE.` (`set_defaults.F:185`) and both experiments
+      that exercise `pkg/rnf` report `F` (`lab_sea/input` and
+      `cs32/input.rnof_sp_icedyn`, read from their own runs) — but
+      `global_ocean.cs32x15/input.seaice/data:31` sets it `.TRUE.`, and that
+      run reports `T` with `nonlinFreeSurf` = 4 and `select_rStar` = 2. It is
+      in the focused suite as a no-change experiment, so it runs with `useRNF`
+      false and the guard never executes there. The begin-of-step reset block
+      (`forward_step.F:465-486`) is therefore reachable in this project's test
+      set, just never in a run that uses the package.
   - **Measured, both directions** (`tests/rnf/refusal_check.py`):
     `cell_above_vol_max` is the witness above and is refused, naming the cell
     `(i,j,bi,bj) = (3,3,2,1)` with `XC,YC` = 305°E, 51°N, `value`
