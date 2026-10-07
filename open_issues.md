@@ -695,3 +695,115 @@ A silently wrong applied field on the configuration the package exists to serve.
 **Not a parameter.** Review B's judgment, which Arch accepted and which the design records: a fixed header constant is the right mechanism for the per-source bound, a `data.rnf` scalar would be a cost with no benefit, and the remaining gap cannot be closed by a different *number* — it needs a different *shape* of check. The grid-independent form is the volume added per step as a fraction of the target cell's top-layer volume, which requires `rA`, the top-layer thickness and `deltaT`, so it belongs in `RNF_EXF_RUNOFF` where all three are available and the applied field exists.
 
 Acceptance: review B's four-source aggregate file is **refused**, naming the cell and the applied value; a physically plausible configuration on each test grid is not; the figure chosen is derived from the physics and stated as a fraction of the cell's top-layer volume per step rather than as a rate; and the case is enrolled in `refusal_check.py` with a negative control, since the whole point is that the current suite cannot see this. Note the control route under `ALLOW_CTRL` + `ALLOW_GENTIM2D_CONTROL` (`xx_runoff` added at `exf_getffields.F:531-534`, after `RNF_EXF_RUNOFF` and before the check) would also be covered by a check in the applied field, where `RNF_srcFluxMax` cannot reach it.
+
+## UNRESOLVED: RNF_SUMMARY does not report a dTtracerLev/deltaTFreeSurf mismatch
+
+**Date Identified**: 2026-10-07T02:10:00Z
+**Status**: Unresolved
+**UUID**: RUNOFF-041
+**Anchors**: MITgcm/pkg/rnf/rnf_summary.F::<module>; tests/rnf/refusal_check.py::cases
+
+### Issue or research question
+`RNF_cellVolMax` bounds `|RNF_vflx|·deltaTFreeSurf / (drF(ks)·hFacC(ks))`. Under a
+linear free surface that quantity is also read as the fractional freshwater
+dilution the surface tracer forcing applies in a step — but only where
+`dTtracerLev(ks) = deltaTFreeSurf`. `deltaTFreeSurf` defaults to `deltaTMom`,
+not `deltaTtracer` (`ini_parms.F:1068`, whose own comment calls that default
+"inappropriate" and advises `deltaTFreeSurf = deltaTtracer` under asynchronous
+stepping). Where they differ, the dilution per tracer step exceeds the bounded
+`f` by `dTtracerLev/deltaTFreeSurf`, so the bound is that much looser **on that
+reading only** — the volume reading, which is primary, stays exact.
+
+RUNOFF-040 qualified the records and deliberately did not change the bound.
+
+### Evidence
+RUNOFF-040 review A, round 1, measured and confirmed by review B and by the
+implementer. This project's `global_ocean.cs32x15` has `deltaTMom` = 1200
+against `deltaTtracer` = 86400 — a ratio of **72** — and escapes the trap only
+because its `data` sets `deltaTFreeSurf = 86400` explicitly; `lab_sea` has them
+equal. So **no enrolled case can see a mismatch**, which is why the exposure is
+documented rather than tested.
+
+### Scientific or engineering impact
+Missed detection, never a false refusal: the exposure is one-sided (only
+looser). A user in an asynchronous set-up that leaves `deltaTFreeSurf` at its
+default gets a dilution-reading bound up to ~72× weaker than the record implies,
+with nothing saying so in the run's own output.
+
+### Proposed action and acceptance
+**Both reviewers recommended against bounding with
+`MAX(deltaTFreeSurf, dTtracerLev(ks))`, and Arch accepted.** Reasons on the
+record: `deltaTFreeSurf` is the step `integr_continuity.F:221` integrates the
+free surface with, which is the bound's primary reading, so `MAX()` would make
+one constant stop having one physical meaning across configurations — the very
+property that justified a fixed header constant over a `data.rnf` parameter; the
+failure mode is missed detection in a self-announcing set-up, never a blocked
+user; and it would change a guard just approved on measured evidence for a case
+no test covers.
+
+The agreed action is a **report, not a bound change**: have `RNF_SUMMARY` print
+at `nIter0`, when `dTtracerLev(1) ≠ deltaTFreeSurf`, a line naming both steps
+and their ratio and stating that the dilution reading of `RNF_cellVolMax` is
+looser by that factor while the volume reading is unaffected. One `WRITE` in a
+routine that already prints the bound lines, no numerical change, visible in
+every `STDOUT`.
+
+Acceptance: the line appears in a run where the two differ and is absent where
+they are equal; it is enrolled in `refusal_check.py`'s existing `bounds_report`
+assertions, which every normal-end case receives, so it cannot go inert (LL-014);
+and the no-change experiments still match their references, since nothing
+numerical moves.
+
+## UNRESOLVED: the footprint sweep cannot see claims in .py, and that gap has now cost a stale figure
+
+**Date Identified**: 2026-10-07T02:15:00Z
+**Status**: Unresolved
+**UUID**: RUNOFF-042
+**Anchors**: tests/footprint_claim_sweep.py::tracked; tests/footprint_claim_sweep.py::<module>
+
+### Issue or research question
+`tests/footprint_claim_sweep.py` sets `SUFFIXES = (".md", ".rst", ".F", ".h")`,
+so it never scans `.py`. It therefore cannot see a footprint or figure claim in
+a test, a tool or a docstring — including its own fixtures, which is part of why
+the gap was left open.
+
+RUNOFF-030 carried this as a note on the explicit ground that it hid **no live
+false claim**. That ground no longer holds.
+
+### Evidence
+RUNOFF-040 review B, round 1, measured it: `tests/rnf/refusal_check.py:1530`
+still read "The four \"which bounds applied\" lines of `RNF_SUMMARY`, asserted
+on every normal-end case" after RUNOFF-040 added a fifth — contradicted by the
+file's own comment three lines below. Its twins in `docs/code_map.md:50` and
+`MITgcm/pkg/rnf/README.md:136` **were** caught and corrected by the sweep; this
+one survived precisely because the sweep does not scan `.py`. So the gap has
+produced a live stale figure, not a hypothetical one.
+
+Review B also measured in RUNOFF-030 that 41 footprint candidates sit in `.py`
+prose, **23 of them the sweep's own `MUST_MATCH`/`KEEP` fixtures**.
+
+### Scientific or engineering impact
+Bounded but real: a false claim in a test or tool is invisible to the mechanism
+built to catch exactly that class, and the project now has one measured instance
+of the class escaping. The direct risk is a stale assertion count or a wrong
+validity condition in a helper — RUNOFF-040 produced one of each.
+
+### Proposed action and acceptance
+Add `.py` to `SUFFIXES` and **exclude the sweep's own file**, without which
+triage floods with its 23 fixture lines (measured by review B). Expect the
+candidate count to rise; the figure is bound to a candidate signature in the
+records, so a changed count is a recorded measurement rather than drift.
+
+Acceptance: the `refusal_check.py:1530`-shaped claim is returned as a candidate
+by the sweep when reintroduced (demonstrate it failing, LL-009, since the whole
+point is that the current sweep cannot see it); `--self-test` still reports its
+full recall with `0` benign false positives; the sweep's own fixtures do not
+appear in triage; and the recorded figures are re-measured and re-bound to the
+new candidate.
+
+Note the standing decision this interacts with: the sweep is enrolled in **no**
+configured suite, so all its guards run only when someone invokes the procedure.
+Both RUNOFF-030 reviewers raised that and deferred to Arch; enrolling
+`--self-test` alone (exit 4, no triage noise) is one line in `esx/project.json`
+and would wire the alarm. **Decide it with this issue rather than carrying it a
+third time.**
