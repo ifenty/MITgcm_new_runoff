@@ -155,11 +155,21 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
   run ended normally with no message of any kind. The quantity bounded is the
   dimensionless `|runoff|·deltaTFreeSurf / (drF(ks)·hFacC(ks))`, so one
   constant serves every grid, resolution and time step, which is exactly what
-  the exf bound of 10⁻⁶ m/s could not do. The number is MITgcm's own
-  `hFacInf` = 0.2, the smaller of the two thresholds it sets on the size of
-  the surface cell (`set_defaults.F:258-259`, `PARAMS.h:762`). It is checked
-  on **every step**, because the target table is static but the flux series
-  is not. `RNF.h` carries the derivation, the value in m/s on each test grid,
+  the exf bound of 10⁻⁶ m/s could not do. The number is a deliberate share
+  with two legs, both properties of the ratio itself: it is exactly the
+  Courant number of the top-layer outflow the injection requires, so 0.2 is a
+  standard advective-CFL safety factor, and the model's own surface tracer
+  forcing is first order in it with relative error exactly its square, so 0.2
+  is where that error is 4%. It is 4–5× inside MITgcm's
+  `hFacInf`-to-`hFacSup` band (`set_defaults.F:258-259`, `PARAMS.h:762`) —
+  which bounds the *fraction*, not its per-step change, so 0.2 crosses
+  nothing. The thickness in the denominator is the **live** one, `hFacC`
+  being r\*-stretched at run time by `update_r_star.F:55-57`, so the enforced
+  limit is state-consistent and on an r\* grid moves with the state. It is
+  checked
+  on **every step**, because the target table is static but neither the flux
+  series nor the thickness is. `RNF.h` carries the derivation, the value in
+  m/s on each test grid with its reference and live bases,
   what a physically correct large river is on each, and what the bound does
   not cover — in particular that it runs *before* `xx_runoff` is added at
   `exf_getffields.F:531-534`, so neither package bound sees the controlled

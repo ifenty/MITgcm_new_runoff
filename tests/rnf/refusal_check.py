@@ -96,7 +96,9 @@ There are three kinds of case.
   must stay silent and the record must then be applied. It is the
   tightest run here that must still finish: it applies 5.50e-4 m/s against
   that bound's 5.5556e-4 m/s, where ``flux_at_source_max`` applies
-  3.21e-4 m/s, so it sits 1.7 times nearer the bound),
+  3.21e-4 m/s, so it sits 1.7 times nearer the bound. A margin that thin is
+  safe only because lab_sea is a linear free surface, so the thickness the
+  guard divides by never moves; see the case's own comment),
   ``cells_equal_dense`` (the one-source-per-cell file must
   reproduce the dense reference ``results/output.rnof_const.txt``),
   ``zero_flux_differs`` (the same run with every flux set to zero must NOT
@@ -448,6 +450,17 @@ def surface_bound(experiment_input="input"):
       (``model/src/ini_parms.F:1068``) and lab_sea's ``data`` does not
       set it. A ``data`` that did would make that default wrong, so
       this raises rather than return a stale figure.
+
+    **This is only valid on a linear free surface, which lab_sea is**
+    (``nonlinFreeSurf`` = 0, ``select_rStar`` = 0, as its own run
+    reports). The guard compares against the *live* ``hFacC``, and the
+    only run-time writer of ``hFacC`` is ``update_r_star.F:55-57``
+    (``hFacC = h0FacC*rStarFacC``), so with no r\\* the live thickness
+    stays the reference one for the whole run and the limit returned
+    here is the limit enforced at every step. On an r\\* grid it would
+    not be: 26% of cs32's target cells run more than 1% thinner than
+    their reference, so a caller that took this figure there would be
+    computing a limit the model does not enforce.
     """
     path = os.path.join(VERIF, EXPERIMENT, experiment_input, "data")
     with open(path) as fh:
@@ -1527,8 +1540,13 @@ def cases(data_pkg, data_exf, info=None):
     no_error = list(MESSAGES.values()) + ["fatal error(s)", "ABNORMAL END"]
     stdout_ok = ["pkg/rnf", "Sparse runoff (RNF) configuration >>> START",
                  PASSED]
-    # The four "which bounds applied" lines of RNF_SUMMARY, asserted on every
-    # normal-end case. Review B of correction round 2 found them unenrolled:
+    # The five "which bounds applied" lines of RNF_SUMMARY, asserted on every
+    # normal-end case. ("Four" until RUNOFF-040 added the per-cell line
+    # below; this comment went on saying four for a whole issue because the
+    # stale-figure sweep does not scan .py, which is the one route by which
+    # the twins in docs/code_map.md and pkg/rnf/README.md were caught and
+    # this one was not.)
+    # Review B of RUNOFF-030 correction round 2 found them unenrolled:
     # nothing observed them, so deleting the whole report would have failed
     # no case, and its own inertness argument cuts both ways -- the lines are
     # inert because nothing reads them. They exist so that a reader of
@@ -1647,6 +1665,17 @@ def cases(data_pkg, data_exf, info=None):
         # 3.21e-4 m/s, i.e. 0.578 of it -- so this case sits 1.7 times
         # nearer the bound. The witness, for scale, is 2.31 times OVER
         # the bound and a factor of 4 above flux_at_source_max.
+        #
+        # A MARGIN AS THIN AS 0.99 IS ONLY SAFE BECAUSE lab_sea IS A
+        # LINEAR FREE SURFACE (nonlinFreeSurf = 0, select_rStar = 0), so
+        # nothing updates hFacC at run time and the thickness the guard
+        # divides by is the reference 10 m at every step -- which is
+        # also why cell_above_vol_max can assert
+        # "top-layer thickness 1.00000000E+01 m" as a literal. Moving
+        # either case to an r* grid would void both: 26% of cs32's
+        # target cells run more than 1% thinner than their reference
+        # (measured), so this control would be REFUSED there. Size any
+        # future per-cell control from the live thickness.
         #
         # What this case does NOT do is pin the `.LE.` of the guard
         # against a `.LT.`, the way ptracer_name_max pins its length

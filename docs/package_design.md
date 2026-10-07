@@ -569,37 +569,91 @@ without NetCDF. `RNF_READPARMS`, called from `PACKAGES_READPARMS`
     (`model/src/integr_continuity.F:221`). With a linear free surface no
     volume moves and it is instead the fractional freshwater dilution the
     surface tracer forcing applies, where the model linearises the exact
-    `1/(1+f)` to `1-f` with relative error exactly `f²`. Being dimensionless
+    `1/(1+f)` to `1-f` with relative error exactly `f²` — the linear term
+    being `EmPmR·(salt − salt_EvPrRn)·mass2rUnit`
+    (`model/src/external_forcing_surf.F:310-316`).
+    **That second reading holds only where `dTtracerLev(ks)` =
+    `deltaTFreeSurf`.** They are equal in both test experiments but need not
+    be: `deltaTFreeSurf` defaults to `deltaTMom`, *not* to `deltaTtracer`
+    (`model/src/ini_parms.F:1068`, whose own comment calls that default
+    "inappropriate" and advises `deltaTFreeSurf = deltaTtracer` under
+    asynchronous stepping). cs32 has `deltaTMom` = 1200 against
+    `deltaTtracer` = 86400 and escapes the trap only by setting
+    `deltaTFreeSurf` = 86400 explicitly; on that ratio an asynchronously
+    stepped set-up that left the default would make the **dilution** reading
+    wrong by 72× while the **volume** reading stayed right. No enrolled case
+    can see a mismatch. Whether to bound with
+    `MAX(deltaTFreeSurf, dTtracerLev(ks))` is an open design question and is
+    deliberately not settled here. Being dimensionless
     is the whole point: **one** number serves every grid, resolution and time
     step, which is precisely what the exf rate bound of 10⁻⁶ m/s could not do.
     It belongs in `RNF_EXF_RUNOFF` because that is where `rA` (through
     `RNF_vflx`), the thickness and the step are all available and where the
     applied field exists.
-  - **Where 0.2 comes from.** MITgcm's own thresholds on the size of the
-    surface cell are `hFacInf` = 0.2 and `hFacSup` = 2.0
+  - **Where 0.2 comes from — read this before raising the constant.** Two
+    legs, both properties of `f` itself, and neither of them a threshold the
+    model enforces:
+    - **CFL.** The injected water has to leave the cell, and `f` is exactly
+      the Courant number of the top-layer outflow the injection requires:
+      `f ≤ 0.2` is `U·dt/dx ≤ 0.2` for the horizontal outflow `U` that
+      carries the added volume away. 0.2 is a standard advective-CFL safety
+      factor, a fifth of the stability limit.
+    - **Linearisation.** The surface tracer forcing is first order in `f`
+      with relative error exactly `f²`, so 0.2 is the share at which that
+      error is 4%; beyond it the model's own dilution term is no longer a
+      linearisation of anything.
+
+    Both legs say *deliberate share*, not *edge*. For scale, MITgcm's own
+    band on the surface-cell fraction is `hFacInf` = 0.2 to `hFacSup` = 2.0
     (`model/src/set_defaults.F:258-259`, documented at
     `model/inc/PARAMS.h:762` as "Threshold (inf and sup) for fraction size of
-    surface cell"), outside which `CALC_SURF_DR`
-    (`model/src/calc_surf_dr.F:92-98`) and `CALC_R_STAR`
-    (`model/src/calc_r_star.F:185-238`) warn. The smaller of the two
-    departures from `drF(ks)` that the model itself treats as remarkable is
-    `hFacInf` = 0.2, and that is taken as the limit on what a **single step**
-    of runoff may do: a step that moves the surface cell by more crosses the
-    model's own tolerance band before the free surface has a step in which to
-    respond, and at `f` = 0.2 the linearised dilution above is already 4%
-    wrong.
-  - **What it is on each grid** (measured): 5.5556·10⁻⁴ m/s on the lab_sea
-    target cell (`rA` = 3.112287·10¹⁰ m², `drF(1)` = 10 m,
-    `deltaTFreeSurf` = 3600 s), i.e. 1.729·10⁷ m³/s or 82 Amazons;
-    1.1574·10⁻⁴ m/s at **every** one of the 1189 target cells of
-    `cs32/input.rnof_sp_icedyn` (`drF(1)` = 50 m,
-    `deltaTFreeSurf` = 86400 s, and `hFacC(1)` measured 1.0 at all of them —
-    its `hFacMinDr` of 20 m would allow a thinner surface cell but no target
-    has one), which in m³/s is 1.62·10⁶ (7.7 Amazons) on the smallest target
-    cell, `rA` = 1.4019·10¹⁰ m², and 1.03·10⁷ (49 Amazons) on the median,
-    `rA` = 8.8743·10¹⁰ m²; and 1.6667·10⁻³ m/s on a
-    2 km cell (`rA` = 4·10⁶ m², `drF(1)` = 10 m, `deltaTFreeSurf` = 1200 s),
-    i.e. 6.67·10³ m³/s or 0.032 Amazons.
+    surface cell"). **Note what that band is and is not:** it bounds the
+    fraction itself, not its per-step change, and runoff *thickens* the
+    surface cell, so from a full cell — `hFacC` = 1.0, measured at every
+    target of both test grids — the band is first crossed at **+1.0**, at
+    `hFacSup`. **`f` = 0.2 crosses nothing**; it is 4–5× inside the band,
+    which is the margin the constant buys. An earlier version of this
+    paragraph read `hFacInf` as a bound on the per-step change and called 0.2
+    the edge of the band: wrong in both parts, caught independently by both
+    reviewers, and corrected here without changing the value.
+
+    Outside the band the model does not merely warn, and the two routines
+    differ: `CALC_R_STAR` warns and then **stops** on the thin side
+    (`model/src/calc_r_star.F:201-242`), while `CALC_SURF_DR`'s thin-side
+    `STOP` is commented out (`model/src/calc_surf_dr.F:105-108`) and it
+    clamps the surface to `Rmin_surf` instead.
+  - **What it is on each grid** (measured). **The limit is not a constant of
+    the grid:** it tracks the live `hFacC`, so on an r\* grid it moves with
+    the state (see "the thickness is the live one" below). Each figure says
+    which basis it is on.
+    - lab_sea: 5.5556·10⁻⁴ m/s on the target cell
+      (`rA` = 3.112287·10¹⁰ m², `drF(1)` = 10 m,
+      `deltaTFreeSurf` = 3600 s), i.e. 1.729·10⁷ m³/s or 82 Amazons.
+      Reference and live agree exactly, for all time: lab_sea is a **linear**
+      free surface (`nonlinFreeSurf` = 0, `select_rStar` = 0, as its own run
+      reports), so nothing updates `hFacC` after initialisation.
+    - cs32 (`drF(1)` = 50 m, `deltaTFreeSurf` = 86400 s) is an r\* grid
+      (`nonlinFreeSurf` = 4, `select_rStar` = 2), so it needs two figures.
+      **Reference basis:** 1.1574·10⁻⁴ m/s at every one of the 1189 target
+      cells of `input.rnof_sp_icedyn`, `h0FacC` being 1.0 at all of them in
+      the init dump (its `hFacMinDr` of 20 m would allow a thinner surface
+      cell but no target has one); in m³/s, 1.62·10⁶ (7.7 Amazons) on the
+      smallest target cell, `rA` = 1.4019·10¹⁰ m², and 1.03·10⁷ (49 Amazons)
+      on the median, `rA` = 8.8743·10¹⁰ m².
+      **Live basis, which is what is actually enforced**, and which applies
+      from `nIter0` because `INITIALISE_VARIA` updates r\* before the first
+      step (`initialise_varia.F:302,307`): `rStarFacC` over those targets
+      spans **0.8787 to 0.99956**, the thickness 43.94 to 49.98 m and the
+      enforced limit **1.0171·10⁻⁴ to 1.1569·10⁻⁴ m/s**. **309 of the 1189
+      targets (26%)** sit more than 1% below the reference figure and **18
+      (1.5%)** more than 10% below. Measured from the committed run's own
+      `Depth.data` and `Eta.0000036010.data` with `CALC_R_STAR`'s own formula
+      (`calc_r_star.F:103-105`), agreeing with review B's independent
+      measurement and with review A's executed cs32 refusal, which printed
+      `top-layer thickness 4.69852227E+01 m` and `limit 1.08762090E-04`.
+    - a 2 km cell (`rA` = 4·10⁶ m², `drF(1)` = 10 m,
+      `deltaTFreeSurf` = 1200 s): 1.6667·10⁻³ m/s, i.e. 6.67·10³ m³/s or
+      0.032 Amazons.
   - **A physically correct large river, for comparison.** The Amazon's
     2.1·10⁵ m³/s is `f` = 2.43·10⁻³ on the lab_sea cell (82 times under the
     bound) and `f` = 4.09·10⁻³ on the median cs32 cell (49 times under; 7.7
@@ -609,11 +663,18 @@ without NetCDF. `RNF_READPARMS`, called from `PACKAGES_READPARMS`
     one step is past `hFacSup` within the first step and is not a
     configuration the model can integrate. What it says is that a 2 km grid
     must spread the Amazon over at least 32 cells, which its ~200 km mouth is
-    (about 100), and spreading a source over its real cells is what
-    `target_fraction` exists for. Every committed sparse oracle is far below:
+    (about 100; review A's note, recorded: that is defensible for the full
+    estuary but thin on the narrowest reading, a ~50 km north channel being
+    only ~25 cells, below the 32 needed), and spreading a source over its real
+    cells is what `target_fraction` exists for.
+    Every committed sparse oracle is far below:
     the largest per-cell `f` over every record of every one of them is
-    6.72·10⁻⁴, on cs32 — a margin of 297 — and the lab_sea files reach
-    3.42·10⁻⁴, a margin of 585.
+    6.72·10⁻⁴, on cs32 — a margin of 297 — but **that pair is on the
+    reference basis**. On the live thickness the same cs32 cell (5903) is
+    `f` = 7.16·10⁻⁴ and the margin **279.5** (measured here, and the figure
+    review A measured at the decisive cell at `nIter0`). The lab_sea files
+    reach 3.42·10⁻⁴, a margin of 585, on both bases at once, that grid being a
+    linear free surface.
   - **Every step, not only `nIter0`.** The target table is static, so a
     collapse of targets is already visible at `nIter0`; the flux series is
     not, so a file whose record 1 is innocent and whose record 500 is not
@@ -655,10 +716,51 @@ without NetCDF. `RNF_READPARMS`, called from `PACKAGES_READPARMS`
     wrong source from N collapsed ones; it names the **cell**, which is what
     locates a collapsed target. It is blind in proportion to
     `drF(ks)·hFacC/deltaTFreeSurf`, so a collapse onto a thick top layer with
-    a short step gets further. And the thickness it uses is the reference one;
-    with `select_rStar` the live thickness is `rStarFacC` times that, within
-    `[hFacInf,hFacSup]` of it. `RNF.h` carries the same list beside the
+    a short step gets further. `RNF.h` carries the same list beside the
     constant.
+  - **The thickness is the live one** — a strength, not a caveat, with two
+    consequences the record has to state. `_hFacC` resolves to `hFacC`
+    (`model/inc/HFACC_MACROS.h:37-39`, the macro also adapting to the
+    reduced-memory `HFACC_*` options), and the only run-time writer of
+    `hFacC` is `model/src/update_r_star.F:55-57`, which sets
+    `hFacC = h0FacC·rStarFacC`. So:
+    - With `select_rStar` the guard enforces the r\*-stretched thickness of
+      the **current state**, with no `rStarFacC` factor left to apply. But
+      that limit is **not clipped**: `calc_r_star.F:185-198` only *counts*
+      cells outside `[hFacInf, hFacSup]`, so the limit drifts with the state
+      and **one file can pass at `nIter0` and be refused later**. That
+      mid-run abort is deliberate: an init-only check would be unsound in the
+      numerator (the flux series is not static) *and* in the denominator (the
+      thickness is not either), and bounding by `h0FacC·hFacInf` instead
+      would be 5× stricter than the physics above and would refuse
+      legitimate configurations at init.
+    - With `nonlinFreeSurf` and `select_rStar` = 0 the **opposite** holds:
+      `CALC_SURF_DR` writes `hFac_surfC` and *not* `hFacC`
+      (`model/src/calc_surf_dr.F:120-122`), so there the guard uses the
+      reference thickness and **under**-states the actual departure. No test
+      experiment runs that combination, so it is unmeasured here.
+    - Under a linear free surface nothing updates `hFacC` at all and live
+      equals reference for the whole run. That is lab_sea, and it is the
+      premise the 0.99-of-the-bound control case relies on.
+  - **Open points, recorded rather than closed** (review A and review B,
+    correction round 2):
+    - The NaN arm is correct but **unreachable on a supported input**:
+      `RNF_NC_READ_FLUX` refuses a non-finite flux first and `rA` > 0, so
+      nothing can deliver a NaN to the comparison. It is defence in depth
+      whose validity rests on the optfile — `-ffinite-math-only` would
+      silently void it *and* the pre-existing `rnf_init_fixed.F:728-737`
+      tests of the same shape. The build measured here is `-O0` with no
+      fast-math.
+    - **Granularity:** neither enrolled case separates `RNF_cellVolMax` from
+      any value in `(0.99·limit, limit]`, so a mutant that tightened the
+      bound by under 1% would pass both. The tenfold-weakening mutant is
+      what the cases do catch.
+    - The `GLOBAL_SUM_INT` is now unconditional for every `useRNF` run,
+      including one with no target on any tile, and is unmeasured beyond 2
+      processes.
+    - `RNF_tgtK` is fixed at init while the guard re-evaluates `kSurfC` each
+      step; the two could diverge under `pkg/shelfice` remeshing. Not
+      reachable today, since a shelfice target is refused at init.
   - **Measured, both directions** (`tests/rnf/refusal_check.py`):
     `cell_above_vol_max` is the witness above and is refused, naming the cell
     `(i,j,bi,bj) = (3,3,2,1)` with `XC,YC` = 305°E, 51°N, `value`
@@ -671,6 +773,14 @@ without NetCDF. `RNF_READPARMS`, called from `PACKAGES_READPARMS`
     3.21·10⁻⁴ m/s, i.e. 0.578 of it, so it sits **1.7** times nearer the
     bound — while the witness is 2.31 times *over* it and a factor of 4 above
     `flux_at_source_max`.
+    **The 0.99 margin, and `cell_above_vol_max`'s asserted
+    `top-layer thickness 1.00000000E+01 m`, are safe only because lab_sea is
+    a linear free surface**, so `hFacC` is never updated at run time and the
+    live thickness is the reference one for the whole run. On an r\* grid the
+    same control would not be sound: 26% of cs32's target cells have
+    `rStarFacC` below 0.99 (measured), so a 0.99-of-the-reference-limit
+    control placed there would be **refused**. Any future per-cell control on
+    an r\* grid has to be sized from the live thickness, not the reference.
     What `cell_at_vol_max` does **not** do is pin the `.LE.` against
     a `.LT.`, the way `ptracer_name_max` pins its length test: a control
     exactly at the bound would have to land on the last bit of a product of

@@ -266,19 +266,40 @@ This is the scientific contract agents read. Executable paths and commands are i
     change of the top-cell volume in one step
     (`model/src/integr_continuity.F:221`); with a linear free surface it is
     the fractional dilution the surface tracer forcing applies, where the
-    model linearises `1/(1+f)` to `1-f` with relative error exactly `f²`.
-    The number is MITgcm's own `hFacInf` = 0.2, the smaller of the two
-    thresholds it puts on the size of the surface cell
-    (`model/src/set_defaults.F:258-259`, `model/inc/PARAMS.h:762`), outside
-    which `CALC_SURF_DR` and `CALC_R_STAR` warn: a step that moves the
-    surface cell by more crosses the model's own tolerance band before the
-    free surface has a step in which to respond. On the lab_sea target cell
-    that is 5.5556e-4 m/s (82 Amazons), at every cs32 target cell 1.1574e-4
-    m/s (7.7 Amazons on the smallest of them, 49 on the median), and on a
-    2 km cell with a 10 m top layer and a 1200 s step
+    model linearises `1/(1+f)` to `1-f` with relative error exactly `f²`
+    (`model/src/external_forcing_surf.F:310-316`) — a reading that holds
+    **only where `dTtracerLev(ks)` = `deltaTFreeSurf`**, which both test
+    experiments satisfy but which is not the default, `deltaTFreeSurf`
+    falling back to `deltaTMom` (`model/src/ini_parms.F:1068`); cs32's own
+    ratio of the two is 72.
+    The number 0.2 is a deliberate share with two legs, both properties of
+    the ratio itself: it is exactly the Courant number of the top-layer
+    outflow the injection requires, so 0.2 is a standard advective-CFL safety
+    factor; and the linearisation error above is exactly `f²`, so 0.2 is
+    where it reaches 4%. For scale it is 4–5× inside MITgcm's
+    `hFacInf`-to-`hFacSup` band (`model/src/set_defaults.F:258-259`,
+    `model/inc/PARAMS.h:762`), but that band bounds the **fraction**, not its
+    per-step change, and runoff *thickens* the cell, so from a full cell the
+    band is first crossed at +1.0 and `f` = 0.2 crosses nothing.
+    The thickness in the denominator is the **live** one: `_hFacC` resolves to
+    `hFacC`, whose only run-time writer is `model/src/update_r_star.F:55-57`
+    (`hFacC = h0FacC·rStarFacC`). So the guard is state-consistent, and on an
+    r\* grid the limit moves with the state — one file can pass at `nIter0`
+    and be refused later, deliberately. With `nonlinFreeSurf` and
+    `select_rStar` = 0 the reverse holds, `CALC_SURF_DR` writing `hFac_surfC`
+    and not `hFacC`, so there the guard under-states the departure.
+    On the lab_sea target cell the limit
+    is 5.5556e-4 m/s (82 Amazons), where reference and live agree because
+    that grid is a linear free surface. On cs32, an r\* grid, the
+    reference-basis figure is 1.1574e-4 m/s at every target (7.7 Amazons on
+    the smallest of them, 49 on the median) while the live limit actually
+    enforced spans 1.0171e-4 to 1.1569e-4 m/s, 26% of targets being more than
+    1% below the reference. On a
+    2 km cell with a 10 m top layer and a 1200 s step it is
     1.6667e-3 m/s, i.e. 6.67e3 m³/s — so a 2 km grid must spread an Amazon
     over at least 32 cells, which its ~200 km mouth is. Every committed
-    sparse oracle is at most 6.72e-4 of a cell per step, a margin of 297.
+    sparse oracle is at most 6.72e-4 of a cell per step on the reference
+    basis, a margin of 297, or 7.16e-4 and 279.5 on the live one.
     **What it does not cover:** it is per cell and per step, so a sustained
     flux just under it is not certified; it bounds magnitude only, not the
     sign nor the temperature, salinity and tracers the water carries; and it
