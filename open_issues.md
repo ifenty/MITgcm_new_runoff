@@ -669,33 +669,6 @@ Low and purely navigational, but of exactly the kind this project keeps paying f
 ### Proposed action and acceptance
 Add `brief.py` to the Framework-routes table with its inputs (the issue's orientation, the sealed report, the design file, `--sweep-symbol`), its refusal condition (an unknown ESX command or flag, introspected from argparse including subcommands), and its output. Acceptance: `audit.py` still PASS, the map names the refusal so a blocked agent can find it, and the change is made when no review is in flight so it does not strand a seal. Pairs naturally with RUNOFF-026 (documentation) or with the next issue that edits the map for its own reasons.
 
-## UNRESOLVED: no per-cell bound on the applied runoff field after the exf relaxation
-
-**Date Identified**: 2026-10-06T13:30:00Z
-**Status**: Unresolved
-**UUID**: RUNOFF-040
-**Anchors**: MITgcm/pkg/rnf/rnf_exf_runoff.F::<module>; MITgcm/pkg/rnf/RNF.h::<module>
-
-### Issue or research question
-RUNOFF-030 moved the guard on runoff magnitude from a per-cell rate bound in `EXF_CHECK_RANGE` (1e-6 m/s, which could not serve every grid) to a per-source volume bound in `pkg/rnf` (`RNF_srcFluxMax` = 1e7 m³/s, checked on every record as it is read). That trade was judged correct in kind by both reviewers, and the sparse path is better guarded after it than before. But it leaves one error class with no check at all: the **aggregate per-cell magnitude of the applied field**.
-
-### Evidence
-Measured by review B during RUNOFF-030 (2026-10-06), not argued. Four sources each carrying **exactly** `RNF_srcFluxMax`, with every target entry collapsed onto one lab_sea cell and `target_cell_area`/`lon`/`lat` moved with them so no area or coordinate check could fire, fractions left summing to 1 per source: the run **ends normally** with `useExfCheckRange` at its default, prints **zero** `EXF WARNING` lines, and applies **1.285228e-3 m/s — 1285× the relaxed bound**. The volume is applied, not merely accepted: the model's own `RNF_INIT_VARIA` flux sums read `4.000000000000E+07` over both the sources and the targets, relative difference 0. Its control — the same file with one source at 2× the bound — **is** refused in `RNF_NC_READ_ONE`, which shows the per-source guard is live in exactly that file shape and only the aggregate escapes it. Arch reproduced the arithmetic independently: 4e7 / 3.112287377e10 = 1.285228e-3.
-
-Two things make this more than theoretical. The route is a converter index bug collapsing sources onto one cell, which is on this project's own highest-risk list, and before RUNOFF-030 the per-cell bound caught exactly that at `nIter0` for any realistic river. And N is not small: the stated use case is 10⁵–10⁶ sources.
-
-Separately, at the 2 km target resolution `RNF_srcFluxMax` is not a per-cell safety bound at all — it admits 2.5 m/s into one cell where a *physically correct* Amazon is 5.25e-2 m/s, a factor of 48. It is a file-scale unit-error filter, which is how the records now describe it.
-
-### Scientific or engineering impact
-A silently wrong applied field on the configuration the package exists to serve. The old bound was the wrong shape but it did catch this; nothing does now.
-
-**Implemented 2026-10-06.** The present tense above describes the code *before* this change: `RNF_cellVolMax` = 0.2 in `RNF.h`, enforced in `RNF_EXF_RUNOFF` on every step, now refuses a cell whose one-step runoff exceeds that share of its top-layer volume, naming the cell, the applied value and the limit. Review B's four-source witness was rebuilt from the description in the Evidence section and confirmed on the committed RUNOFF-030 build first (normal end, exit 0, zero `EXF WARNING` lines, 1.2852284e-3 m/s at one cell); it is now the enrolled refusal `cell_above_vol_max`, with `cell_at_vol_max` at 0.99 of the bound as its control. The derivation, the figures on each grid and what the bound does not cover are in `RNF.h` and in [package design](docs/package_design.md) decision 2. Nothing in the "Proposed action and acceptance" paragraph below was changed.
-
-### Proposed action and acceptance
-**Not a parameter.** Review B's judgment, which Arch accepted and which the design records: a fixed header constant is the right mechanism for the per-source bound, a `data.rnf` scalar would be a cost with no benefit, and the remaining gap cannot be closed by a different *number* — it needs a different *shape* of check. The grid-independent form is the volume added per step as a fraction of the target cell's top-layer volume, which requires `rA`, the top-layer thickness and `deltaT`, so it belongs in `RNF_EXF_RUNOFF` where all three are available and the applied field exists.
-
-Acceptance: review B's four-source aggregate file is **refused**, naming the cell and the applied value; a physically plausible configuration on each test grid is not; the figure chosen is derived from the physics and stated as a fraction of the cell's top-layer volume per step rather than as a rate; and the case is enrolled in `refusal_check.py` with a negative control, since the whole point is that the current suite cannot see this. Note the control route under `ALLOW_CTRL` + `ALLOW_GENTIM2D_CONTROL` (`xx_runoff` added at `exf_getffields.F:531-534`, after `RNF_EXF_RUNOFF` and before the check) would also be covered by a check in the applied field, where `RNF_srcFluxMax` cannot reach it.
-
 ## UNRESOLVED: RNF_SUMMARY does not report a dTtracerLev/deltaTFreeSurf mismatch
 
 **Date Identified**: 2026-10-07T02:10:00Z
