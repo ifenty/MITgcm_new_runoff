@@ -1539,6 +1539,31 @@ def judge(case, run_dir, result, control=None):
         # one that is present has to see the perturbation on its own.
         # Measured today: volume 1.472e-07, heat 1.676e-07, salt
         # 1.637e-07, tracer 1.414e-07, all five orders above RTOL.
+        #
+        # **What this guards against, and what it cannot.** It is a guard
+        # against a later edit, not against a state a correct run can
+        # reach, and the structure says why. Scaling one source's
+        # fractions by (1+eps) leaves every right-hand side untouched --
+        # they are sums over sources and do not involve fractions at all
+        # -- while the target-side sum gains eps times that source's
+        # contribution. So each leg's residual is eps times **the
+        # perturbed source's share of that leg's own total**: not one
+        # common factor, because the shares differ per property, but four
+        # figures that move together. Measured against that prediction
+        # on the lab_sea case: volume 1.4719e-07, heat 1.6975e-07, salt
+        # 1.6584e-07, tracer 1.4202e-07, within 1.2x of each other and
+        # each matching the residual above. No real run can therefore
+        # leave one leg at round-off while the others discriminate; the
+        # only way to reach that state is to break a leg, which is what
+        # the must-fail demonstration substitutes.
+        #
+        # The one precondition is that the perturbed source carries a
+        # **non-zero value of every property**, or its share of that
+        # leg's total is zero and the leg legitimately does not move.
+        # :func:`series` guarantees it today (salt >= 0.1, tracer >= 1.0,
+        # temperature >= 2.0 on every source and record), and the
+        # presence requirement above catches the related case where a
+        # whole leg's source sum is zero.
         blind = [c for c in CLOSURES
                  if c in data["worst"] and data["worst"][c][0] <= RTOL]
         result["fracsum_blind"] = blind
