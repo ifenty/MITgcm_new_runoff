@@ -1030,3 +1030,112 @@ Correction rounds spent on coordinator-authored premises go to zero. The
 qualitative invariant: everything in a brief is either measured by the
 coordinator, or attributed to the agent that measured it, and nothing is stated
 as exhaustive without a check.
+
+## 🔴 PROPOSED: a footer-less consultation turn is re-flagged forever, on every later iteration
+
+**Date Identified**: 2026-10-08  14:05
+**Status**: Proposed
+**UUID**: TEAM-GATE-CONSULTATION-NOTICE-PERMANENT-001
+**Category**: workflow_integrity
+**Severity**: Medium
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
+**Anchors**: tools/esx/loop_gate.py:defective_completions; tools/esx/agent_runtime.py:stop_record
+
+### Issue
+
+`defective_completions` suppresses a deliberately footer-less consultation turn
+only **inside the iteration that held it**. From the next iteration onward the
+same record is reported again, as an uncaptured completion of an unrelated
+issue, and it can never clear.
+
+The mechanism is two lines of the same method working against each other:
+
+- A record with no footer carries no issue of its own, so the filter
+  `if issue not in (None, start['id'])` admits it to **every** iteration.
+- `reported` — the set that suppresses it — is built from the records that
+  survived that same filter, so the agent's superseding `completed` records are
+  dropped as soon as they name their own, now closed, issue.
+
+So the suppression holds for exactly one iteration and then inverts.
+
+### Evidence
+
+Measured on the live gate just now, active iteration RUNOFF-042:
+
+```
+flagged: [('richard', 'a9005fb2c148c1ee4', 0,
+           'missing, malformed, or mismatched structured footer')]
+```
+
+That agent's six dispatch records:
+
+```
+completed   RUNOFF-030   round 1
+completed   RUNOFF-030   round 2
+completed   RUNOFF-030   round 3
+incomplete  None         round 0     <- flagged
+completed   RUNOFF-030   round 4
+completed   RUNOFF-030   round 5
+```
+
+The flagged record is `9e2902f4bde24a24bbe90661c5b4ae4e`, dated
+2026-10-06T14:48:26Z. Its saved report ends: *"No suite run, no orientation, no
+footer, per your instruction; my round-3 evidence 36f03c9d stands."* It is the
+RUNOFF-030 diagnosis consultation that corrected Arch's widened-file count from
+4 to 11 — its content was consumed and acted on, and RUNOFF-030 closed with this
+same agent approving. Nothing about it is uncaptured.
+
+RUNOFF-030's own iteration suppressed it correctly, which is what
+`TEAM-GATE-DEFECT-NOTICE-NOT-SUPERSEDED-001` fixed. **Every iteration since, and
+every one to come, re-reports it.** It fired on RUNOFF-040, RUNOFF-016 and now
+RUNOFF-042.
+
+### Potential Impact
+
+This is the precise failure mode the prior fix's own docstring names as its
+reason for existing: *"a notice that cannot clear teaches the operator to read
+past it, and the next real one is skipped too."* The notice is now permanent, so
+it trains exactly that. The prescribed remedy makes it worse: it tells Arch to
+resume a **closed** issue's reviewer and ask it to re-emit a footer for an issue
+it never reviewed — a wasted agent turn at best, and at worst a reviewer
+identity attached to the wrong iteration.
+
+The cost is also asymmetric in the dangerous direction. A real uncaptured
+completion costs a reviewer's whole round (RUNOFF-013 lost four), and it arrives
+in the same sentence as a notice the operator has learned is noise.
+
+### Proposed Fix
+
+A record with neither `issue_id` nor `iteration_timestamp` belongs to no
+iteration, so it must not be matched against the active one. Either:
+
+- admit it only to the iteration that was active at its `ts`, which is
+  recoverable from `loop_history.jsonl`; or
+- when a broken record carries no issue of its own, build `reported` from that
+  agent's whole dispatch history rather than from the filtered slice — a later
+  `completed` record on **any** issue proves the agent reported.
+
+The second is one line and matches the existing intent. The first is more
+correct and would also stop such a record being counted toward an unrelated
+iteration's rejection streak, which is worth checking for the same bug.
+
+Consider also having `agent_runtime` stamp a consultation turn with the issue
+and iteration that requested it, even when the brief forbids a footer. The
+capture gate cannot distinguish "instructed to produce no footer" from
+"malformed footer" today, and that ambiguity is the root of both this issue and
+its predecessor.
+
+### Acceptance Criteria
+
+The notice does not fire for `a9005fb2c148c1ee4` on the active iteration, and
+**does** still fire for a footer-less record whose agent never reported again —
+demonstrated by constructing that case and showing it flagged (LL-009), not by
+asserting the branch is intact. A guard in `tests/esx/test_framework_fixes.py`
+covers both directions, because the suppression and the alarm are the same
+predicate and a fix that silences one silences the other.
+
+### Expected Effect
+
+An uncaptured-completion notice means something again: it appears only when an
+agent's work is genuinely unavailable to closeout, so reading it is worthwhile.
+Measured as zero standing notices across iterations with no defective turn.
