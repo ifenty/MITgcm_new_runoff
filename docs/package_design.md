@@ -891,7 +891,15 @@ temperature still enter at `θ`.
 **Consequence for issues.** RUNOFF-004 implements `RNF_EXF_RUNOFF` and the
 refusals; RUNOFF-040 adds the per-cell magnitude refusal to that same routine. RUNOFF-014 tests branches N, L and U with unchanged downstream code.
 RUNOFF-016 must use the `rhoConstFresh/rhoConst` factor when it compares model
-volume with source flux. RUNOFF-017 gains the refusals above, the scale-factor
+volume with source flux. `tests/rnf/budget_check.py` does not need it, because it
+compares the **applied volume flux field** (`RNF_vflx`, dumped as `EXFroff`,
+m/s) with the source flux rather than the model's volume, and that comparison is
+in volume units on both sides: `Σ_c RNF_vflx(c)·rA(c) = Σ_s flux_s`, measured at
+0.0 relative. The factor does enter its three property closures, as a single
+`rhoConstFresh` (the mass flux the properties are weighted by); `rhoConst`
+enters only through `mass2rUnit`, which it reads from the run's parameter dump.
+A budget against the model's **volume** -- i.e. against the free surface -- is
+still unwritten and is where this factor would apply. RUNOFF-017 gains the refusals above, the scale-factor
 one included. RUNOFF-026 states that exf input scaling is not applied. RUNOFF-024
 tests that both ice packages receive sparse runoff through the exf array.
 RUNOFF-011 must give every testbed an exf build: `isomip` and
@@ -1102,8 +1110,16 @@ compare it with the package heat diagnostic of the sparse run.
 **Consequence for issues.** RUNOFF-013 implements these terms; its acceptance
 against the cs32 `input.seaice` oracle has to be restricted to ice-free runoff
 cells or replaced by the cell-by-cell check. RUNOFF-014 tests each table row.
-RUNOFF-016 checks `(mT)` and `(mS)` against `rhoConstFresh·Σ flux·frac·X`, in
-the sum over time when forcing is inside Adams-Bashforth. RUNOFF-022 adds a
+RUNOFF-016 checks `(mT)` and `(mS)` against `rhoConstFresh·Σ flux·frac·X`.
+It does **not** need the sum over time that this paragraph expected for forcing
+inside Adams-Bashforth: `tests/rnf/budget_check.py` reads the `RNFgT`/`RNFgS`
+diagnostics where `RNF_TENDENCY_APPLY_*` fills them, upstream of `gtForc` and of
+the extrapolation, so the closure is per record and independent of the scheme.
+Measured: two runs differing only in `tracForcingOutAB` (1 against 0) give
+bitwise identical volume, salt and tracer residuals. Its heat sum runs over the
+sources whose temperature is **present** in every record used, which is the
+restriction the "Missing temperature" paragraph states; omitting it breaks the
+closure by 1.9e-1. RUNOFF-022 adds a
 restart in synchronous branch N across a record boundary. RUNOFF-024 records
 the unscaled heat under ice and the inherited `temp_EvPrRn` residual.
 RUNOFF-017 gains the refusal of a synchronous restart before the first record.
@@ -1164,7 +1180,12 @@ count it twice; `RNF_CHECK` warns when both are active.
 
 **Consequence for issues.** RUNOFF-008 is replaced by this decision and can be
 closed into RUNOFF-013 or a tracer issue of its own. RUNOFF-016 checks tracer
-budgets with the density factor. RUNOFF-017 gains the unmatched-name and
+budgets with the density factor: `tests/rnf/budget_check.py` closes
+`Σ_c (mC_n)(c)·rA(c) = rhoConstFresh·Σ_s flux_s·C_{s,n}` at 2.079e-16 relative,
+which is the tracer term's first numerical oracle. It runs on **one** tracer on
+lab_sea only (`PTRACERS_num = 1` there; cs32 does not compile pkg/ptracers), so
+the `RNF_trPtr` mapping of several runoff tracers onto several ptracers is still
+unmeasured. RUNOFF-017 gains the unmatched-name and
 ptracers-off refusals. RUNOFF-029 covers tracer series in every time mode.
 
 ## Decision 5: target level and cavities
@@ -1462,7 +1483,11 @@ exf keeps writing its own `runoff` statistics only when `runofffile` is set
 output in the monitor block.
 
 **Consequence for issues.** RUNOFF-015 implements this list. RUNOFF-016 reads
-the monitor sums and diagnostics. RUNOFF-022 needs no pickup file and tests the
+the **diagnostics** of the applied terms (`RNFgT`, `RNFgS`, `RNFtrNN`, the three
+RUNOFF-013 registered) and the exf `EXFroff`; it does **not** read the monitor
+sums, which do not exist yet, and it did not need them. `tests/rnf/budget_check.py`
+is the only reader of `RNFtrNN`, so that diagnostic's fill is observed by it
+alone. RUNOFF-022 needs no pickup file and tests the
 restart of the record state.
 
 ## Decision 9: TAF and adjoint

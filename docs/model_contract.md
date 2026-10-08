@@ -21,10 +21,19 @@
 > tendency terms at the target level (`rnf_tendency_apply.F`), with the
 > diagnostics of those terms (`rnf_diagnostics_init.F`) and the refusal of
 > a tracer name that matches no ptracer.
+> **Measured (RUNOFF-016):** the four budget closures of "Invariants" below —
+> volume, heat, salt and each tracer — summed over the domain at every record
+> a run applies, by `tests/rnf/budget_check.py`. That is a test and not a
+> change to this package: no model code was touched for it. It is the first
+> numerical oracle the tracer term has had. Its own limits are in
+> [the qualification matrix](verification_matrix.md): one tracer on lab_sea
+> only, and `nonlinFreeSurf = 0` in every case, so the closure is not measured
+> in branch N, on r\*, or with a real freshwater flux.
 > Not implemented: `yearly` *sampling*
 > (one record per calendar year) is refused rather than mapped, because exf
-> has no such mode; the budget checks over time and over the domain
-> (RUNOFF-016); the input-only diagnostics and the monitor (RUNOFF-015);
+> has no such mode; the budget closure **in the sum over time** rather than
+> per record, and in the nonlinear-free-surface configurations just named
+> (both RUNOFF-016); the input-only diagnostics and the monitor (RUNOFF-015);
 > and the `addMass` path for interior and under-shelf targets (RUNOFF-025).
 > The source routines and their tests are
 > listed in [the code map](code_map.md), the tests and their limits in
@@ -310,14 +319,49 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
 
 ### Invariants
 
-- Total applied volume flux, `Σ runoff·rA`, equals `Σ_s flux_s(t)` to the fraction
-  tolerance (1e-6 relative). The reader does not renormalize fractions; the file's
-  fractions are used as stored, and the checker and the init check bound the error.
+- Total applied volume flux, `Σ runoff·rA`, equals `Σ_s flux_s(t)`. Measured, the
+  two agree **exactly** — 0.0 relative, on lab_sea and on cs32, single process and
+  MPI, at every record a run applies (RUNOFF-016) — because the fractions of each
+  source sum to 1 and the reader uses them as stored: it does not renormalize
+  them. What is bounded rather than exact is the **input**. `RNF_fracTol`
+  (`rnf_init_fixed.F`) is how far a file whose fraction sums are *not* 1 may move
+  the total and still be accepted by the checker and the init check; its value is
+  1e-6. A measured residual anywhere near that bound therefore means the file,
+  not the model, and the invariant above is **not** stated to that tolerance.
 - The model carries runoff as a mass flux, `rhoConstFresh · runoff`, and converts
   it back to volume with `rhoConst`. The model volume therefore grows by
-  `Σ_s flux_s · rhoConstFresh / rhoConst`, and heat, salt and tracer input are
-  `rhoConstFresh · Σ_s flux_s · frac · X_s` in mass terms. Budget checks use
-  these forms.
+  `Σ_s flux_s · rhoConstFresh / rhoConst`. Per target cell the heat, salt and
+  tracer input are `rhoConstFresh · Σ_s flux_s · frac_{s,c} · X_s` in mass terms,
+  so **summed over all target cells of all tiles and processes**, where the
+  fractions of each source sum to 1, the input is `rhoConstFresh · Σ_s flux_s·X_s`
+  — with one restriction that is not optional: the heat sum runs over the sources
+  whose temperature is **present** in every record used, because a source whose
+  temperature is missing is in neither `(mT)` nor `m_T` and enters at the
+  reference temperature (§Temperature, salinity and tracers). Summing heat over
+  all sources instead is not a small error: measured on a case where one source of
+  four has no temperature, it breaks the closure by 1.9e-1 relative.
+- Those four sums — volume, heat, salt and each tracer — are what
+  `tests/rnf/budget_check.py` closes, for every record a run applies, against the
+  source series of the file. It sums over every cell of the global layout, not
+  only over the cells the file names, so water delivered elsewhere enters the sum. Worst residuals measured (RUNOFF-016): volume 0.0 on
+  both grids; heat 3.353e-16 (lab_sea, 1 and 2 processes) and 1.444e-16 (cs32, 1
+  and 4 processes); salt 2.107e-16 on both; tracer 2.079e-16 (lab_sea only, since
+  cs32 does not compile pkg/ptracers). The closure is held to round-off and not
+  bitwise, because dividing a flux by a cell area and multiplying it back is not
+  exact in floating point.
+- A **permutation** of one source's fractions across its own target cells is
+  invisible to all four of those sums, by construction and not by accident:
+  `Σ_c frac_{s,c}` is 1 whichever cell holds which fraction. Measured: every
+  residual is bitwise unchanged by such a permutation while the per-cell
+  comparison sees 3.3e-1. A sum over targets is therefore not the instrument for a
+  misplaced target; the cell-by-cell comparisons are
+  (`tests/rnf/applied_field_check.py`, `tests/rnf/budget_check.py`'s own per-cell
+  criterion). What a sum over targets does see, and nothing else does, is a total
+  that is wrong while every cell is individually right — for example a source
+  whose fractions sum to `1 + 5e-7`, which is inside `RNF_fracTol` and so is
+  accepted by the input check and does not even make `RNF_INIT_VARIA` warn:
+  measured, the four closures then miss by 1.4e-7 to 1.7e-7 while the per-cell
+  comparison stays at round-off.
 - Results are independent of the tile/process layout to the oracle threshold.
 - With the feature compiled in but unused, results are bit-for-bit unchanged.
 

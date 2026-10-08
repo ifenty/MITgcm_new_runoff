@@ -188,6 +188,32 @@
         "U_set"
       ],
       [
+        "{python}",
+        "tests/rnf/budget_check.py",
+        "--case",
+        "lab_sea",
+        "--mpi",
+        "0"
+      ],
+      [
+        "{python}",
+        "tests/rnf/budget_check.py",
+        "--case",
+        "lab_sea_missing",
+        "--mpi",
+        "0"
+      ],
+      [
+        "{python}",
+        "tests/rnf/budget_check.py",
+        "--case",
+        "lab_sea",
+        "--mpi",
+        "0",
+        "--control",
+        "fracsum"
+      ],
+      [
         "tests/mitgcm_oracle.sh",
         "global_ocean.cs32x15",
         "input.seaice"
@@ -522,6 +548,30 @@
         "tests/rnf/exf_heat_check.py",
         "--control",
         "--build"
+      ],
+      [
+        "{python}",
+        "tests/rnf/budget_check.py"
+      ],
+      [
+        "{python}",
+        "tests/rnf/budget_check.py",
+        "--case",
+        "lab_sea",
+        "--mpi",
+        "0",
+        "--control",
+        "permute"
+      ],
+      [
+        "{python}",
+        "tests/rnf/budget_check.py",
+        "--case",
+        "lab_sea",
+        "--mpi",
+        "2",
+        "--control",
+        "fracsum"
       ],
       [
         "{python}",
