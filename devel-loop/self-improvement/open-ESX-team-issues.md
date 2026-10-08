@@ -3,6 +3,17 @@
 This ledger tracks unresolved ESX-team effectiveness and process issues. These entries
 are separate from ESX transformation issues and are not selected by `loop_gate.py --next`.
 
+**Heading marker tracks `Status`, and the two must agree.** 🔴 PROPOSED is an
+issue with no fix landed; 🟡 IMPLEMENTED is a fix landed and awaiting
+publication or effectiveness evidence, with an `Implementation-Reference`;
+🟢 VERIFIED lives in `closed-ESX-team-issues.md` once effectiveness evidence
+exists. The marker was added to this ledger on 2026-10-08 after every one of the
+20 entries had been marked `Status: Implemented` in several passes while every
+heading still read 🔴 PROPOSED — so the file announced itself as entirely
+unaddressed at a glance and to any grep on the heading. That is the same
+two-statements-disagreeing defect this ledger exists to record, committed
+against the ledger itself. Change both or neither.
+
 ## Template for New Entries
 
 ```markdown
@@ -37,7 +48,7 @@ are separate from ESX transformation issues and are not selected by `loop_gate.p
 [Metric and expected direction, or a precise qualitative invariant.]
 ```
 
-## 🔴 PROPOSED: Manual claude runs in the project directory can hijack the ESX loop
+## 🟡 IMPLEMENTED: Manual claude runs in the project directory can hijack the ESX loop
 
 **Date Identified**: 2026-09-30  05:39
 **Status**: Implemented — awaiting publication/effectiveness evidence
@@ -66,7 +77,7 @@ A Stop event from a different session_id leaves the loop state and iteration cou
 ### Expected Effect
 No loop advancement or termination from sessions other than the loop owner.
 
-## 🔴 PROPOSED: Kit defects reachable only under live role dispatch
+## 🟡 IMPLEMENTED: Kit defects reachable only under live role dispatch
 
 **Date Identified**: 2026-09-29  22:05
 **Status**: Implemented — awaiting publication/effectiveness evidence
@@ -99,7 +110,7 @@ The live probe passes after upgrade. The next issue's role dispatches complete w
 ### Expected Effect
 Zero dispatch failures caused by the kit in the next iteration.
 
-## 🔴 PROPOSED: Documentation disposition reasons drift across correction rounds
+## 🟡 IMPLEMENTED: Documentation disposition reasons drift across correction rounds
 
 **Date Identified**: 2026-09-30  04:50
 **Status**: Implemented — awaiting publication/effectiveness evidence
@@ -128,7 +139,7 @@ For the next issue with at least two correction rounds, no reviewer finding conc
 ### Expected Effect
 No stale-disposition findings per multi-round issue.
 
-## 🔴 PROPOSED: Default 30-minute role turn limit cuts off large implementation turns
+## 🟡 IMPLEMENTED: Default 30-minute role turn limit cuts off large implementation turns
 
 **Date Identified**: 2026-09-30  15:30
 **Status**: Implemented — awaiting publication/effectiveness evidence
@@ -157,7 +168,7 @@ A large Bob brief completes in one turn without a timeout, or the turn ends with
 ### Expected Effect
 No implementation turns lost to the default timeout.
 
-## 🔴 PROPOSED: assess-transition rejects verify.py evidence references as returned
+## 🟡 IMPLEMENTED: assess-transition rejects verify.py evidence references as returned
 
 **Date Identified**: 2026-10-02  21:30
 **Status**: Implemented — awaiting publication/effectiveness evidence
@@ -186,7 +197,7 @@ A judgment citing a `verify.py` evidence reference exactly as returned is accept
 ### Expected Effect
 Transitions are recorded on the first attempt.
 
-## 🔴 PROPOSED: Provider-limit pause lifts before its known reset on a real-output Stop
+## 🟡 IMPLEMENTED: Provider-limit pause lifts before its known reset on a real-output Stop
 
 **Date Identified**: 2026-10-03  07:40
 **Status**: Implemented — awaiting publication/effectiveness evidence
@@ -215,7 +226,7 @@ With paused_until in the future, a working Stop leaves the loop paused and does 
 ### Expected Effect
 No iterations are lost to the grace-allowance summary turn.
 
-## 🔴 PROPOSED: Provider-limit pause time still shortens later role turns
+## 🟡 IMPLEMENTED: Provider-limit pause time still shortens later role turns
 
 **Date Identified**: 2026-10-03  09:50
 **Status**: Implemented — awaiting publication/effectiveness evidence
@@ -246,7 +257,7 @@ After a pause of N minutes, a turn dispatched with `--timeout T` gets at least m
 ### Expected Effect
 No turns are lost after an outage.
 
-## 🔴 PROPOSED: doc_contract digests `ast.dump` output, so a valid sealed report reads as stale under a different Python
+## 🟡 IMPLEMENTED: doc_contract digests `ast.dump` output, so a valid sealed report reads as stale under a different Python
 
 **Date Identified**: 2026-10-04  18:10
 **Status**: Implemented — awaiting publication/effectiveness evidence
@@ -279,7 +290,7 @@ Digest a normalized structural form instead of `ast.dump` output — e.g. an exp
 ### Expected Effect
 No reviewer spends a must-fix item, or a wrong diagnosis, on an accurate report again, and a stale report cannot pass merely because the checking host's Python matches the sealing host's. Direction: reviewer must-fix items attributable to the documentation-contract toolchain rather than to the work under review go to zero. The qualitative invariant: the inventory digest depends on the source tree, not on the interpreter that reads it.
 
-## 🔴 PROPOSED: doc_contract stale returns a truncated hits list that reads as complete
+## 🟡 IMPLEMENTED: doc_contract stale returns a truncated hits list that reads as complete
 
 **Date Identified**: 2026-10-05  12:40
 **Status**: Implemented — awaiting publication/effectiveness evidence
@@ -316,7 +327,7 @@ A caller that counts the returned listing of a sweep with more than `limit` hits
 ### Expected Effect
 A figure derived from a sweep listing is either right or visibly unavailable. Direction: occurrences of an understated sweep count reaching a committed document go to zero. The qualitative invariant: no return value of this tool can be counted to produce a plausible wrong total.
 
-## 🔴 PROPOSED: loop_gate --check-start cannot pass in a correction round, and both escape hatches corrupt the record
+## 🟡 IMPLEMENTED: loop_gate --check-start cannot pass in a correction round, and both escape hatches corrupt the record
 
 **Date Identified**: 2026-10-05  21:30
 **Status**: Implemented — awaiting publication/effectiveness evidence
@@ -357,7 +368,7 @@ In an iteration whose start receipt validated before the first edit, after round
 ### Expected Effect
 A correction round can re-establish orientation honestly. Direction: receipts marked late because the tool offered no honest alternative go to zero. The qualitative invariant: no gate requires falsifying a record in order to proceed.
 
-## 🔴 PROPOSED: navigate --reuse-args refuses when the changed target is the orientation's own declared map
+## 🟡 IMPLEMENTED: navigate --reuse-args refuses when the changed target is the orientation's own declared map
 
 **Date Identified**: 2026-10-05  21:30
 **Status**: Implemented — awaiting publication/effectiveness evidence
@@ -388,7 +399,7 @@ With an orientation declaring `--map docs/code_map.md#X`, a change confined to s
 ### Expected Effect
 Re-orienting after a round that edited the declared map section costs one command instead of two, with no hand-retyped target list. The qualitative invariant: `--reuse-args` accepts whatever the receipt itself declared.
 
-## 🔴 PROPOSED: doc_inventory omits every project record document, so the ledgers, lessons and assessments get no stale sweep and no disposition
+## 🟡 IMPLEMENTED: doc_inventory omits every project record document, so the ledgers, lessons and assessments get no stale sweep and no disposition
 
 **Date Identified**: 2026-10-05  23:55
 **Status**: Implemented — awaiting publication/effectiveness evidence
@@ -431,7 +442,7 @@ For **every** tracked project prose document, either `doc_contract.py stale` vis
 ### Expected Effect
 No project prose is both unswept and undeclared. Direction: documents that are neither inventoried nor disclosed as uninventoried go to zero. The qualitative invariant: a clean sweep's scope is written down, so "clean" cannot be read as "complete" by mistake.
 
-## 🔴 PROPOSED: A structurally dead provider is probed every iteration and gates the loop before any other instruction
+## 🟡 IMPLEMENTED: A structurally dead provider is probed every iteration and gates the loop before any other instruction
 
 **Date Identified**: 2026-10-06  05:50
 **Status**: Implemented — awaiting publication/effectiveness evidence
@@ -464,7 +475,7 @@ With a provider that cannot be discovered and probe evidence that does not chang
 ### Expected Effect
 Loop budget is spent on work. Direction: iterations whose only activity is a provider probe go to zero. The qualitative invariant: a mechanism that has returned the same answer N times in a row stops being asked.
 
-## 🔴 PROPOSED: The documentation seal and every reviewer approval share one invalidation set, so any policy edit mid-review strands them
+## 🟡 IMPLEMENTED: The documentation seal and every reviewer approval share one invalidation set, so any policy edit mid-review strands them
 
 **Date Identified**: 2026-10-06  05:50
 **Status**: Implemented — awaiting publication/effectiveness evidence
@@ -499,7 +510,7 @@ A coordinator can determine, before editing, whether a path is inside the accept
 ### Expected Effect
 Re-affirmation rounds are caused by changed work, not by changed prose. Direction: correction rounds whose only content is a stranded approval go to zero. The qualitative invariant: the acceptance boundary is queryable, so stranding an approval is always a choice rather than a surprise.
 
-## 🔴 PROPOSED: Briefs are hand-written and cite tool interfaces that do not exist, while brief.py goes unused
+## 🟡 IMPLEMENTED: Briefs are hand-written and cite tool interfaces that do not exist, while brief.py goes unused
 
 **Date Identified**: 2026-10-06  05:50
 **Status**: Implemented — awaiting publication/effectiveness evidence
@@ -532,7 +543,7 @@ A brief naming a nonexistent flag, an unresolvable path, or omitting a contract-
 ### Expected Effect
 Agents spend their turns on the work rather than on diagnosing their instructions. Direction: reviewer or implementer findings that concern the brief rather than the candidate go to zero. The qualitative invariant: anything in a brief that a machine could have checked, was checked.
 
-## 🔴 PROPOSED: capture accepts a stale orientation receipt that check-orientation refuses
+## 🟡 IMPLEMENTED: capture accepts a stale orientation receipt that check-orientation refuses
 
 **Date Identified**: 2026-10-06  13:40
 **Status**: Implemented — awaiting publication/effectiveness evidence
@@ -574,7 +585,7 @@ A footer citing an orientation whose selected targets have moved is either refus
 ### Expected Effect
 The two gates agree, or their disagreement is visible in the record. Direction: completions recorded against a stale orientation go to zero. The qualitative invariant: no artifact is valid at one gate and invalid at another without the record saying so.
 
-## 🔴 PROPOSED: the defective-completion notice never clears after the agent fixes it
+## 🟡 IMPLEMENTED: the defective-completion notice never clears after the agent fixes it
 
 **Date Identified**: 2026-10-06  14:20
 **Status**: Implemented — awaiting publication/effectiveness evidence
@@ -646,7 +657,7 @@ printed. Direction: notices naming already-repaired records go to zero. The
 qualitative invariant: a gate notice is actionable, so it can be trusted without
 re-deriving whether it still holds.
 
-## 🔴 PROPOSED: the loop hold condition ignores Arch's own long-running work and drains the iteration budget
+## 🟡 IMPLEMENTED: the loop hold condition ignores Arch's own long-running work and drains the iteration budget
 
 **Date Identified**: 2026-10-06  20:05
 **Status**: Implemented — awaiting publication/effectiveness evidence
@@ -724,7 +735,7 @@ The iteration budget measures work attempted rather than turns taken. Direction:
 iterations consumed while no work can proceed go to zero. The qualitative
 invariant: an owner who grants N iterations gets N units of work, not N polls.
 
-## 🔴 PROPOSED: the brief's interface check scans the embedded packet's prose
+## 🟡 IMPLEMENTED: the brief's interface check scans the embedded packet's prose
 
 **Date Identified**: 2026-10-06  22:40
 **Status**: Implemented — awaiting publication/effectiveness evidence
@@ -817,7 +828,7 @@ bob` must still report both flags. Reproduce the RUNOFF-040 payload verbatim.
 No brief is refused for a flag it does not instruct. Direction: false positives
 from this check go to zero while its true positives are unchanged.
 
-## 🔴 PROPOSED: an externally killed verification run is recorded as a candidate failure
+## 🟡 IMPLEMENTED: an externally killed verification run is recorded as a candidate failure
 
 **Date Identified**: 2026-10-07  03:40
 **Status**: Implemented — awaiting publication/effectiveness evidence
@@ -918,3 +929,104 @@ No record asserts a scientific failure that did not happen. Direction:
 externally terminated runs recorded as candidate failures go to zero. The
 qualitative invariant: a verification record distinguishes "the candidate
 failed" from "the run did not finish".
+
+## 🔴 PROPOSED: the coordinator's unverified claims enter the record as requirements
+
+**Date Identified**: 2026-10-08  13:30
+**Status**: Proposed
+**UUID**: TEAM-ARCH-UNVERIFIED-CLAIM-001
+**Category**: coordinator_unverified_claims
+**Severity**: High
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
+**Anchors**: tools/esx/brief.py:build; tools/esx/doc_contract.py:navigate
+
+### Issue
+
+Arch states a mechanism, a scope or a gate result more broadly than it has been
+measured, and because the statement enters a **brief**, an **orientation
+`--use`** sentence or an issue's **acceptance paragraph**, it is then implemented
+faithfully. The asymmetry is the point: an implementer's unverified claim costs a
+review round, while a coordinator's becomes a *requirement* and can ship a wrong
+artifact.
+
+Three distinguishable shapes, all measured on two consecutive issues:
+
+1. **A relayed inference.** A reviewer's *measurement* is passed on correctly and
+   its *inference* is promoted to a required record without checking the chain.
+2. **A fabricated result.** A gate is reported as passing without the command
+   being run.
+3. **An exhaustive claim.** "Nothing else", "the only", "no existing instrument"
+   — repeated from an agent's report, sometimes with its own refutation two lines
+   away in the same file.
+
+### Evidence
+
+**RUNOFF-040, six instances.** (a) Review B's inference that `CALC_SURF_DR`
+writing `hFac_surfC` meant the guard uses the reference thickness was promoted
+into the round-2 design as a required record; `update_surf_dr.F:56`/`:92` install
+it into `hFacC` one call later and `forward_step.F:484` calls `UPDATE_SURF_DR`
+in exactly that branch. (b) A lag route was cited that sits inside
+`IF (doResetHFactors)`, default `.FALSE.`. (c) `doResetHFactors` was said to be
+set by neither experiment; it is `.TRUE.` in two others. (d) The implementer was
+told `final_verification.py check` passes under `--owner bob` **when that command
+had never been run**; its true exit was 1. (e) A `pgrep -f` preflight was handed
+to an agent after Arch had already hit and fixed its self-match earlier the same
+session. (f) A 110-minute suite was handed to a context that lives ~59 minutes.
+
+**RUNOFF-016, five more.** The brief named a fraction *permutation* as the
+control that justifies a budget; a permutation is budget-invariant **by
+construction** and the per-cell oracles are what see it, so followed literally
+the brief would have shipped a control that cannot discriminate. The brief also
+understated existing coverage (`applied_field_check` has asserted the volume
+closure per dump since RUNOFF-005) and presented Adams-Bashforth as needing one
+of three workarounds when none was needed. Arch then repeated the implementer's
+"invisible to every other instrument" claim in a commit message, a reviewer
+addendum **and** the issue's acceptance paragraph; review B refuted it by
+execution at 1.4719309093e-07, 147,000× the tolerance it clears. Finally Arch
+misattributed a claim between the two reviewers, telling review A it had held up
+a line that review B had.
+
+In every one of the eleven the *conclusion* happened to survive and the *stated
+reason* did not — which is the signature of the class.
+
+### Potential Impact
+
+A wrong requirement is more expensive than a wrong report, because it is
+executed. On RUNOFF-016 it would have produced a passing instrument that proved
+nothing, which is the LL-014 failure mode the brief itself warned against. The
+cost is also silent: the agents caught all eleven, so the only visible symptom is
+correction rounds that look like ordinary review churn. RUNOFF-040 spent four
+rounds with the implementation byte-identical throughout.
+
+### Proposed Fix
+
+Procedural, and narrow enough to be checkable. Before a claim enters a brief, an
+orientation `--use` or an acceptance paragraph:
+
+- separate the **measurement** (relayable) from the **inference** (must be
+  verified first), and attribute each to whoever measured it;
+- never assert a gate, suite or command result without the invocation, read
+  **without a pipe** so the exit code is the tool's;
+- treat an **exhaustive** claim as the shape to distrust, and look for its
+  refutation in the same file before repeating it.
+
+A mechanisable part exists and is worth considering: `brief.build` already
+refuses a brief naming a flag no tool accepts
+(`TEAM-BRIEF-UNVALIDATED-INTERFACE-001`). The same hook could refuse a brief
+whose design text cites a `path:line` that does not resolve, which would have
+caught none of these eleven but is the adjacent class and is cheap.
+
+### Acceptance Criteria
+
+Over the next three issues, no reviewer must_fix item names a premise of the
+brief or of an Arch-authored record as its defect. Each occurrence is counted in
+the retrospective with its shape, so the trend is measured rather than asserted.
+A single occurrence does not reopen this entry; the direction over three issues
+is the test.
+
+### Expected Effect
+
+Correction rounds spent on coordinator-authored premises go to zero. The
+qualitative invariant: everything in a brief is either measured by the
+coordinator, or attributed to the agent that measured it, and nothing is stated
+as exhaustive without a check.

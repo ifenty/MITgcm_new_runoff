@@ -1,0 +1,666 @@
+{
+  "retrospective": {
+    "schema_version": 3,
+    "id": "RUNOFF-016",
+    "iteration": 1,
+    "closes_timestamp": "2026-10-08T00:58:40.965069+00:00",
+    "timestamp": "2026-10-08T13:22:29Z",
+    "accounting": {
+      "path": "devel-loop/loop_state/accounting/39af264e13ad01e3b9afdecab279b82dc0b020b9aea1e115e2e3a0e1f27c135d.json",
+      "sha256": "39af264e13ad01e3b9afdecab279b82dc0b020b9aea1e115e2e3a0e1f27c135d"
+    },
+    "measured": {
+      "span_minutes": 744,
+      "dispatches": {
+        "bob": 4,
+        "richard": 5
+      },
+      "rounds": {
+        "bob": 3,
+        "richard": 3
+      },
+      "cost_usd": {
+        "bob": 0.0,
+        "richard": 0.0
+      },
+      "unknown_cost_event_ids": [
+        "6398c74c7ecd45328ef397e84e0d1592",
+        "5dc95b9b73694b45b60935df3082adbd",
+        "0c160268f5544b6f987a9a0a78912237",
+        "0f26e8a3c53c4e4a9872ddb2066ffe47",
+        "008a291e29f74530b0940be63ad14474",
+        "fc90430a597c4f65bc993624361949b8",
+        "8900022fdf634089a421b3fdd4ef2ed5",
+        "6a31cdebbd864e4e82ed1f710835aa61",
+        "36ce267ea1854435a77bf04dfb345f24"
+      ],
+      "coordinator_coverage": "missing",
+      "billing_status": "provider_reported_not_invoice_reconciled",
+      "coordinator": {
+        "tool_measured_minutes": 4.4,
+        "self_reported_minutes": null,
+        "self_reported_usd": null,
+        "provider_reported_usd": null
+      },
+      "cost_scope": "cost_usd and span-based figures describe dispatched agents only; coordinator (Arch) cost is NOT included: no Arch accounting record exists for this iteration (record one with team_accounting.py record-arch)"
+    },
+    "problems": [
+      {
+        "category": "coordinator_unverified_claims",
+        "minutes_lost": 180,
+        "summary": "Arch's brief was wrong on the issue's central justification, and Arch then repeated the implementer's overclaim about it. Three of the brief's premises were refuted by measurement rather than followed, and a misattribution between the two reviewers was added on top. This is the same family as RUNOFF-040's six instances: a mechanism stated more broadly than it was checked.",
+        "evidence": "(1) The brief named a fraction PERMUTATION as the control that justifies a budget and said 'only a sum over targets reveals it'. A permutation is budget-invariant BY CONSTRUCTION, since every right-hand side is weighted by the fraction sum which a permutation leaves at exactly 1; measured bitwise unchanged across all four closures, with the per-cell oracles seeing 3.333e-01. Arch reproduced the arithmetic afterwards and got the same figure. Followed literally, the brief would have shipped a control that cannot discriminate. (2) The brief understated existing coverage: applied_field_check has asserted the volume closure per dump since RUNOFF-005. (3) It presented Adams-Bashforth as needing one of three workarounds; none was needed, because the closure reads the diagnostics upstream of the extrapolation. (4) Arch repeated the implementer's 'invisible to every other instrument' claim in a commit message, a reviewer addendum and the issue's acceptance paragraph without checking it; review B refuted it by execution, applied_field_check failing on that very perturbation at 1.4719309093e-07, 147,000 times its tolerance. (5) Arch told review A it had held up the permutation bullet as the model class statement; that was review B."
+      },
+      {
+        "category": "overclaim_adjacent_to_its_own_refutation",
+        "minutes_lost": 45,
+        "summary": "The implementer recorded a measured fact and then, two lines later in the same file, asserted a claim that fact refutes. Both Arch and one reviewer read both and repeated the claim rather than the fact.",
+        "evidence": "open_issues.md finding 3 records that applied_field_check.check_case asserts the applied-volume invariant to 1e-12 on every dump of every case since RUNOFF-005. Finding 2, two lines above, claimed the fracsum perturbation is invisible to every other instrument in the project. Review B built the perturbed file, ran applied_field_check on it and measured the failure at 1.4719309093e-07 with its per-cell leg bitwise equal over 48 dumps, and an unperturbed copy of the same scaffolding passing at 0.0. The implementer later found a SECOND instance of the same overclaim that none of the three of us had listed, in docs/model_contract.md's permutation bullet, which was the very line review B had held up as the model for the correct statement."
+      },
+      {
+        "category": "citation_rot_under_active_edit",
+        "minutes_lost": 30,
+        "summary": "A bare line-number citation into a file the issue was editing went stale twice in consecutive rounds, and a sweep then found five more stale citations in records, one of them caused by this issue's own insertion.",
+        "evidence": "docs/verification_matrix.md cited budget_check.py:1178-1179 for the m_T exception; round 1's +182 lines moved it to 1274-1276, leaving the citation pointing at a blank line and the def measure(...) header. The implementer's three-direction sweep then measured: exactly one citation into budget_check.py repo-wide (the stale one), 26 citations out of it all resolving, and 19 into the other edited files of which five are stale. Review A named the mechanism that matters: a path::symbol reference is GATED, because doc_contract hashes symbol targets into the seal so an edit forces re-navigation, while a bare line number has no such guard."
+      },
+      {
+        "category": "silently_vanishing_todo",
+        "minutes_lost": 20,
+        "summary": "An immutable record's open instruction lost its anchor and now resolves to a different, plausible-looking row, so a future reader can conclude the to-do was already discharged. That is worse than a reference that fails loudly.",
+        "evidence": "The RUNOFF-013 retrospective carries 'docs/verification_matrix.md:38 still says two centres are at least 0.5*(s_from+s_to) apart ... Fix in the next issue that edits that row.' This issue inserted the budget-closure row at line 38, so the citation now lands on a row with no such claim while the target_coords row it meant is at 43. Review A distinguished it from the other four stale citations on exactly this ground: two of those quote text that exists nowhere and therefore mislead nobody. The citing artifact cannot be corrected, since those retrospectives are stored under a filename that IS their content hash."
+      },
+      {
+        "category": "ledger_label_disagreed_with_its_own_status",
+        "minutes_lost": 15,
+        "summary": "Every entry of the ESX-team ledger was marked Status: Implemented across several passes while every heading still carried the PROPOSED marker, so the file announced itself as entirely unaddressed at a glance and to any grep on the heading. The owner caught it, not Arch and not a reviewer.",
+        "evidence": "20 of 20 real entries read Status: Implemented, each with an Implementation-Reference (verified, 0 missing), while 20 of 20 headings read '## PROPOSED:'. Arch had updated the status fields in at least three separate passes today -- af5165f's eleven, then the gate and loop-hold pair, then the brief-span fix, then the final two -- and never once touched the heading. This is the same two-statements-disagreeing defect the ledger exists to record, committed against the ledger itself."
+      }
+    ],
+    "solutions": [
+      {
+        "problem": 0,
+        "action": "filed",
+        "issue": "TEAM-ARCH-UNVERIFIED-CLAIM-001"
+      },
+      {
+        "problem": 1,
+        "action": "fixed",
+        "reference": "00bf581 and e1d3cc7",
+        "reason": "Both instances corrected at every site, with the class statement replacing the exhaustive one and blindness separated into by-construction versus by-tolerance. The transferable rule is narrower than 'check claims': an exhaustive claim ('nothing else', 'no existing instrument', 'the only') is the shape to distrust, and the refutation is often already in the same file -- here two lines above. A measured fact and an exhaustive claim adjacent to each other should be read as a contradiction to resolve, not as context."
+      },
+      {
+        "problem": 2,
+        "action": "fixed",
+        "reference": "3a46054",
+        "reason": "The pointer now names the owning symbol alongside the lines, and review A supplied the reason that generalises it: a path::symbol reference is gated by the documentation contract, which hashes symbol targets into the seal, so an edit forces re-navigation and the pointer cannot rot silently. A bare line number has no such guard. Adopt the hybrid form for citations into files under active edit; the five stale record citations the sweep found are carried as a records-hygiene item."
+      },
+      {
+        "problem": 3,
+        "action": "fixed",
+        "reference": "e9176df",
+        "reason": "A forward note was added beside LL-015 in a living record, keyed to the row's TITLE rather than its line, restating the outstanding work so the instruction survives the loss of its anchor. The immutable artifact was deliberately left alone: those retrospectives are named by their own content hash, so editing one in place breaks the name-content identity that makes it citable -- reporting rather than editing was the only correct disposition, not merely the cheaper one."
+      },
+      {
+        "problem": 4,
+        "action": "fixed",
+        "reference": "this change",
+        "reason": "All 20 headings now track their Status field, and the three-marker convention is documented in the ledger's own preamble with the reason it was added, so the next reader does not have to infer it. The lesson is that a status recorded in two places needs both updated in the same edit or neither; the status field was the one being gated and the heading was the one being read, which is why the divergence survived several passes unnoticed by anyone but the owner."
+      }
+    ],
+    "confirmations": [
+      {
+        "category": "implementer_refutes_the_brief",
+        "summary": "The implementer measured that the brief's central justification was impossible as specified, built the control that actually discriminates, and escalated the acceptance wording rather than editing policy itself.",
+        "evidence": "It proved a permutation is budget-invariant bitwise, then constructed --control fracsum scaling one source's fractions by 1+5e-7 deliberately INSIDE RNF_fracTol so the init check accepts the file and does not warn (asserted), measuring 1.472e-07/1.676e-07/1.637e-07/1.414e-07 against a per-cell criterion at round-off. It left the issue's 'Proposed action and acceptance' paragraph untouched as policy in substance (LL-017) and escalated the wording to Arch."
+      },
+      {
+        "category": "agent_sweeps_for_its_own_error_class",
+        "summary": "Having had one overclaim refuted, the implementer swept for others of the same shape and found one that neither reviewer nor Arch had listed -- in the line one reviewer had held up as the model for the correct statement.",
+        "evidence": "docs/model_contract.md's 'What a sum over targets does see, and nothing else does'. Review A judged it genuinely overclaiming rather than over-corrected, since 'and nothing else does' is exhaustive and applied_field_check.py:873 asserts that volume invariant per record. Review B conceded: 'it was right and I was wrong ... catching the line its reviewer had exempted is better work than following the review.' Arch verified the phrase now survives nowhere except as a quotation of its own correction."
+      },
+      {
+        "category": "reviewer_verifies_before_recording",
+        "summary": "Three times in one issue an agent checked a justification before writing it down and found it imprecise, each time preserving the conclusion while correcting the mechanism.",
+        "evidence": "The implementer found review A's 'the same factor' inexact -- each leg's residual is epsilon times the perturbed source's share of THAT LEG'S OWN total, giving four distinct figures within 1.2x. Review A then verified that from first principles, accepted it, and found the agreement better than claimed, resolving it per record to four digits. Review B then verified it again independently, reproduced three of four predictions exactly, and TIGHTENED the bound: smallest share 0.276289 rather than 0.284, against the 2.0e-6 a leg would need to hide, 5.1 orders of slack."
+      },
+      {
+        "category": "reviewer_corrects_itself_against_its_own_interest",
+        "summary": "Asked whether a limit it had found should block closure, review B said no, and volunteered the weakness in its own earlier framing rather than letting a convenient reading stand.",
+        "evidence": "'I should be explicit that the per-cell criterion does not rescue this, since I was tempted to claim it does' -- because the two tracer values are exactly equal, any exchange of them is the identity for BOTH legs. It then narrowed the uncovered class precisely: hitting it needs an attribution error swapping exactly sources 0 and 3 of four while leaving 1 and 2 alone, whereas ordinary off-by-one or transposed-index errors move adjacent sources whose values differ and which the closure does see."
+      },
+      {
+        "category": "reviewer_declines_an_unnecessary_guard",
+        "summary": "Offered the chance to require an enrolled guard for the new assertions, the reviewer declined and gave a reason that would not have occurred to Arch.",
+        "evidence": "'Enrolling it permanently would mean shipping a deliberately blinded code path, heavier than the gap warrants.' It noted the assertion already has an enrolled consequence, since focused runs fracsum on every candidate and a blinded leg makes the blind list non-empty, and that both guards were demonstrated failing, which meets LL-009's standard."
+      },
+      {
+        "category": "detached_launch_is_now_routine",
+        "summary": "The pattern that rescued RUNOFF-040's killed verification was applied first time here, in four tool calls, with session leadership verified against the kernel rather than inferred.",
+        "evidence": "PID 2752942 with os.getsid(pid) == pid and a session distinct from the launcher's, launched with Popen(start_new_session=True), reported and the turn ended immediately. Pre-flight used a /proc argv scan rather than pgrep -f, whose pattern self-matches -- the implementer's own earlier finding about an Arch-supplied command. The run completed 62 commands in 6488.2 s with zero FAIL tokens, and the loop-hold fix held the iteration throughout."
+      },
+      {
+        "category": "instrument_closes_a_real_gap",
+        "summary": "The tracer term now has its first numerical oracle of any kind, and the heat and salt terms have their first summed one.",
+        "evidence": "Four closures at 1e-12: volume 0.000e+00 on both grids at every process count, heat 3.353e-16 and 1.444e-16, salt 2.107e-16, tracer 2.079e-16, all four orders or more below the bar with no tolerance widened. The missing-temperature rule is discriminated rather than assumed: 3.850e-16 with the rule and 1.946e-01 without, the case failing unless the second figure exceeds 1e-9. Scientific suite 62 of 62, exit 0, zero FAIL tokens."
+      }
+    ],
+    "carry_forward": [
+      "RUNOFF-008 should absorb three findings together, since a lab_sea build with PTRACERS_num >= 2 is the occasion for all of them: its own undelivered 'at least two tracers' acceptance; RNF_trPtr's multi-tracer mapping, which is unmeasured; and the synthetic tracer series degeneracy, where 1.0 + 0.2r + 0.1(k mod 3) gives sources newfound and baffin IDENTICAL values at every record, so the only tracer oracle is blind to an exchange of those two in BOTH the summed and the per-cell leg. Review B judged it non-blocking and placed it there explicitly so it is not rediscovered.",
+      "The hFacC factor of the budget inversion is numerically INERT: exactly 1.0 at all 7 lab_sea and all 1189 cs32 target cells, so forcing it to 1.0 leaves every residual bitwise unchanged. Correct by inspection and unexercised in fact; a partial surface cell, a pkg/shelfice cavity column or an r* case is where it would first be measured.",
+      "Branch N, r* and a real freshwater flux remain uncovered by the budget, because every case must run nonlinFreeSurf = 0 and select_rStar = 0 -- update_surf_dr.F:57 rewrites recip_hFacC at the surface each step. The escalation stands in its NARROWER form after review A's correction: what is absent is a DIRECT time-varying thickness diagnostic, a convenience rather than a blocker, since hFac_surfC and rStarFacC are explicit functions of the free surface and ETAN/ETAH are registered diagnostics. For cs32 the constraint is a departure from its committed configuration.",
+      "focused carries no must-fail for the per-cell leg; only scientific's permute control proves that leg discriminates placement. The implementer recorded it as a deliberate gap rather than changing enrolment, since adding it would put a lab_sea run in every candidate's focused pass. Arch's call.",
+      "The two must-fail demonstrations for the new per-closure assertions are one-off scripts under scratch, not enrolled guards: they prove the assertions are right today, not that they cannot be weakened later. Review B declined to require enrolment because it would mean shipping a deliberately blinded code path.",
+      "Five stale citations remain in records, outside the acceptance set: lessons_learned_evidence.md:276, closed_issues.md:551 and three inside content-addressed retrospectives. Four predate this issue and two quote text that exists nowhere, so they fail loudly. The fifth was caused by this issue and is addressed by the forward note in e9176df. A records-hygiene pass should prefer path::symbol or a row title over a line number for citations from records into living documents.",
+      "No analytic decision-3 table row exists for the tracer term in tendency_term_check, so the tracer term has a budget oracle and a per-cell oracle but no analytic one. RUNOFF-008 territory.",
+      "RUNOFF-041 (the RNF_SUMMARY dTtracerLev/deltaTFreeSurf report) and RUNOFF-042 (the footprint sweep's .py blindness, with the suite-enrolment decision Arch has now deferred three times) are both still open and both small.",
+      "The expectation figure worth correcting, measured by the implementer: the fixed cost of re-measuring the whole battery is about 25 minutes per round regardless of how small the change is, and a fresh focused suite alone is 955-961 s. Three correction rounds cost about 255 minutes against a 120-minute expectation; the floor, not the review depth, is what the expectation should carry.",
+      "MITgcm contribution checks still outstanding for the upstream PR rather than for any one issue: testreport before and after, testreport -mpi, and tools/do_tst_2+2. Opening the PR needs explicit owner approval, and review B's note stands that the removed ESX record is gone from the tree but still present in the new_runoff commit history."
+    ],
+    "no_problem_reason": ""
+  },
+  "accounting": {
+    "billing_status": "provider_reported_not_invoice_reconciled",
+    "by_phase": {
+      "closeout": {
+        "effort_seconds": 122.10732579231262,
+        "elapsed_seconds": 122.10732579231262,
+        "events": 3
+      },
+      "orientation": {
+        "effort_seconds": 2.009131669998169,
+        "elapsed_seconds": 2.009131669998169,
+        "events": 12
+      },
+      "verification": {
+        "effort_seconds": 14462.25426530838,
+        "elapsed_seconds": 14462.25426530838,
+        "events": 19
+      }
+    },
+    "by_role": {
+      "bob": {
+        "dispatches": 4,
+        "reported_usd": 0.0,
+        "rounds": 3,
+        "seconds": 0.0,
+        "tool_calls": 0,
+        "unknown_cost_events": 4,
+        "unknown_tool_call_events": 4,
+        "usage": {}
+      },
+      "richard": {
+        "dispatches": 5,
+        "reported_usd": 0.0,
+        "rounds": 3,
+        "seconds": 0.0,
+        "tool_calls": 0,
+        "unknown_cost_events": 5,
+        "unknown_tool_call_events": 5,
+        "usage": {}
+      }
+    },
+    "child_elapsed_seconds": 0,
+    "components": [
+      {
+        "event_id": "6398c74c7ecd45328ef397e84e0d1592",
+        "kind": "unmetered_native",
+        "parent_event_id": "6398c74c7ecd45328ef397e84e0d1592",
+        "reported_usd": null,
+        "role": "bob",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "5dc95b9b73694b45b60935df3082adbd",
+        "kind": "unmetered_native",
+        "parent_event_id": "5dc95b9b73694b45b60935df3082adbd",
+        "reported_usd": null,
+        "role": "richard",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "0c160268f5544b6f987a9a0a78912237",
+        "kind": "unmetered_native",
+        "parent_event_id": "0c160268f5544b6f987a9a0a78912237",
+        "reported_usd": null,
+        "role": "richard",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "0f26e8a3c53c4e4a9872ddb2066ffe47",
+        "kind": "unmetered_native",
+        "parent_event_id": "0f26e8a3c53c4e4a9872ddb2066ffe47",
+        "reported_usd": null,
+        "role": "bob",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "008a291e29f74530b0940be63ad14474",
+        "kind": "unmetered_native",
+        "parent_event_id": "008a291e29f74530b0940be63ad14474",
+        "reported_usd": null,
+        "role": "richard",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "fc90430a597c4f65bc993624361949b8",
+        "kind": "unmetered_native",
+        "parent_event_id": "fc90430a597c4f65bc993624361949b8",
+        "reported_usd": null,
+        "role": "bob",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "8900022fdf634089a421b3fdd4ef2ed5",
+        "kind": "unmetered_native",
+        "parent_event_id": "8900022fdf634089a421b3fdd4ef2ed5",
+        "reported_usd": null,
+        "role": "richard",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "6a31cdebbd864e4e82ed1f710835aa61",
+        "kind": "unmetered_native",
+        "parent_event_id": "6a31cdebbd864e4e82ed1f710835aa61",
+        "reported_usd": null,
+        "role": "richard",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "36ce267ea1854435a77bf04dfb345f24",
+        "kind": "unmetered_native",
+        "parent_event_id": "36ce267ea1854435a77bf04dfb345f24",
+        "reported_usd": null,
+        "role": "bob",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      }
+    ],
+    "coordinator": {
+      "coverage": "missing",
+      "included_in_reported_usd": "no",
+      "provider_reported_usd": null,
+      "self_reported": {
+        "minutes": null,
+        "records": [],
+        "records_without_usd": 0,
+        "usd": null
+      },
+      "tool_measured": {
+        "basis": "wall time of gate commands run as arch; excludes interactive session time",
+        "effort_seconds": 264.3834762573242,
+        "elapsed_seconds": 264.3834762573242,
+        "events": 12
+      }
+    },
+    "coordinator_coverage": "missing",
+    "end": "2026-10-08T13:22:18.312833+00:00",
+    "issue_id": "RUNOFF-016",
+    "missing_timing_event_ids": [
+      "6398c74c7ecd45328ef397e84e0d1592",
+      "5dc95b9b73694b45b60935df3082adbd",
+      "0c160268f5544b6f987a9a0a78912237",
+      "0f26e8a3c53c4e4a9872ddb2066ffe47",
+      "008a291e29f74530b0940be63ad14474",
+      "fc90430a597c4f65bc993624361949b8",
+      "8900022fdf634089a421b3fdd4ef2ed5",
+      "6a31cdebbd864e4e82ed1f710835aa61",
+      "36ce267ea1854435a77bf04dfb345f24"
+    ],
+    "outside_child_intervals_seconds": 44617.3477640152,
+    "phase_events": [
+      {
+        "event_id": "43b01eb32bd54c9da0375b59ca1bb763",
+        "finished_at": "2026-10-08T00:58:41.351693+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.28109051939100027,
+        "started_at": "2026-10-08T00:58:41.070597+00:00"
+      },
+      {
+        "event_id": "b8961128ed784813a2fd20eb77a6be8e",
+        "finished_at": "2026-10-08T01:00:04.071587+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.15085674356669188,
+        "started_at": "2026-10-08T01:00:03.920725+00:00"
+      },
+      {
+        "event_id": "e0da3d3746be4ef49267c7a70ba0e606",
+        "finished_at": "2026-10-08T01:00:13.064024+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.16324603836983442,
+        "started_at": "2026-10-08T01:00:12.900772+00:00"
+      },
+      {
+        "event_id": "e75c5a462e724ec087e6ddfd5a273c23",
+        "finished_at": "2026-10-08T01:57:00.881658+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "verification",
+        "reason": null,
+        "role": "a245a66ae7378b4a2",
+        "seconds": 117.04634138010442,
+        "started_at": "2026-10-08T01:55:03.835333+00:00"
+      },
+      {
+        "event_id": "973979f880f8469bbe672b216202ae34",
+        "finished_at": "2026-10-08T02:02:32.335819+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "verification",
+        "reason": null,
+        "role": "a245a66ae7378b4a2",
+        "seconds": 29.952729522250593,
+        "started_at": "2026-10-08T02:02:02.383101+00:00"
+      },
+      {
+        "event_id": "71cec3af28744f4cab58ec41f90678a0",
+        "finished_at": "2026-10-08T02:20:35.833732+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "verification",
+        "reason": null,
+        "role": "a245a66ae7378b4a2",
+        "seconds": 962.7558404160663,
+        "started_at": "2026-10-08T02:04:33.077904+00:00"
+      },
+      {
+        "event_id": "4eb939a94645416887a5d09efde91094",
+        "finished_at": "2026-10-08T02:23:25.900415+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.15087301097810268,
+        "started_at": "2026-10-08T02:23:25.749539+00:00"
+      },
+      {
+        "event_id": "3be4dab7c9714a43b915a03b800f7c14",
+        "finished_at": "2026-10-08T02:28:40.524206+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 17.383583336137235,
+        "started_at": "2026-10-08T02:28:23.140630+00:00"
+      },
+      {
+        "event_id": "c6b96ee45d5a4f7f94361c2cb9fc3c78",
+        "finished_at": "2026-10-08T02:46:37.211906+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "verification",
+        "reason": null,
+        "role": "aebec219205f5e64b",
+        "seconds": 963.1126744635403,
+        "started_at": "2026-10-08T02:30:34.099242+00:00"
+      },
+      {
+        "event_id": "af3bb83bea6d4dfbb2bf277f21f740ce",
+        "finished_at": "2026-10-08T02:51:01.996802+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.1496295565739274,
+        "started_at": "2026-10-08T02:51:01.847170+00:00"
+      },
+      {
+        "event_id": "86d145cc779442fa84d107b69e66f6b8",
+        "finished_at": "2026-10-08T03:13:06.206508+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "verification",
+        "reason": null,
+        "role": "ad4845eea090436fa",
+        "seconds": 960.7981641795486,
+        "started_at": "2026-10-08T02:57:05.408343+00:00"
+      },
+      {
+        "event_id": "cf1df9de36ba4e9389d566af70576a2d",
+        "finished_at": "2026-10-08T03:14:47.021391+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.1631021248176694,
+        "started_at": "2026-10-08T03:14:46.858289+00:00"
+      },
+      {
+        "event_id": "80578fee2e164895aab02df0c1b61037",
+        "finished_at": "2026-10-08T03:19:28.574602+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 17.568121298216283,
+        "started_at": "2026-10-08T03:19:11.006488+00:00"
+      },
+      {
+        "event_id": "90f41144e868449cacea2931e3727c97",
+        "finished_at": "2026-10-08T03:51:02.853789+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "verification",
+        "reason": null,
+        "role": "a245a66ae7378b4a2",
+        "seconds": 956.8644688492641,
+        "started_at": "2026-10-08T03:35:05.989348+00:00"
+      },
+      {
+        "event_id": "53ae4698284b47f68f4c6cf2a46758c9",
+        "finished_at": "2026-10-08T03:54:35.560787+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.1518399966880679,
+        "started_at": "2026-10-08T03:54:35.408945+00:00"
+      },
+      {
+        "event_id": "28f2a72480464517899ba0329bb5528b",
+        "finished_at": "2026-10-08T03:58:14.135246+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 17.64683445636183,
+        "started_at": "2026-10-08T03:57:56.488423+00:00"
+      },
+      {
+        "event_id": "e98a27aedafb4752ba0d763e58e6cd17",
+        "finished_at": "2026-10-08T04:16:04.006213+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "verification",
+        "reason": null,
+        "role": "aebec219205f5e64b",
+        "seconds": 962.0533672673628,
+        "started_at": "2026-10-08T04:00:01.952857+00:00"
+      },
+      {
+        "event_id": "09dc5ad515134bb6aedca9c3d999b1a2",
+        "finished_at": "2026-10-08T04:17:25.015013+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.14946336299180984,
+        "started_at": "2026-10-08T04:17:24.865547+00:00"
+      },
+      {
+        "event_id": "33c0fc3e4dfe44c39addef91ec0eae16",
+        "finished_at": "2026-10-08T04:21:04.783279+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 17.822993553243577,
+        "started_at": "2026-10-08T04:20:46.960294+00:00"
+      },
+      {
+        "event_id": "114a00ee53424fd6aa71cd4a3476b079",
+        "finished_at": "2026-10-08T04:45:22.244983+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "verification",
+        "reason": null,
+        "role": "a245a66ae7378b4a2",
+        "seconds": 956.389598951675,
+        "started_at": "2026-10-08T04:29:25.855395+00:00"
+      },
+      {
+        "event_id": "4149d29e833745e6a2eb1db9ae1b1fd6",
+        "finished_at": "2026-10-08T04:47:23.044115+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.1557668736204505,
+        "started_at": "2026-10-08T04:47:22.888339+00:00"
+      },
+      {
+        "event_id": "820077a52eff4178b9a36b9971a992aa",
+        "finished_at": "2026-10-08T04:50:46.813739+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 17.686632337979972,
+        "started_at": "2026-10-08T04:50:29.127115+00:00"
+      },
+      {
+        "event_id": "4a5c1a5d90c4420986f032aa5332d65f",
+        "finished_at": "2026-10-08T05:08:24.860898+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "verification",
+        "reason": null,
+        "role": "aebec219205f5e64b",
+        "seconds": 959.7865431979299,
+        "started_at": "2026-10-08T04:52:25.074368+00:00"
+      },
+      {
+        "event_id": "f337b77f1f5d460e8f33690b85c104e2",
+        "finished_at": "2026-10-08T05:09:56.186132+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.15124395303428173,
+        "started_at": "2026-10-08T05:09:56.034884+00:00"
+      },
+      {
+        "event_id": "d0416b52b19b481c91c1d9fd82514d85",
+        "finished_at": "2026-10-08T05:13:32.417739+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 18.10776375886053,
+        "started_at": "2026-10-08T05:13:14.310002+00:00"
+      },
+      {
+        "event_id": "34074446702e4193952d638d7c46db89",
+        "finished_at": "2026-10-08T05:31:04.756463+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "verification",
+        "reason": null,
+        "role": "ad4845eea090436fa",
+        "seconds": 962.0913798119873,
+        "started_at": "2026-10-08T05:15:02.665093+00:00"
+      },
+      {
+        "event_id": "f2a6d738388c44d298771b69c87abdd9",
+        "finished_at": "2026-10-08T05:37:16.965363+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.15008183009922504,
+        "started_at": "2026-10-08T05:37:16.815280+00:00"
+      },
+      {
+        "event_id": "1a4cc82352774f87b1e5420adcc2d633",
+        "finished_at": "2026-10-08T05:40:38.316189+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 17.801904670894146,
+        "started_at": "2026-10-08T05:40:20.514289+00:00"
+      },
+      {
+        "event_id": "c8b24db393eb44beaa5d5d039e437468",
+        "finished_at": "2026-10-08T05:41:02.533639+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "orientation",
+        "reason": null,
+        "seconds": 0.1918963361531496,
+        "started_at": "2026-10-08T05:41:02.341742+00:00"
+      },
+      {
+        "event_id": "7b27ac14ce3445eaa0c88ff850b30db3",
+        "finished_at": "2026-10-08T07:32:18.067100+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "verification",
+        "reason": null,
+        "role": "bob",
+        "seconds": 6489.4082086812705,
+        "started_at": "2026-10-08T05:44:08.658874+00:00"
+      },
+      {
+        "event_id": "0bff2ec790e24b93aadc130391efe3e0",
+        "finished_at": "2026-10-08T13:18:04.527308+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 17.977313910610974,
+        "started_at": "2026-10-08T13:17:46.550012+00:00"
+      },
+      {
+        "event_id": "7f0db90a4f704696b7b55e88116ed6f9",
+        "finished_at": "2026-10-08T13:19:08.783069+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "closeout",
+        "reason": null,
+        "role": "arch",
+        "seconds": 1.950119216926396,
+        "started_at": "2026-10-08T13:19:06.832966+00:00"
+      },
+      {
+        "event_id": "c5588216da0f4b63adc3d48d71154139",
+        "finished_at": "2026-10-08T13:20:08.538879+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "closeout",
+        "reason": null,
+        "role": "arch",
+        "seconds": 59.625035636126995,
+        "started_at": "2026-10-08T13:19:08.913847+00:00"
+      },
+      {
+        "event_id": "f74db556cf6045fea3725d146fa3a540",
+        "finished_at": "2026-10-08T13:22:18.315086+00:00",
+        "issue_id": "RUNOFF-016",
+        "phase": "closeout",
+        "reason": null,
+        "role": "arch",
+        "seconds": 60.534442079253495,
+        "started_at": "2026-10-08T13:21:17.780642+00:00"
+      }
+    ],
+    "reported_usd": 0,
+    "schema_version": 2,
+    "span_seconds": 44617.3477640152,
+    "start": "2026-10-08T00:58:40.965069+00:00",
+    "unknown_cost_event_ids": [
+      "6398c74c7ecd45328ef397e84e0d1592",
+      "5dc95b9b73694b45b60935df3082adbd",
+      "0c160268f5544b6f987a9a0a78912237",
+      "0f26e8a3c53c4e4a9872ddb2066ffe47",
+      "008a291e29f74530b0940be63ad14474",
+      "fc90430a597c4f65bc993624361949b8",
+      "8900022fdf634089a421b3fdd4ef2ed5",
+      "6a31cdebbd864e4e82ed1f710835aa61",
+      "36ce267ea1854435a77bf04dfb345f24"
+    ]
+  }
+}
