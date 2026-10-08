@@ -563,9 +563,62 @@ This is the scientific contract agents read. Executable paths and commands are i
   loudly: a dead `KEEP` needle or a multi-line one (exit 2), and **a `KEEP`
   path that is not in the swept set (exit 3)**, which is the assertion that
   makes scope and recall one check and does not depend on where the keeps
-  happen to live. Not enrolled in a configured suite; that remains Arch's
-  deliberate decision, since a nonzero exit means "triage these candidates"
-  rather than "these are defects".
+  happen to live. **Scope: `.md`, `.rst`, `.F`, `.h` and — since RUNOFF-042 —
+  `.py`**, because tests and tools carry these claims in docstrings and
+  comments exactly as prose files do; the scan found one live stale instance
+  (`refusal_check.py`'s list of the tile-local refusals, which named three of
+  the five checks) the moment it was turned on. Two exclusions, both by path
+  and both in `tracked`, so that a `KEEP` entry naming an excluded file fails
+  as exit 3 rather than rotting into a dead needle. (1) The script **excludes
+  its own file**, since all 25 of its hits there are quotations of example
+  claims rather than claims this project makes, and the consequence is stated
+  in the script: a footprint claim written in that one file's own prose is
+  watched by nothing. (2) It excludes the 79 swept files under
+  `ESX-team-local/backups/` — vendored pre-upgrade snapshots of the ESX kit
+  that this project may not edit, so a candidate there is unactionable and a
+  kit upgrade carrying one footprint-shaped sentence would turn `structural`
+  red over a file we do not own. Measured: those 79 produce **0** candidates
+  today, so the exclusion moved the swept figure from 293 to 214 and changed
+  no candidate, keep or guard. `tools/esx/` is deliberately **kept** in scope
+  (we edit it constantly, so a claim there is ours), which is the mirror image
+  of `doc_contract.stale_lines` skipping `tools/esx/`: a superseded *figure*
+  in the kit is the kit's own, while a claim that `pkg/exf` or `pkg/rnf` is
+  touched in exactly one place is this project's wherever it is written.
+- **Enrolment of the sweep, settled on RUNOFF-042** after RUNOFF-030 deferred
+  it twice. Two invocations are in the `structural` suite, and the split
+  follows the exit codes: `--self-test` (0 or 4) guards the *predicate* and
+  never reads the tree, while `--guards` runs the real sweep and returns the
+  three guards alone (3 scope shrank, 2 rotted needle, 0 otherwise), treating
+  untriaged candidates as information. The **default** invocation is not
+  enrolled and cannot be: it returns 1 whenever a candidate is untriaged,
+  which is the normal state of a live triage queue (57 lines), so it would
+  fail for ever. A nonzero exit from the enrolled pair therefore means "this
+  instrument has rotted", not "triage these candidates". Measured exposure,
+  per path with `project.py acceptance-scope`: 38 `KEEP` needles over 13
+  files, **none of them a record** (0 of 13), and **37 of the 38 needles over
+  12 of the 13 paths in the acceptance set** — so a records-only correction
+  round cannot turn the suite red. The exception is
+  `MITgcm/doc/phys_pkgs/exf.rst` (`in_acceptance: false`,
+  `swept_for_stale_figures: false`), which holds one needle, and it is named
+  rather than averaged away because it is the one path where the reason this
+  exposure is acceptable — an edit obliges a re-seal anyway — does not hold: a
+  reword of that upstream documentation paragraph turns `structural` red at
+  exit 2 with no documentation gate prompting the `KEEP` update. The four
+  append-only history files are in the swept set but **never opened**:
+  `sweep` skips them before reading, so they are counted in the swept-file
+  figure and can contribute no candidate.
+- **A claim an instrument makes about its own coverage is held to the program,
+  not to prose (RUNOFF-042 round 1).** `tests/esx/test_instrument_claims.py`
+  asserts `tests/rnf/refusal_check.py`'s list of the tile-local refusals
+  against the cases that `cases()` actually returns carrying a `stderr_any`
+  message — seven cases over five checks — and runs in `structural` under
+  `pytest -q tests/esx`. The reason is a measured failure of the alternative:
+  that list was replaced by a prose "mechanical antecedent" precisely so it
+  could not rot, and it rotted in the same round, because the enumeration
+  behind it walked the AST for `file_case(...)` calls and one case is a dict
+  literal. **A prose antecedent rots exactly like the remembered list it
+  replaces; only an executed enumeration does not.** When a claim names a set
+  the code can enumerate, enumerate it by calling the code.
 - Domain rule catalogue locations, if used: not used. Conventions are listed above.
 - Documentation/rendering tools and intended renderer: MITgcm docs are Sphinx RST
   under `MITgcm/doc/`, rendered by GitHub Actions and readthedocs. Project records

@@ -77,6 +77,12 @@ its routines and its hooks are specified in
   compares against `results/`. It exits non-zero on build failure, abnormal run
   end or FAIL.
 - **Suites** (configured in [project.json](../esx/project.json)):
+  - `structural`, seconds and no model run: `tools/esx/audit.py`,
+    `pytest -q tests/esx` (the ESX framework-fix guards and, since
+    RUNOFF-042 round 1, the instrument-claim guard; route below), then
+    `tests/footprint_claim_sweep.py --self-test`
+    and `tests/footprint_claim_sweep.py --guards` (enrolled on RUNOFF-042;
+    route below).
   - `focused`, in order: `pytest -q tests/runoff`, then lab_sea `input`,
     then `tests/rnf/refusal_check.py`, which runs the `pkg/rnf` refusal and
     control cases with the lab_sea binary that command built, then lab_sea
@@ -149,6 +155,61 @@ its routines and its hooks are specified in
     `RAC.data` its dense runoff field is built from, and exits 2 with
     the reason when there is none; lab_sea `input` supplies it earlier in
     this suite.
+- **Footprint-claim sweep:** `tests/footprint_claim_sweep.py` finds sentences
+  that claim a package is touched in exactly one place — the class that cost
+  RUNOFF-030 two review rounds — by keying on (a package mention) near (an
+  exclusivity marker) near (a footprint word), never on what a patch changed,
+  because such a claim never names the site that was added.
+  - **Inputs:** the tracked files of this repository, plus the files of
+    `MITgcm/` that `esx/project.json` declares (`source_paths`,
+    `configuration_paths`) and the two MITgcm documentation pages named in
+    `DOC_EXTRA`. Scope is *declared*, never taken from VCS state. Suffixes
+    `.md`, `.rst`, `.F`, `.h`, `.py` (`SUFFIXES`); the four append-only
+    history files in `HISTORY` are in the set but never opened (`sweep`
+    skips them before reading, so they count in the swept-file figure and
+    contribute no candidate), `SELF` **excludes the script's own file**,
+    whose 25 hits are all quotations of example claims — so a footprint claim
+    written in that one file's prose is watched by nothing, which is stated
+    there as an accepted blind spot — and `EXCLUDED_PREFIXES` excludes the 79
+    swept files under `ESX-team-local/backups/`, vendored pre-upgrade
+    snapshots of the ESX kit that this project may not edit (measured: 0
+    candidates, so the exclusion moved the swept figure from 293 to **214**
+    and changed no candidate, keep or guard). `tools/esx/` is kept in scope
+    because this project edits it. **214 files swept, 95 candidates, 57 to
+    triage, 38 keeps** on the current bytes. All five are module-level
+    constants of `tests/footprint_claim_sweep.py::<module>`.
+  - **Owning operations:** `tests/footprint_claim_sweep.py::candidate` (the
+    predicate), `::tracked` (the swept set), `::sweep` (the three-line
+    window), `::kept` and `::needle_is_live` (the `KEEP` allowlist),
+    `::evaluate` (the one measurement both invocations read),
+    `::guard_status` (the three guards) and `::self_test` (measured recall,
+    8 of 8 with 0 of 3 benign lines matched).
+  - **Exit codes:** 0 clean; 1 a candidate needs triage (the default
+    invocation's normal state — 57 lines today); 2 a `KEEP` needle is dead or
+    multi-line, i.e. a rotted allowlist; 3 a `KEEP` path is not in the swept
+    set, the scope guard that makes scope and recall one check; 4
+    `--self-test` failed.
+  - **Enrolment:** `--self-test` (0/4) and `--guards` (3/2/0, untriaged
+    candidates reported as information) are in `structural`. The default
+    invocation is deliberately not enrolled, since 1 is its normal state.
+- **Instrument-claim guard:**
+  `tests/esx/test_instrument_claims.py::test_tile_local_refusal_paragraph_matches_cases`
+  holds one prose claim to the program that decides it: the tile-local
+  refusal paragraph of `tests/rnf/refusal_check.py::<module>` against the
+  cases **returned by** `tests/rnf/refusal_check.py::cases` (called with the
+  real lab_sea `data.pkg`/`data.exf` and
+  `tests/rnf/refusal_check.py::sparse_info`) that carry a non-empty
+  `stderr_any`. One assertion over the seven case names, the case count, the
+  five check names, the check count and any measured case no named check
+  covers; the check grouping is the module constant
+  `tests/esx/test_instrument_claims.py::<module>` (`CHECK_CASES`), which the
+  assertion requires to cover the measured set exactly. It exists because
+  that paragraph went stale twice — RUNOFF-033's cell-centre check and then
+  RUNOFF-040's per-cell aggregate — the second time *in the correction that
+  was meant to make it unrottable*, because the enumeration behind it walked
+  the AST for `file_case(...)` calls and `cell_above_vol_max` is a dict
+  literal. Runs in `structural` under `pytest -q tests/esx`, needs no model
+  build, and skips only when the `MITgcm/` clone is absent.
 - **New reference output:** `compare_results.sh` pairs `input.<X>` with
   `results/output.<X>.txt`. For a new case, run it once single-process and copy
   `output_esx_input.<X>/output.txt` to that name.

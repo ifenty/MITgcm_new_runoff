@@ -29,9 +29,21 @@ on the edit:
     (a package mention) NEAR (an exclusivity marker) NEAR (a footprint word)
 
 Proximity is what makes it usable. Without it the marker ``only`` matches any
-400-character Markdown table row that happens to mention exf: measured, 101
-candidates, almost all noise. With the windows below the same tree gives 72
-candidate hits over 167 swept files, of which 11 are recorded keeps.
+400-character Markdown table row that happens to mention exf: measured on
+RUNOFF-030's ``.md``/``.rst``/``.F``/``.h`` scope, 101 candidates, almost all
+noise. With the windows below, that scope gave 72 candidate hits over 167
+swept files with 11 recorded keeps at RUNOFF-030, and 68 over the same 167
+files when RUNOFF-042 re-measured it (tree growth, not a predicate change).
+Adding ``.py`` on RUNOFF-042 makes it **95 candidate hits over 214 swept
+files, of which 38 are recorded keeps and 57 are the standing triage queue**.
+That queue was also 57 before the suffix, and the coincidence is worth
+spelling out rather than reading as "nothing changed": the ``.py`` suffix adds
+52 candidates, of which 25 are in this file and excluded by :data:`SELF` and
+27 were triaged into ``KEEP`` by RUNOFF-042, so the 57 untriaged lines are the
+same ``.md``/``.F`` queue as before. The swept-file figure moved twice in this
+one issue and both steps are measured: the suffix took 167 files to 294, the
+self-exclusion to 293, and round 1's :data:`EXCLUDED_PREFIXES` to **214** by
+dropping 79 vendored snapshot copies that carry no candidate at all.
 
 Recall is measured, not asserted
 ================================
@@ -91,10 +103,29 @@ coverage); **3 when a file named in ``KEEP`` is not in the swept set**, which
 is the scope guard that makes scope and recall one check; 4 when
 ``--self-test`` fails.
 
+Which invocations a suite can hold
+==================================
+
+RUNOFF-042 settled an enrolment both RUNOFF-030 reviewers deferred. Two modes
+are in the ``structural`` suite of ``esx/project.json``, and the reason is the
+exit codes above:
+
+* ``--self-test`` returns 0 or 4 only. It evaluates the predicate against the
+  literal fixtures in this file and **never calls** :func:`tracked` or
+  :func:`sweep`, so it cannot see a scope shrink, a dead needle or a
+  multi-line needle. It guards the predicate, not the instrument.
+* ``--guards`` runs the real sweep over the tree and returns the three guards
+  alone -- 3, 2 or 0 -- treating untriaged candidates as information. It
+  guards the instrument.
+* The **default** invocation cannot be enrolled: it returns 1 whenever any
+  candidate is untriaged, which is the normal state of a live triage queue
+  (57 lines at the time of writing), so it would fail for ever.
+
 Usage::
 
     python tests/footprint_claim_sweep.py [--packages exf rnf] [--json]
     python tests/footprint_claim_sweep.py --self-test
+    python tests/footprint_claim_sweep.py --guards [--json]
 """
 import argparse
 import json
@@ -112,8 +143,52 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PACKAGES = ("exf", "rnf")
 
 #: Suffixes swept. Fortran and headers carry footprint claims in comments just
-#: as prose files do -- ``exf_check_range.F``'s own banner is one.
-SUFFIXES = (".md", ".rst", ".F", ".h")
+#: as prose files do -- ``exf_check_range.F``'s own banner is one. ``.py`` was
+#: added on RUNOFF-042: the tests and tools carry them in docstrings and
+#: comments the same way, and the scan found one live stale instance the moment
+#: it was turned on (``refusal_check.py``'s list of the tile-local refusals,
+#: which named three of the five checks: RUNOFF-033 added the cell-centre
+#: check and RUNOFF-040 the per-cell aggregate, and neither was added to the
+#: list). Measured cost of the suffix alone: 167 swept files to 294 and 68
+#: candidate hits to 120, of which 25 are this file's own fixtures and prose;
+#: with those excluded (:data:`SELF`) the sweep reads 293 files and reports 95,
+#: and with the vendored snapshots excluded too
+#: (:data:`EXCLUDED_PREFIXES`) 214 files and the same 95.
+SUFFIXES = (".md", ".rst", ".F", ".h", ".py")
+
+#: This file is **excluded from its own sweep**, by path, in :func:`tracked`.
+#:
+#: Why: all 25 of its candidate hits are *quotations*, not claims this project
+#: makes. 18 are inside the three fixture lists (8 in :data:`KEEP`, 7 in
+#: :data:`MUST_MATCH`, 3 in :data:`MUST_MATCH_PATHED`) and the other 7 are
+#: prose that quotes an example claim in order to explain the predicate
+#: ("the only exf change is one guarded call in ``exf_getffields.F``" above,
+#: "pkg/rnf touches the model only here" on :data:`PACKAGES`). Triaging a
+#: quotation of a claim is meaningless: the ``KEEP`` reason would have to be
+#: "this is a fixture", 25 times, and every one of those needles would then be
+#: a line that no longer may be reworded without turning the sweep red.
+#:
+#: The narrower alternative -- excluding the three fixture spans rather than
+#: the file -- was refused, and not on cost: a span is line numbers, and a
+#: line-number allowlist rots on the first insertion above it. That is the
+#: exact failure mode :data:`KEEP` is substring-matched to avoid, so buying
+#: seven quoted prose lines with a mechanism this file exists to warn against
+#: is the wrong trade.
+#:
+#: **What the exclusion leaves unwatched, as a class and not as examples
+#: (LL-016):** every line of this file -- module docstring, every comment,
+#: every ``#:`` attribute doc, every string literal, every fixture -- is
+#: outside the swept set. So a footprint claim this file makes *about the
+#: project* in any of those places is invisible to this sweep, and no other
+#: mechanism replaces it: ``--self-test`` evaluates the literal fixtures in
+#: memory and never reads the file from disk, and the documentation inventory
+#: covers this path only for *superseded figures*
+#: (``doc_contract.py stale``), which is a different predicate. The residual
+#: risk is accepted because the file's subject matter is the predicate rather
+#: than the model's footprint; the way to re-cover it, if that ever stops
+#: being true, is to move the fixtures into a data module the sweep skips and
+#: drop this exclusion.
+SELF = os.path.relpath(os.path.abspath(__file__), ROOT).replace(os.sep, "/")
 
 #: Characters either side of the marker within which the footprint word and
 #: the package mention must fall. Chosen by measurement, not taste
@@ -163,6 +238,37 @@ CONDITIONAL = re.compile(
 RESULT_CLAIM = re.compile(
     r"\b(result|results|output|answer|bit|bitwise|digit|identical|value)\b",
     re.I)
+
+#: Path prefixes dropped from the swept set outright, with the reason.
+#:
+#: ``ESX-team-local/backups/`` is 81 tracked files in timestamped snapshots
+#: (``<stamp>-upgrade-<hash>/``) that ``ESX-team-local/deployments/`` writes
+#: before each kit upgrade overwrites ``tools/esx/``. 79 of them were in the
+#: swept set -- 61 ``.py`` of the 126 files the RUNOFF-042 suffix added, plus
+#: 18 ``.md`` that had been swept since RUNOFF-030 -- and all 79 are copies
+#: this project may not edit, so a candidate there would be **unactionable**:
+#: the only honest triage would be a ``KEEP`` entry whose reason is "we do not
+#: own this file", and the needle would then pin a line in a snapshot.  Worse,
+#: a kit upgrade landing one footprint-shaped sentence would turn this
+#: project's ``structural`` suite red over a file it does not own, which is
+#: precisely the alarm-for-nothing the enrolment is meant to avoid. Measured
+#: cost of the exclusion today: **zero candidates** -- all 79 files produce no
+#: hit under the current predicate -- so it removes 79 files from the swept
+#: figure (293 to 214) and changes no candidate, keep or guard.
+#:
+#: ``tools/esx/`` is deliberately **NOT** excluded, though it is the same kit:
+#: those 35 files we edit constantly (`f80e881` and this iteration both
+#: changed them), so a footprint claim there is ours and is actionable. The
+#: asymmetry with the documentation contract, whose ``stale_lines`` skips
+#: ``tools/esx/`` outright, is intended and is the same judgment read from the
+#: other end: a *superseded figure* in the kit is almost always the kit's own
+#: and not about this model, while a claim that ``pkg/exf`` or ``pkg/rnf`` is
+#: touched in exactly one place is about this project wherever it is written.
+#: Excluded by path and not by content, in :func:`tracked`, so that a ``KEEP``
+#: entry naming an excluded file fails loudly as scope guard (1), exit 3,
+#: exactly as one naming :data:`SELF` does.
+EXCLUDED_PREFIXES = ("ESX-team-local/backups/",)
+
 
 #: Files that are dated, append-only history. A claim in them describes what
 #: was true when it was written and is not maintained; the project's own
@@ -226,6 +332,24 @@ def candidate(text, packages=PACKAGES, path=""):
 #: is the very failure mode this script is about.
 #:
 #: Triaged in RUNOFF-030 correction round 3, re-checked rather than inherited.
+#: Entries 12-38 are RUNOFF-042's triage of the ``.py`` scope, in three
+#: classes. Class A is RUNOFF-030's: the exclusivity claim is true because an
+#: adjacent antecedent enumerates the sites. The two new ones:
+#:
+#: * **B -- not a footprint claim.** The exclusivity word governs a behaviour,
+#:   a command-line option, a file-name pattern or a generated fixture, so no
+#:   site added to ``pkg/exf`` or ``pkg/rnf`` can make it false. The predicate
+#:   drops most of these through ``CONDITIONAL`` and ``RESULT_CLAIM``; these
+#:   are the residue that survives because ``candidate()`` takes the package
+#:   from the *path* (every ``tests/rnf/*.py`` file is an "rnf file"), so a
+#:   sentence in them needs no package word of its own to be a candidate. That
+#:   is a known precision cost of the path keying, not a defect in the line.
+#: * **C -- a coverage claim.** It says which instrument or which model check
+#:   sees what. Adding an instrument or a check falsifies it exactly as adding
+#:   a code site falsifies a footprint claim, so these are kept deliberately
+#:   and each reason names the antecedent that holds it true. One of them was
+#:   stale when the ``.py`` scan first ran and was corrected rather than kept
+#:   (``refusal_check.py``'s tile-local list; entry 29 keeps the fixed line).
 KEEP = [
     # ---- CLASS A: an exclusivity claim that is true because an antecedent
     # ---- enumerating the sites is immediately adjacent.
@@ -284,6 +408,209 @@ KEEP = [
      "the useRNF guard named in the same sentence. Adding an exf site "
      "cannot falsify it as long as the guard holds, which is what the "
      "no-change experiments measure."),
+
+    # ======== RUNOFF-042: the .py scope, 27 candidates, each read in place.
+    # ---- tests/rnf/applied_field_check.py
+    ("tests/rnf/applied_field_check.py",
+     "Pattern of the only file name in scope as a dump of",
+     "B: 'only file name in scope' is about which of the run's output files "
+     "this regex accepts as a dump of one stream, and the next sentence "
+     "states the complement (anything else matching the wider glob is "
+     "reported, never silently taken as a dump). Nothing about where pkg/rnf "
+     "is touched."),
+    ("tests/rnf/applied_field_check.py",
+     'help="check only this case (repeatable)")',
+     "B: an argparse help string describing what --case restricts the run "
+     "to. The exclusivity is the option's semantics; it is kept rather than "
+     "reworded because the wording is the user-visible help text."),
+
+    # ---- tests/rnf/budget_check.py
+    ("tests/rnf/budget_check.py",
+     "single-process run, and ``tests/rnf/exf_heat_check.py`` cross-checks",
+     "C: the marker is 'single' in 'single-process run', describing where "
+     "tendency_term_check measures (one cell, one tile). True and dated by "
+     "construction: that check writes its own one-cell file. The sentence it "
+     "serves -- 'Neither sums over targets' -- is the coverage claim, and it "
+     "names both instruments it is about rather than saying 'no other'."),
+    ("tests/rnf/budget_check.py",
+     "so over every tile of every process, and not only over",
+     "B: states the domain this check sums over (every cell of the global "
+     "layout, not just the file's targets). A scope-of-summation statement "
+     "about this script's own oracle, with its reason in the same sentence; "
+     "no site in pkg/exf or pkg/rnf can falsify it."),
+    ("tests/rnf/budget_check.py",
+     "no other instrument's heat, salt or tracer criterion can see it",
+     "C: the strongest claim of the class in the .py scope, and it carries "
+     "its own antecedent ('because nothing else in the project sums those "
+     "three against a source total') plus, in the two bullets below, the "
+     "enumeration of every other instrument and the reason each is blind. "
+     "RUNOFF-016 round 1 narrowed this very sentence from a looser version "
+     "(commit 00bf581, 'Scope my own overclaim'), and budget_check is the "
+     "newest instrument, so no later one is unaccounted for. An instrument "
+     "added after this must be added to that enumeration."),
+    ("tests/rnf/budget_check.py",
+     "would change the binary every other committed",
+     "B: 'every other committed cs32 oracle' is about which reference "
+     "results a changed packages.conf would invalidate -- a build-input "
+     "claim about the verification set, not about the sites of a change. "
+     "Its conclusion (the tracer closure is not measured on cs32) is stated "
+     "in the same sentence."),
+    ("tests/rnf/budget_check.py",
+     "this check reuses; only the time axis and",
+     "B: says which columns of the committed sparse file this check reuses "
+     "and which it writes itself, so that RNF_INIT_FIXED's placement checks "
+     "still see a table they accept. A claim about this script's fixtures."),
+    ("tests/rnf/budget_check.py",
+     "the guard above names only ``nonlinFreeSurf``.",
+     "C: a claim about the condition of one named model guard "
+     "(update_surf_dr.F:49, cited two lines above), made to correct an "
+     "earlier wrong reason in the same docstring. It is falsifiable by a "
+     "change to that guard, which is why it is worth keeping visible rather "
+     "than reworded; the citation is the antecedent."),
+    ("tests/rnf/budget_check.py",
+     "Over **every** cell of the layout, not only the file's target",
+     "B: the code comment at the oracle that implements the domain stated "
+     "in the docstring above, with its reason on the next two lines. Same "
+     "judgment as the docstring line; kept separately because guard (2) is "
+     "per needle and these two lines can drift apart."),
+
+    # ---- tests/rnf/exf_heat_check.py
+    ("tests/rnf/exf_heat_check.py",
+     "1 K in the **sparse** file only: the control.",
+     "B: describes the perturbation the control applies -- one source's "
+     "temperature moved in the sparse file and not in the dense one. The "
+     "'only' is the perturbation's extent, which is what makes the two runs "
+     "differ; it asserts nothing about code sites."),
+    ("tests/rnf/exf_heat_check.py",
+     "which is what makes it a check of the unchanged dense path",
+     "C: 'the unchanged dense path' is a real footprint claim, and it is "
+     "true for the reason given in the four lines above it: this run has "
+     "useRNF false, so both exf edits are on their unconditioned branch and "
+     "the run is held to the exf bound in full. It is the per-run form of "
+     "the project_profile keep 'without pkg/rnf is byte-for-byte "
+     "unaffected', and the no-change experiments are what measure it."),
+    ("tests/rnf/exf_heat_check.py",
+     "temperature moved 1 K in the sparse file only, largest",
+     "B: the printed PASS/FAIL line of the control, wording the same "
+     "perturbation as the docstring above. Kept, not reworded: this text is "
+     "the instrument's own output and refusal_check-style log assertions "
+     "elsewhere depend on such lines being stable."),
+
+    # ---- tests/rnf/placement_probe.py
+    ("tests/rnf/placement_probe.py",
+     "only a move between cells of different area.",
+     "C: a claim about the coverage of ONE named model check (the area "
+     "check of RNF_INIT_FIXED), and the sentences immediately above state "
+     "the complement -- what protects such a target is applied_field_check "
+     "and the cell-centre check. The enumeration is adjacent, so a new "
+     "check would contradict a named list rather than slip past."),
+    ("tests/rnf/placement_probe.py",
+     "the two differ only in how the",
+     "B: distinguishes two exch2 I/O layouts (map_io 0 and 1) in the "
+     "arithmetic of the global file index. A statement about the exch2 "
+     "layout definition, not about this project's footprint."),
+
+    # ---- tests/rnf/refusal_check.py
+    ("tests/rnf/refusal_check.py",
+     "what no other check can see: the cell it lands on is wet",
+     "C: an exclusivity claim about model checks, and the rest of the "
+     "sentence is the antecedent: the cell is wet, the fractions still sum "
+     "to 1 and the rA is bitwise equal, so the land, fraction and area "
+     "checks cannot see the move. The case's own forbid list asserts that "
+     "blindness, so the claim is measured on every run, not just written."),
+    ("tests/rnf/refusal_check.py",
+     "the aggregate is the only thing wrong with the file",
+     "A: the antecedent is in the same sentence -- the collapse carries "
+     "target_cell_area, target_lon and target_lat with the targets and "
+     "leaves the fractions alone -- and the forbid list of the case asserts "
+     "that no init check fires."),
+    ("tests/rnf/refusal_check.py",
+     "Every process is judged on its own files. A single-process run writes",
+     "B: the marker is 'single' in 'single-process run'; the paragraph "
+     "states which log file each process writes under MPI and without it. "
+     "A fact about MITgcm's output layout."),
+    ("tests/rnf/refusal_check.py",
+     "A refusal that only one tile's check detects (land, cell area, cell "
+     "centre,",
+     "C, corrected by this sweep rather than kept as it stood: the "
+     "enumeration said 'land, cell area, array bound' and had been missing "
+     "the cell-centre check since RUNOFF-033 added it. RUNOFF-042's .py "
+     "scan returned the line; the list is now FIVE checks over SEVEN cases "
+     "(the cases carrying a stderr_any message, which is by definition the "
+     "message only the owning process prints), all seven named in the "
+     "sentence. Round 0 of this issue wrote six cases over four checks and "
+     "both reviewers refuted it: that figure came from walking the AST for "
+     "file_case(...) calls, which cannot see cell_above_vol_max, a dict "
+     "literal at refusal_check.py:1304-1314, whose per-cell RNF_cellVolMax "
+     "breach is detected on the owning tile and reduced with GLOBAL_SUM_INT "
+     "(rnf_exf_runoff.F:184-205). Kept because that tie is what a future "
+     "tile-local check has to contradict -- and the tie itself is no longer "
+     "prose only: tests/esx/test_instrument_claims.py asserts the names and "
+     "both counts against a real cases() call, because this needle makes "
+     "kept() return a reason and so takes the line out of the triage queue "
+     "where guard (2) can never raise it again."),
+    ("tests/rnf/refusal_check.py",
+     "this one is the only time_bnds in the file.",
+     "B: true by construction of the fixture -- the case is built with "
+     "bounds: False, which leaves the ordinary time_bnds out, so the "
+     "one-dimensional variable this helper writes is the only one. A "
+     "statement about a generated NetCDF file."),
+    ("tests/rnf/refusal_check.py",
+     "would make the run a check of initialisation only",
+     "B: explains why the one-step case sets endTime=7200 rather than 3600 "
+     "-- with 3600 the model takes no step, so the run would exercise only "
+     "initialisation. A claim about what a run measures, with the measured "
+     "reason in the two lines above."),
+    ("tests/rnf/refusal_check.py",
+     "the land, fraction and area checks are all blind to it: only the",
+     "C: the code-comment twin of the docstring claim kept above, at the "
+     "target_coords case itself. It enumerates the blind checks and names "
+     "the one that sees the move, and the next line records that forbid "
+     "asserts the blindness. Kept separately from its docstring twin "
+     "because guard (2) is per needle; the two must stay in step, which is "
+     "this file's own error class."),
+    ("tests/rnf/refusal_check.py",
+     "test when useRNF would pass everything else here",
+     "B: 'everything else' is the rest of this case's assertions, not a set "
+     "of code sites: the sentence says a diff that dropped the sflux test "
+     "under useRNF would still satisfy them, which is why the case is "
+     "decisive for sflux. The five lines around it enumerate what the case "
+     "does assert."),
+    ("tests/rnf/refusal_check.py",
+     "``nproc`` 0 is a single-process run, whose standard output",
+     "B: the marker is 'single' in 'single-process run'; the docstring of "
+     "process_logs states which files a run on nproc processes writes. "
+     "Same class as the module docstring's log paragraph."),
+
+    # ---- tests/rnf/tendency_term_check.py
+    ("tests/rnf/tendency_term_check.py",
+     "Analytic single-cell check of the runoff tendency terms",
+     "B: the marker is 'single' in 'single-cell', the check's own summary "
+     "line. It describes the oracle's geometry, which the cases implement by "
+     "writing a one-cell file; nothing about footprint."),
+    ("tests/rnf/tendency_term_check.py",
+     "Only the files this check changes are written; everything else is",
+     "B: states what write_input puts in the scratch input directory and "
+     "that the harness layers the rest in from lab_sea/input. A claim about "
+     "this script's own run directory, falsifiable only by changing this "
+     "script."),
+
+    # ---- tests/rnf/timing_field_check.py
+    ("tests/rnf/timing_field_check.py",
+     'help="check only this case (repeatable)")',
+     "B: the same argparse help string as applied_field_check's --case, and "
+     "the same judgment. Listed separately because KEEP is keyed on the "
+     "path, so one entry cannot cover two files."),
+
+    # ---- MITgcm/utils/python/.../runoff/convert.py
+    ("MITgcm/utils/python/MITgcmutils/MITgcmutils/runoff/convert.py",
+     "Only the start date's offset from",
+     "B: a statement about upstream pkg/exf behaviour -- for yearly files "
+     "exf keeps only the start date's offset from 1 January -- with the "
+     "routine and line range cited in the same sentence "
+     "(exf_getffield_start.F, lines 85-92). It describes what exf does, not "
+     "where this project touches it, and this project does not edit that "
+     "routine."),
 ]
 
 
@@ -364,10 +691,30 @@ def authored_paths(root, prefix):
 
 
 def tracked(root, suffixes):
-    """Tracked files of this repository and the authored files of nested ones."""
+    """Tracked files of this repository and the authored files of nested ones.
+
+    :data:`SELF` and :data:`EXCLUDED_PREFIXES` are dropped here rather than in
+    :func:`sweep`, so that the *swept set* main reports is the set actually
+    read. That placement is also what makes a ``KEEP`` entry naming one of
+    them fail as scope guard (1), exit 3 -- "names a KEEP entry but is not in
+    the swept set", which is true -- instead of rotting quietly into a dead
+    needle.
+
+    The :data:`HISTORY` exclusion stays in :func:`sweep` because it is a
+    different kind, and the difference is worth stating exactly: a history
+    file **is** in the swept set and is counted in the swept-file figure, but
+    :func:`sweep` ``continue``s before ``open()``, so its bytes are never
+    read. (This docstring said "in scope and read" until RUNOFF-042 round 1;
+    ``esx/project_profile.md``'s "never read at all" was the correct half of
+    that pair.) It is skipped on the content policy that dated history is not
+    maintained, and a ``KEEP`` entry naming one of them dies as exit 2 rather
+    than exit 3. Both fail loudly, which is the property that matters.
+    """
     out = subprocess.run(["git", "ls-files"], cwd=root,
                          stdout=subprocess.PIPE, text=True, check=True)
-    names = [f for f in out.stdout.split() if f.endswith(suffixes)]
+    names = [f for f in out.stdout.split()
+             if f.endswith(suffixes) and f != SELF
+             and not f.startswith(EXCLUDED_PREFIXES)]
     for prefix in NESTED:
         cwd = os.path.join(root, prefix)
         if not os.path.isdir(os.path.join(cwd, ".git")):
@@ -560,19 +907,16 @@ def self_test():
     return 0 if not missed and not caught else 4
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--packages", nargs="+", default=list(PACKAGES))
-    parser.add_argument("--json", action="store_true")
-    parser.add_argument("--self-test", action="store_true",
-                        help="check recall against the known must-fix class")
-    args = parser.parse_args(argv)
+def evaluate(root, packages=PACKAGES, suffixes=SUFFIXES):
+    """The one measurement both the default run and ``--guards`` read.
 
-    if args.self_test:
-        return self_test()
-
-    swept = set(tracked(ROOT, SUFFIXES))
-    hits = sweep(ROOT, tuple(args.packages))
+    Extracted from ``main`` on RUNOFF-042 when the guards gained their own
+    invocation: two code paths computing "the same" swept set and the same
+    three guards would be free to drift, and this file's whole subject is a
+    statement that stops being true in one place and not another.
+    """
+    swept = set(tracked(root, suffixes))
+    hits = sweep(root, packages, suffixes)
     triaged, untriaged = [], []
     for name, lineno, text in hits:
         reason = kept(name, text)
@@ -594,37 +938,95 @@ def main(argv=None):
     # line, so a multi-line needle can never match and would masquerade as a
     # keep. Enforced rather than documented.
     multiline = [(p, n) for p, n, _ in KEEP if "\n" in n]
+    return {"swept": swept, "hits": hits, "triaged": triaged,
+            "untriaged": untriaged, "absent": absent, "dead": dead,
+            "multiline": multiline}
 
-    if args.json:
-        print(json.dumps({"candidates": len(hits), "untriaged": untriaged,
-                          "triaged": triaged, "swept_files": len(swept),
-                          "absent_keep_paths": absent,
-                          "dead_needles": [n for _, n in dead],
-                          "multiline_needles": [n for _, n in multiline]},
-                         indent=1))
-    else:
-        print(f"{len(swept)} file(s) swept; {len(hits)} footprint candidate "
-              f"hit(s): {len(untriaged)} to triage, {len(triaged)} covered by "
-              f"{len(KEEP)} KEEP entries")
-        for h in untriaged:
-            print(f"  TRIAGE {h['path']}:{h['line']}: {h['text'][:110]}")
-        for h in triaged:
-            print(f"  keep   {h['path']}:{h['line']}: {h['text'][:70]}")
-        for path in absent:
-            print(f"  SCOPE SHRANK: {path} names a KEEP entry but is not in "
-                  f"the swept set")
-        for path, n in multiline:
-            print(f"  MULTI-LINE NEEDLE (can never match) {path}: "
-                  f"{' '.join(n.split())[:60]}")
-        for path, n in dead:
-            print(f"  DEAD NEEDLE {path}: {' '.join(n.split())[:70]}")
-    if absent:
+
+def guard_status(result):
+    """The exit status of the three guards alone: 3, 2 or 0.
+
+    Untriaged candidates are deliberately not consulted. The guards answer
+    "is this instrument still measuring what it claims to measure"; the triage
+    queue answers "has every candidate been judged yet", which is work in
+    progress rather than rot.
+    """
+    if result["absent"]:
         return 3
-    if multiline:
+    if result["multiline"] or result["dead"]:
         return 2
-    if dead:
-        return 2
-    return 1 if untriaged else 0
+    return 0
+
+
+def report(result, as_json=False, guards_only=False):
+    """Print the measurement, in the same shape for both invocations."""
+    if as_json:
+        print(json.dumps(
+            {"candidates": len(result["hits"]),
+             "untriaged": result["untriaged"], "triaged": result["triaged"],
+             "swept_files": len(result["swept"]),
+             "absent_keep_paths": result["absent"],
+             "dead_needles": [n for _, n in result["dead"]],
+             "multiline_needles": [n for _, n in result["multiline"]],
+             "guards_only": guards_only,
+             "guard_status": guard_status(result)}, indent=1))
+        return
+    print(f"{len(result['swept'])} file(s) swept; {len(result['hits'])} "
+          f"footprint candidate hit(s): {len(result['untriaged'])} to triage, "
+          f"{len(result['triaged'])} covered by {len(KEEP)} KEEP entries")
+    for h in result["untriaged"]:
+        # Lower case in --guards on purpose: there the line is information and
+        # does not affect the status, and a shouted TRIAGE in a suite log
+        # reads as the thing that failed.
+        label = "info   " if guards_only else "TRIAGE "
+        print(f"  {label}{h['path']}:{h['line']}: {h['text'][:110]}")
+    if not guards_only:
+        for h in result["triaged"]:
+            print(f"  keep   {h['path']}:{h['line']}: {h['text'][:70]}")
+    for path in result["absent"]:
+        print(f"  SCOPE SHRANK: {path} names a KEEP entry but is not in "
+              f"the swept set")
+    for path, n in result["multiline"]:
+        print(f"  MULTI-LINE NEEDLE (can never match) {path}: "
+              f"{' '.join(n.split())[:60]}")
+    for path, n in result["dead"]:
+        print(f"  DEAD NEEDLE {path}: {' '.join(n.split())[:70]}")
+    if guards_only:
+        # Paths and entries are counted separately on purpose: `absent` is a
+        # set of paths while KEEP is a list of entries, and printing one
+        # against the other would read as "11 of 11 paths" for 11 entries
+        # over 5 files.
+        paths = {p for p, _, _ in KEEP}
+        print(f"guards: scope {len(paths) - len(result['absent'])} of "
+              f"{len(paths)} KEEP path(s) in the swept set, "
+              f"{len(result['dead'])} of {len(KEEP)} needle(s) dead, "
+              f"{len(result['multiline'])} multi-line; the "
+              f"{len(result['untriaged'])} line(s) above are information, not "
+              f"a failure")
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--packages", nargs="+", default=list(PACKAGES))
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--self-test", action="store_true",
+                        help="check recall against the known must-fix class")
+    parser.add_argument("--guards", action="store_true",
+                        help="run the real sweep but fail only on the three "
+                             "guards (exit 3 scope shrank, 2 rotted needle, "
+                             "0 otherwise); untriaged candidates are printed "
+                             "as information")
+    args = parser.parse_args(argv)
+
+    if args.self_test:
+        return self_test()
+
+    result = evaluate(ROOT, tuple(args.packages))
+    report(result, as_json=args.json, guards_only=args.guards)
+    status = guard_status(result)
+    if args.guards:
+        return status
+    return status or (1 if result["untriaged"] else 0)
 
 
 if __name__ == "__main__":

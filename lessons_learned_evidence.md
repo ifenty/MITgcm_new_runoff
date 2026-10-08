@@ -289,12 +289,23 @@ filename that **is** their content hash, so editing one in place breaks the
 name↔content identity that makes it citable at all. Hence this forward note
 instead, keyed to the row's **title** rather than its line.
 
-**Still outstanding:** the "at least" → "about" wording in the *Target cell
-centres* row of `docs/verification_matrix.md`. Fix it in the next issue that
-edits that row, and prefer a row title or a `path::symbol` anchor over a line
-number — review A's reason being that a `path::symbol` reference is *gated*,
-since `doc_contract` hashes symbol targets into the seal, while a bare line
-number has no such guard. Four further stale record citations found by the same
+**Discharged 2026-10-08 on RUNOFF-042, correction round 1** (the next round
+that edited that row, as this note asked). The *Target cell centres* row of
+`docs/verification_matrix.md` now reads "two distinct centres are **about**
+`0.5*(s_from + s_to)` apart along the move" and states the reason in the same
+clause, matching `MITgcm/pkg/rnf/RNF.h::<module>`. Two things worth keeping
+from the fix. First, the row had been **self-contradicting**, not merely
+stale: it asserted the floor as a strict lower bound in one clause and refuted
+it later in the same row ("that ratio is slightly below 1 — 0.99995 at
+lab_sea's 77 °N with a 2° step"), so the corrected clause cross-references
+that paragraph rather than repeating its figure. Second, the correction was
+reachable only because this note is keyed to the row **title**: the row is at
+line 43 as this note says, but RUNOFF-042 itself edited three other spans of
+the same file, and a line-keyed to-do would have moved again. Prefer a row
+title or a `path::symbol` anchor over a line number — review A's reason being
+that a `path::symbol` reference is *gated*, since `doc_contract` hashes symbol
+targets into the seal, while a bare line number has no such guard. Four
+further stale record citations found by the same
 sweep are listed in RUNOFF-016's round-2 record; they predate that issue by
 content and two of them quote text that exists nowhere, so they fail loudly and
 mislead nobody.

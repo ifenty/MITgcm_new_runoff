@@ -135,6 +135,16 @@
         "pytest",
         "-q",
         "tests/esx"
+      ],
+      [
+        "{python}",
+        "tests/footprint_claim_sweep.py",
+        "--self-test"
+      ],
+      [
+        "{python}",
+        "tests/footprint_claim_sweep.py",
+        "--guards"
       ]
     ],
     "focused": [

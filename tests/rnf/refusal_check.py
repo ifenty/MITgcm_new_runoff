@@ -131,9 +131,33 @@ A refusal case passes when all of these hold:
 * there is exactly one ``STOP`` line of the expected routine per process;
 * no forbidden message is in any log.
 
-A refusal detected on one tile only (land, cell area, array bound) must stop
-every process. Under ``--mpi`` this is what the ``STOP`` count and the timeout
-check: one ``STOP`` line per process, and no hang.
+A refusal that only one tile's check detects (land, cell area, cell centre,
+array bound, per-cell aggregate) must stop every process. Under ``--mpi``
+this is what the ``STOP`` count and the timeout check: one ``STOP`` line per
+process, and no hang. Those five checks are not a remembered list: they are
+exactly the checks behind the cases that carry a ``stderr_any`` message,
+which is by definition the message only the owning process prints -- seven
+cases (``target_on_land``, ``cell_area``, ``target_coords``,
+``target_coords_nan``, ``too_many_sources``, ``too_many_targets``,
+``cell_above_vol_max``). Four of the five checks are ``RNF_INIT_FIXED``'s;
+the fifth is the per-cell aggregate bound ``RNF_cellVolMax``, which
+``RNF_EXF_RUNOFF`` evaluates per cell on the tile that owns it and then
+reduces with ``GLOBAL_SUM_INT`` so that every process stops
+(``rnf_exf_runoff.F``, the per-cell loop at 144-179 and the reduction and
+stop at 184-205).
+
+**This paragraph has been wrong twice, both times by omitting a check that
+had just been added, so it is asserted rather than maintained:**
+``tests/esx/test_instrument_claims.py`` compares the two counts and the seven
+names above against what :func:`cases` returns, and fails the ``structural``
+suite when they drift. "Cell centre" was missing from RUNOFF-033, which added
+that check, until RUNOFF-042's sweep of ``.py`` returned the line as a
+candidate; that correction then omitted ``cell_above_vol_max`` (RUNOFF-040),
+because the enumeration behind it walked the AST for ``file_case(...)`` calls
+and this one case is a dict literal instead, so the method could not see it.
+Both reviewers found the omission by **calling** :func:`cases`, which is the
+enumeration that sees every case however it was built, and that is how the
+test above derives the set.
 
 The scratch input and run directories are removed afterwards (``--keep``
 leaves the run directories for inspection). Exit status: 0 if every case
@@ -1554,10 +1578,19 @@ def cases(data_pkg, data_exf, info=None):
                  PASSED]
     # The five "which bounds applied" lines of RNF_SUMMARY, asserted on every
     # normal-end case. ("Four" until RUNOFF-040 added the per-cell line
-    # below; this comment went on saying four for a whole issue because the
-    # stale-figure sweep does not scan .py, which is the one route by which
-    # the twins in docs/code_map.md and pkg/rnf/README.md were caught and
-    # this one was not.)
+    # below; this comment went on saying four for a whole issue, and RUNOFF-042
+    # measured why rather than inheriting the explanation that stood here.
+    # It was NOT a sweep skipping .py. The stale-figure sweep reads the
+    # documentation inventory, which is `test_paths: ["tests"]` in
+    # esx/project.json -- unchanged since before RUNOFF-040 -- and lists this
+    # file among 66 .py entries. What missed was the figure TOKEN: RUNOFF-040
+    # recorded the rows "four lines", "four RNF_SUMMARY lines" and
+    # "four `RNF_SUMMARY`", and this wording puts the quoted phrase between
+    # the number and its noun, so none of them matches here, while both .md
+    # twins said "four lines" contiguously and were listed and fixed. A row of
+    # plain "four" matches this line (measured). The footprint sweep of
+    # tests/footprint_claim_sweep.py never saw it either, with .py in SUFFIXES
+    # or without, because the line carries no exclusivity marker at all.)
     # Review B of RUNOFF-030 correction round 2 found them unenrolled:
     # nothing observed them, so deleting the whole report would have failed
     # no case, and its own inertness argument cuts both ways -- the lines are
