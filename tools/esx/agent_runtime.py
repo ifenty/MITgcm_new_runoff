@@ -234,6 +234,7 @@ def stop_record(root, event, *, transport="native_subagent"):
         status, error = "incomplete", "missing runtime identity"
     elif not footer or footer.get("agent", footer.get("agent_name")) != event.get("agent_type"):
         status, error = "incomplete", "missing, malformed, or mismatched structured footer"
+    stale_orientation = []
     if status == "completed" and event.get("agent_type") in ("bob", "richard"):
         # The same capture-time contract a retained turn gets: a missing, mismatched or
         # stale reference is reported now, not at closeout (TEAM-NATIVE-FOOTER-VALIDATION-001).
@@ -248,6 +249,25 @@ def stop_record(root, event, *, transport="native_subagent"):
             if errors:
                 # The work was done and only the report is defective: a short followup fixes it.
                 status, error = "incomplete", "report cites a reference that does not resolve: " + "; ".join(errors)
+            # `reference_errors` validates the orientation with fresh=False, so a
+            # receipt whose selected targets have since moved is ACCEPTED here
+            # while `check-orientation` refuses the same receipt. That is
+            # deliberate -- a completion imported from an earlier correction
+            # round keeps its own orientation -- but accepted silently it meant
+            # two gates disagreed about one artifact with no trace of which
+            # (TEAM-FOOTER-ORIENTATION-FRESHNESS-001). Naming the moved targets
+            # in the record satisfies that issue's acceptance without making a
+            # legitimate historical receipt fatal.
+            try:
+                import doc_contract
+                moved = doc_contract.stale_targets(Path(root), footer.get("orientation"),
+                                                  footer.get("issue_id"),
+                                                  start["maintenance"]["baseline"],
+                                                  event["agent_type"])
+            except (OSError, ValueError, KeyError, TypeError):
+                moved = []
+            if moved:
+                stale_orientation = moved
     event_id = uuid.uuid4().hex
     report_path = local(Path(root), "devel-loop/loop_state/agent_reports/" + event_id + ".md")
     report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -258,6 +278,7 @@ def stop_record(root, event, *, transport="native_subagent"):
         "session_id": event.get("session_id"),
         "transcript": event.get("agent_transcript_path") or event.get("transcript_path"),
         "status": status, "error": error, "footer": footer,
+        "stale_orientation_targets": stale_orientation,
         "issue_id": (footer or {}).get("issue_id"),
         "iteration_timestamp": (footer or {}).get("iteration_timestamp"),
         "correction_round": (footer or {}).get("correction_round", 0),

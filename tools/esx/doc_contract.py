@@ -9,6 +9,7 @@ import argparse
 import copy
 import datetime as dt
 import json
+import re
 from pathlib import Path
 import sys
 
@@ -290,6 +291,59 @@ def latest_orientation(root, issue, base_ref, role):
         if best is None or record.get('created_at', '') > best[0]:
             best = (record.get('created_at', ''), ref)
     return best[1] if best else None
+
+
+def latest_seal(root, issue):
+    """The newest sealed documentation report for this issue, or None.
+
+    `footer_contract.validate` can only test a cited report against an
+    `expected_report` that the caller supplies, and only a validated reviewer
+    packet carries one -- so an IMPLEMENTER footer citing a superseded seal
+    passed every capture gate, and the implementer is the role that re-seals
+    every single round, i.e. the one whose citation is most likely to go stale
+    (TEAM-FOOTER-ORIENTATION-FRESHNESS-001, measured on RUNOFF-030 and
+    RUNOFF-040).
+
+    The current seal does not actually need a packet: it is the newest
+    `documentation` record for the issue, which is recoverable here. That makes
+    the check available to both roles and on both capture paths. Mirrors
+    `latest_orientation`'s scan deliberately, so the two stay comparable.
+    """
+    root = Path(root).resolve()
+    directory = root / 'devel-loop' / 'loop_state' / 'maintenance'
+    if not directory.is_dir():
+        return None
+    best = None
+    for path in directory.glob('*.json'):
+        try:
+            record = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        if record.get('kind') != 'documentation' or record.get('issue_id') != issue:
+            continue
+        if best is None or record.get('created_at', '') > best[0]:
+            best = (record.get('created_at', ''), {'path': str(path.relative_to(root)), 'sha256': path.stem})
+    return best[1] if best else None
+
+
+def stale_targets(root, ref, issue, base_ref, role):
+    """Names of the oriented targets that have moved since `ref` was taken.
+
+    Returned for the record rather than raised, because a completion imported
+    from an earlier correction round legitimately keeps its own orientation.
+    The acceptance recorded for TEAM-FOOTER-ORIENTATION-FRESHNESS-001 allows a
+    stale receipt to be accepted at capture *provided the changed targets are
+    named in the recorded completion*, which is what this supplies: capture
+    stays non-fatal and `--check-orientation` remains the strict gate.
+    """
+    try:
+        validate_orientation(root, ref, issue, base_ref, role)
+        return []
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        text = str(exc)
+        if 'stale' not in text:
+            return []
+        return re.findall(r'"target":\s*"([^"]+)"', text) or [text[:200]]
 
 
 def validate_orientation(root, ref, issue, base_ref, role, fresh=True):

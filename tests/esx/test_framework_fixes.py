@@ -955,3 +955,112 @@ def test_command_span_stops_at_a_quote():
         ROOT, 'run tools/esx/loop_gate.py --check-start --issue X --agent bob') == [
         'loop_gate.py does not accept --agent',
         'loop_gate.py does not accept --issue']
+
+
+def test_signal_is_not_classified_as_a_timeout():
+    """A signalled run must not be filed as a verdict on the candidate.
+
+    TEAM-VERIFY-SIGNAL-MISCLASSIFIED-001. The filed root cause was wrong and
+    this records the real one: `InterruptedError` is a subclass of `OSError`,
+    so while the `except (OSError, TimeoutExpired)` arm sat above the signal
+    arm, every signal was caught there and recorded as `rc, timed_out = 124,
+    True`. `timed_out` then short-circuits `interruption()`, so RUNOFF-040's
+    killed final verification was recorded as "verification failed (exit 124)"
+    -- suite scientific, stable TRUE -- against a candidate two reviewers had
+    approved, with zero FAIL tokens in its log.
+    """
+    import verify
+    assert issubclass(InterruptedError, OSError), 'the whole defect rests on this'
+
+    source = (ROOT / 'tools/esx/verify.py').read_text()
+    signal_arm = source.index('except (KeyboardInterrupt, InterruptedError)')
+    oserror_arm = source.index('except (OSError, subprocess.TimeoutExpired)')
+    assert signal_arm < oserror_arm, 'the signal arm must precede the OSError arm'
+
+    # The marker test does not depend on the sign of rc, which is the second
+    # half: a process-group signal arrives as a POSITIVE status.
+    killed = 'COMMAND x\nverification received signal 15'
+    assert verify.interruption(124, killed) == 'run received signal 15'
+    assert verify.interruption(-15, 'no marker') == 'child terminated by signal 15'
+
+    # A genuine per-command timeout must STILL be a verdict on a hung
+    # candidate, which is what verify.py:173 intends; over-reaching here would
+    # convert real hangs into interruptions.
+    assert verify.interruption(124, 'Command timed out after 3600 seconds') is None
+    assert verify.interruption(0, killed) is None
+
+
+def test_implementer_footer_citing_a_superseded_seal_is_caught(tmp_path):
+    """The gap that no gate covered: an implementer's own stale report citation.
+
+    TEAM-FOOTER-ORIENTATION-FRESHNESS-001. `validate` compares against an
+    `expected_report` that only a validated reviewer packet supplies, so a bob
+    footer citing a superseded seal passed `reference_errors` AND `validate`.
+    The implementer is the role that re-seals every round, so its citation is
+    the likeliest to go stale and was the only one nothing checked.
+    """
+    import doc_contract, footer_contract
+    state = tmp_path / 'devel-loop/loop_state/maintenance'
+    state.mkdir(parents=True)
+
+    def seal(created, note):
+        payload = {'version': 1, 'kind': 'documentation', 'issue_id': 'X-1',
+                   'created_at': created, 'references': [], 'note': note}
+        sha = doc_contract.digest(payload)
+        (state / f'{sha}.json').write_text(json.dumps(payload, indent=2, sort_keys=True))
+        return {'path': f'devel-loop/loop_state/maintenance/{sha}.json', 'sha256': sha}
+
+    old = seal('2026-01-01T00:00:00+00:00', 'round 1')
+    new = seal('2026-01-02T00:00:00+00:00', 'round 2')
+
+    assert doc_contract.latest_seal(tmp_path, 'X-1') == new
+    assert doc_contract.latest_seal(tmp_path, 'OTHER') is None
+
+    start = {'state_version': 2, 'timestamp': 'T0',
+             'maintenance': {'baseline': {'path': 'b', 'sha256': 'b'}}}
+    footer = {'issue_id': 'X-1', 'iteration_timestamp': 'T0',
+              'documentation_review': {'report': old}}
+    errors = footer_contract.reference_errors(tmp_path, 'bob', footer, start)
+    assert any('superseded' in e for e in errors), errors
+
+    # Citing the current seal is clean.
+    footer['documentation_review']['report'] = new
+    assert footer_contract.reference_errors(tmp_path, 'bob', footer, start) == []
+
+    # A completion imported from an EARLIER iteration keeps its own seal and is
+    # not refused -- the same exemption the orientation rule relies on.
+    footer['documentation_review']['report'] = old
+    footer['iteration_timestamp'] = 'T-EARLIER'
+    assert footer_contract.reference_errors(tmp_path, 'bob', footer, start) == []
+
+
+def test_report_identity_is_checked_on_a_rejecting_verdict():
+    """A REJECT is the turn after which the implementer re-seals.
+
+    TEAM-FOOTER-ORIENTATION-FRESHNESS-001, the third gap. `validate`'s deep
+    block is skipped for a REJECT because a rejection does not gate closure --
+    but that made a rejecting footer the likeliest place to cite a superseded
+    seal and the only verdict where nothing objected. Measured on RUNOFF-030
+    by a reviewer substituting the superseded report into a REJECT footer.
+    """
+    source = (ROOT / 'tools/esx/footer_contract.py').read_text()
+    identity = source.index('stale_any = stale_citation')
+    approving = source.index("if footer['verdict'] != 'REJECT':")
+    assert identity < approving, 'identity must be tested before the approving-only block'
+
+
+def test_stale_orientation_targets_are_named_not_swallowed(tmp_path):
+    """Capture may accept a stale receipt, but the record must name what moved.
+
+    TEAM-FOOTER-ORIENTATION-FRESHNESS-001's own acceptance allows acceptance
+    *provided the changed targets are named*, because a completion imported
+    from an earlier correction round legitimately keeps its orientation. Before
+    this, the two gates disagreed about one artifact with no trace of which.
+    """
+    import doc_contract
+    # A receipt that cannot be loaded at all is not a staleness report.
+    assert doc_contract.stale_targets(tmp_path, {'path': 'nope', 'sha256': 'x'},
+                                      'X-1', {'path': 'b', 'sha256': 'b'}, 'bob') == []
+    source = (ROOT / 'tools/esx/agent_runtime.py').read_text()
+    assert 'stale_orientation_targets' in source, 'the record must carry the moved targets'
+    assert source.index('stale_orientation = []') < source.index('stale_orientation = moved')

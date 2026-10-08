@@ -535,12 +535,13 @@ Agents spend their turns on the work rather than on diagnosing their instruction
 ## 🔴 PROPOSED: capture accepts a stale orientation receipt that check-orientation refuses
 
 **Date Identified**: 2026-10-06  13:40
-**Status**: Proposed
+**Status**: Implemented — awaiting publication/effectiveness evidence
 **UUID**: TEAM-FOOTER-ORIENTATION-FRESHNESS-001
 **Category**: workflow_integrity
 **Severity**: Medium
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
-**Anchors**: tools/esx/footer_contract.py:reference_errors; tools/esx/agent_runtime.py:stop_record; tools/esx/doc_contract.py:validate_orientation
+**Anchors**: tools/esx/footer_contract.py:reference_errors; tools/esx/footer_contract.py:validate; tools/esx/doc_contract.py:latest_seal
+**Implementation-Reference**: this change; guards in tests/esx/test_framework_fixes.py
 
 ### Issue
 
@@ -819,14 +820,27 @@ from this check go to zero while its true positives are unchanged.
 ## 🔴 PROPOSED: an externally killed verification run is recorded as a candidate failure
 
 **Date Identified**: 2026-10-07  03:40
-**Status**: Proposed
+**Status**: Implemented — awaiting publication/effectiveness evidence
 **UUID**: TEAM-VERIFY-SIGNAL-MISCLASSIFIED-001
 **Category**: evidence_integrity
 **Severity**: High
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
-**Anchors**: tools/esx/verify.py:interruption; tools/esx/verify.py:execute
+**Anchors**: tools/esx/verify.py:interruption; tools/esx/verify.py:run
+**Implementation-Reference**: this change; guards in tests/esx/test_framework_fixes.py
 
 ### Issue
+
+**ROOT CAUSE CORRECTED 2026-10-07 while implementing: the diagnosis first filed
+here was incomplete and blamed the wrong line.** `interruption()` is never even
+consulted on this path. `InterruptedError` is a **subclass of `OSError`**, so
+while `except (OSError, subprocess.TimeoutExpired)` sat *above* the
+`except (KeyboardInterrupt, InterruptedError)` arm in `run`, every signal was
+caught by the OSError arm and recorded as `rc, timed_out = 124, True` — a
+*timeout* — and `timed_out` then short-circuits `interruption()` entirely. Which
+arm ran is provable from the RUNOFF-040 log: its last line is
+`verification received signal 15` with **no `INTERRUPTED ` prefix**, and only
+the signal arm adds one. The original text below describes a real secondary
+weakness, kept because the marker test is worth having as defence in depth.
 
 `interruption()` names why a non-zero run never reached a verdict, and it
 recognises signal death only through `rc < 0`. When the run is killed by a

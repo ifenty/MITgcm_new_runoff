@@ -44,10 +44,29 @@ def failure_lines(text):
     return sum(1 for line in text.splitlines() if not line.startswith('COMMAND ') and FAILURE_LINE.search(line))
 
 
+#: `execute`'s own signal handler writes this, so it is the authoritative
+#: witness that a run was signalled rather than that a candidate failed -- and
+#: it survives in the log whatever return code the intervening layers report.
+SIGNAL_MARKER = re.compile(r'verification received signal (\d+)')
+
+
 def interruption(rc, text):
-    """Name why a non-zero run never reached a verdict, or return None."""
+    """Name why a non-zero run never reached a verdict, or return None.
+
+    The signal test does not rely on the sign of ``rc``. A signal delivered to
+    the process group reaches this code as a POSITIVE status from an
+    intervening shell, so a `rc < 0` test alone misses it and the run falls
+    through to the scientific-verdict branch. The marker in the text is
+    written by `execute`'s own handler and is therefore the reliable witness
+    (TEAM-VERIFY-SIGNAL-MISCLASSIFIED-001). Kept as defence in depth beside the
+    exception-arm ordering in `run`, which is where that defect actually lived:
+    either alone would have caught the RUNOFF-040 case.
+    """
     if rc == 0:
         return None
+    signalled = SIGNAL_MARKER.search(text)
+    if signalled:
+        return f'run received signal {signalled[1]}'
     if rc < 0:
         return f'child terminated by signal {-rc}'
     if 'test session starts' in text and not PYTEST_SUMMARY.search(text):
@@ -147,12 +166,29 @@ def _run(root, suite, owner, fresh, override):
             stream.flush()
             try:
                 rc = execute(command(argv, cfg), root, stream, cfg.get('command_timeout_seconds', 3600))
-            except (OSError, subprocess.TimeoutExpired) as exc:
-                stream.write(str(exc) + '\n')
-                rc, timed_out = 124, True
+            # THE SIGNAL ARM MUST COME FIRST. `InterruptedError` is a subclass
+            # of `OSError`, so while the OSError arm was above it every signal
+            # was caught there, written without the `INTERRUPTED ` prefix and
+            # recorded as `rc, timed_out = 124, True` -- a timeout. `timed_out`
+            # then short-circuits `interruption()` below, so an externally
+            # killed run was reported as "verification failed (exit 124)", a
+            # scientific verdict on the candidate
+            # (TEAM-VERIFY-SIGNAL-MISCLASSIFIED-001).
+            #
+            # Measured on RUNOFF-040: the final scientific verification was
+            # killed by a process-group SIGTERM after 3542.95 s over 36 of 59
+            # commands, and its permanent record reads suite scientific, exit
+            # 124, stable TRUE against a candidate two reviewers had approved,
+            # with zero FAIL tokens in the log and 35 of 36 started commands
+            # passing. Which arm ran is provable from that log: its last line is
+            # `verification received signal 15` with no `INTERRUPTED ` prefix,
+            # and only this arm adds one.
             except (KeyboardInterrupt, InterruptedError) as exc:
                 stream.write('INTERRUPTED ' + repr(exc) + '\n')
                 rc, interrupted = 130, exc
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                stream.write(str(exc) + '\n')
+                rc, timed_out = 124, True
             if rc != 0:
                 break
     try:
@@ -170,8 +206,14 @@ def _run(root, suite, owner, fresh, override):
         interrupted.log = log
         raise interrupted
     text = path.read_text(errors='replace')
-    # A timeout is the configured verdict on a hung candidate, not an interruption.
-    reason = None if timed_out else interruption(rc, text)
+    # A timeout is the configured verdict on a hung candidate, not an
+    # interruption -- but a signal marker outranks `timed_out`, because
+    # `execute` writes that marker itself and nothing else can. Without this,
+    # any future path that classifies a signal as a timeout would again bury it
+    # in the scientific-verdict branch, which is exactly how RUNOFF-040's
+    # killed run came to be recorded as a candidate failure
+    # (TEAM-VERIFY-SIGNAL-MISCLASSIFIED-001).
+    reason = interruption(rc, text) if (not timed_out or SIGNAL_MARKER.search(text)) else None
     if reason:
         raise RunInterrupted(f'verification interrupted ({reason}); {failure_lines(text)} failure lines '
                              f'were logged and the suite reached no verdict; inspect {log}', log, reason)

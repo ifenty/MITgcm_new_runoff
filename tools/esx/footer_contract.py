@@ -81,6 +81,19 @@ def validate(root, role, footer, issue, correction_round, start=None, agent_id=N
                     raise ValueError('verdict must be APPROVE, APPROVE_WITH_FIXES, or REJECT')
                 if not isinstance(footer.get('must_fix'), list):
                     raise ValueError('must_fix must be a list')
+                # Report identity is checked on EVERY verdict, not only an
+                # approving one. The deep block below is skipped for a REJECT
+                # because a rejection does not gate closure -- but a REJECT is
+                # precisely the turn after which the implementer re-seals, so a
+                # rejecting footer citing a superseded seal was the single
+                # likeliest stale citation and the only one nothing objected to
+                # (TEAM-FOOTER-ORIENTATION-FRESHNESS-001, measured on
+                # RUNOFF-030 where a reviewer substituted the superseded report
+                # into a REJECT footer and both gates passed it).
+                stale_any = stale_citation((footer.get('documentation_review') or {}).get('report'),
+                                           expected_report)
+                if stale_any:
+                    raise ValueError(stale_any)
                 if footer['verdict'] != 'REJECT':
                     import verify
                     from project import source_signature
@@ -144,6 +157,24 @@ def reference_errors(root, role, footer, start, agent_id=None):
             docs.load(Path(root), report, 'documentation', issue)
         except (ValueError, OSError, KeyError, TypeError) as exc:
             errors.append('documentation_review.report: ' + str(exc))
+        else:
+            # Identity, not just resolvability. `validate` can only compare
+            # against an `expected_report` the caller supplies, and only a
+            # validated reviewer packet carries one -- so an IMPLEMENTER footer
+            # citing a superseded seal passed every gate, and the implementer
+            # is the role that re-seals every round
+            # (TEAM-FOOTER-ORIENTATION-FRESHNESS-001). The current seal needs
+            # no packet: it is the newest `documentation` record for the issue.
+            #
+            # Only for a footer of the ACTIVE iteration. A completion imported
+            # from an earlier round legitimately cites the seal of its own
+            # round, and refusing that would break the same case the
+            # orientation rule protects.
+            if footer.get('iteration_timestamp') == start.get('timestamp'):
+                current = docs.latest_seal(Path(root), issue)
+                stale = stale_citation(report, current)
+                if stale:
+                    errors.append(stale)
     return errors
 
 
