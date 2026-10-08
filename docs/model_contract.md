@@ -319,15 +319,26 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
 
 ### Invariants
 
-- Total applied volume flux, `Σ runoff·rA`, equals `Σ_s flux_s(t)`. Measured, the
-  two agree **exactly** — 0.0 relative, on lab_sea and on cs32, single process and
-  MPI, at every record a run applies (RUNOFF-016) — because the fractions of each
-  source sum to 1 and the reader uses them as stored: it does not renormalize
-  them. What is bounded rather than exact is the **input**. `RNF_fracTol`
-  (`rnf_init_fixed.F`) is how far a file whose fraction sums are *not* 1 may move
-  the total and still be accepted by the checker and the init check; its value is
-  1e-6. A measured residual anywhere near that bound therefore means the file,
-  not the model, and the invariant above is **not** stated to that tolerance.
+- Total applied volume flux, `Σ runoff·rA`, equals `Σ_s flux_s(t)`. The **measured
+  value on the configurations exercised** is 0.0 relative — lab_sea and cs32,
+  single process and MPI, at every record a run applies (RUNOFF-016). That is a
+  measurement and not a guarantee, and it is **not** caused by the reader using
+  the file's fractions as stored rather than renormalizing them: non-renormalizing
+  removes a *bias*, not the floating-point error. The closure is round-off, as the
+  third bullet below says. Why it reads 0.0 here is that the per-term errors stay
+  under half an ulp of the total: measured on the lab_sea case's own `RAC.data`,
+  the per-entry round-trip `(flux·frac/rA)·rA` differs from `flux·frac` on 2 of
+  the 7 entries on 2 of the 5 records, yet the exactly-summed discrepancy is at
+  worst 0.375 ulp of the total (1.36e-12 against an ulp of 3.64e-12), so the
+  rounded sum lands on the source total. A configuration with more entries per
+  cell, or areas less kind to the round-trip, may well read non-zero and still be
+  correct; the criterion is 1e-12, not 0.
+  What is bounded rather than measured is the **input**. `RNF_fracTol`
+  (`RNF.h:650`, compared at `rnf_init_fixed.F:911`) is how far a file whose
+  fraction sums are *not* 1 may move the total and still be accepted by the
+  checker and the init check; its value is 1e-6. A residual anywhere near that
+  bound therefore means the file, not the model, and the invariant above is **not**
+  stated to that tolerance.
 - The model carries runoff as a mass flux, `rhoConstFresh · runoff`, and converts
   it back to volume with `rhoConst`. The model volume therefore grows by
   `Σ_s flux_s · rhoConstFresh / rhoConst`. Per target cell the heat, salt and
@@ -343,12 +354,13 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
 - Those four sums — volume, heat, salt and each tracer — are what
   `tests/rnf/budget_check.py` closes, for every record a run applies, against the
   source series of the file. It sums over every cell of the global layout, not
-  only over the cells the file names, so water delivered elsewhere enters the sum. Worst residuals measured (RUNOFF-016): volume 0.0 on
-  both grids; heat 3.353e-16 (lab_sea, 1 and 2 processes) and 1.444e-16 (cs32, 1
-  and 4 processes); salt 2.107e-16 on both; tracer 2.079e-16 (lab_sea only, since
-  cs32 does not compile pkg/ptracers). The closure is held to round-off and not
-  bitwise, because dividing a flux by a cell area and multiplying it back is not
-  exact in floating point.
+  only over the cells the file names, so water delivered elsewhere enters the sum.
+  Worst residuals measured (RUNOFF-016): volume 0.0 on both grids; heat
+  3.353e-16 (lab_sea, 1 and 2 processes) and 1.444e-16 (cs32, 1 and 4 processes);
+  salt 2.107e-16 on both; tracer 2.079e-16 (lab_sea only, since cs32 does not
+  compile pkg/ptracers). The closure is held to round-off and not bitwise,
+  because dividing a flux by a cell area and multiplying it back is not exact in
+  floating point.
 - A **permutation** of one source's fractions across its own target cells is
   invisible to all four of those sums, by construction and not by accident:
   `Σ_c frac_{s,c}` is 1 whichever cell holds which fraction. Measured: every
@@ -356,12 +368,24 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
   comparison sees 3.3e-1. A sum over targets is therefore not the instrument for a
   misplaced target; the cell-by-cell comparisons are
   (`tests/rnf/applied_field_check.py`, `tests/rnf/budget_check.py`'s own per-cell
-  criterion). What a sum over targets does see, and nothing else does, is a total
-  that is wrong while every cell is individually right — for example a source
-  whose fractions sum to `1 + 5e-7`, which is inside `RNF_fracTol` and so is
-  accepted by the input check and does not even make `RNF_INIT_VARIA` warn:
-  measured, the four closures then miss by 1.4e-7 to 1.7e-7 while the per-cell
-  comparison stays at round-off.
+  criterion).
+- What a sum over targets does see is the converse: a total that is wrong while
+  every cell is individually right — for example a source whose fractions sum to
+  `1 + 5e-7`, which is inside `RNF_fracTol`, so the input check accepts the file
+  and `RNF_INIT_VARIA` does not even warn. Measured, the four closures then miss
+  by 1.4e-7 to 1.7e-7 while every per-cell comparison stays at round-off. The
+  statement that holds is about a **class of criterion**, and the stronger version
+  of it is false: **no per-cell criterion can see a fraction-sum error, and no
+  other instrument's heat, salt or tracer criterion can** — nothing else in the
+  project sums those three against a source total. The **volume** leg is seen by
+  one other instrument, because `applied_field_check.check_case` closes the same
+  volume invariant per record (`applied_field_check.py:873`): on this exact
+  perturbation it fails at 1.4719309093e-07, the same figure, 147,000 times its
+  own 1e-12 tolerance. Of the remaining instruments only `tendency_term_check` is
+  blind *by construction* (it writes `frac[:] = 1.0` and its oracle uses a literal
+  `1.0`); `refusal_check` and the `RNF_INIT_VARIA` pair are blind only *by
+  tolerance*, measured at 1.15e-2 against an allowance of 7.83e-2, a factor of
+  6.8.
 - Results are independent of the tile/process layout to the oracle threshold.
 - With the feature compiled in but unused, results are bit-for-bit unchanged.
 

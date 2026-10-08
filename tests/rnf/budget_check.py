@@ -251,13 +251,45 @@ two the other way round, and it is reported as a measurement:
 ``1 + FRAC_PERTURB`` and lets the oracle read the perturbed file too. The
 per-cell comparison then **passes** -- every cell holds exactly the value
 the file asks for -- while the budget **fails**, because the source sends
-``1 + FRAC_PERTURB`` times its flux into the ocean. This is the
-perturbation no existing instrument can see: ``applied_field_check``
-rebuilds the field from the same file and matches it bitwise,
-``tendency_term_check`` writes its own file and is untouched, and
-``RNF_INIT_VARIA``'s own pair of sums differs by less than
-``RNF_fracTol`` and so does not even warn (:func:`judge` asserts the
-absence of that warning). It is what the budget adds.
+``1 + FRAC_PERTURB`` times its flux into the ocean.
+
+What that establishes is a statement about a **class** of criterion, and
+it is worth stating exactly, because the looser version of it is false:
+
+* **no per-cell criterion can see a fraction-sum error at all.** Every
+  cell holds precisely the value the file asks for, so a comparison
+  against the file matches bitwise however wrong the sum is. That covers
+  the per-cell leg of this check, measured at round-off on the perturbed
+  run, and ``applied_field_check``'s cell-by-cell comparison, which
+  review B of this issue measured as bitwise equal with 0 extra and 0
+  missing over 48 dumps of the perturbed file;
+* **no other instrument's heat, salt or tracer criterion can see it,**
+  because nothing else in the project sums those three against a source
+  total. That is the coverage this check adds.
+
+The volume leg is **not** novel, and the first version of this docstring
+wrongly said it was. ``applied_field_check.check_case`` closes the same
+volume invariant per record (``applied_field_check.py:873``,
+``VOLUME_RTOL`` = 1e-12), and on this very perturbation review B measured
+it **failing** at 1.4719309093e-07 -- the same figure this check reports,
+and 147,000 times its tolerance. That is consistent with the volume leg
+being a second, independent path to an existing invariant rather than new
+coverage, which is what the "Volume conservation" row of the
+qualification matrix now says.
+
+Two instruments really are blind to it, for two different reasons that
+should not be conflated:
+
+* ``tendency_term_check`` is blind **by construction**: it writes
+  ``frac[:] = 1.0`` and its oracle multiplies by a literal ``1.0``
+  (``tendency_term_check.py:358`` and ``:879``) rather than by the file's
+  fraction, so a fraction error is not representable in its cases;
+* ``refusal_check`` and ``RNF_INIT_VARIA``'s own pair of sums are blind
+  **by tolerance only**, which is weaker: the pair differs by less than
+  ``RNF_fracTol`` so the model does not warn (:func:`judge` asserts the
+  absence of that warning), and review B measured ``refusal_check``'s
+  shipped flux-sum criterion at 1.15e-2 against an allowance of 7.83e-2,
+  blind by a factor of 6.8 rather than structurally.
 
 Coverage, and what is not measured
 ----------------------------------
@@ -280,7 +312,16 @@ on the cube sphere**. ``lab_sea``'s build has ``PTRACERS_num = 1``, so it
 carries exactly one passive tracer: the closure is measured on a real
 tracer with real values, but the mapping of several runoff tracers onto
 several ptracers (``RNF_trPtr``) is **not** exercised, and an error that
-swapped two runoff tracers would not show up here.
+swapped two runoff tracers would not show up here. The one tracer series
+is also **degenerate across sources**: :func:`series` gives it
+``1.0 + 0.2r + 0.1(k mod 3)``, which on lab_sea's four sources takes only
+three distinct values, so sources 0 (``newfound``) and 3 (``baffin``)
+carry identical tracer values at every record and this -- the project's
+only tracer oracle -- cannot distinguish those two sources from each
+other at all. The same shape leaves temperature with 7 and salinity with
+5 distinct values over cs32's 1189 sources. The sums are correct either
+way, because they are sums; but no reader should take them for
+per-source resolution.
 
 Nothing here measures the *choice* of record, which is
 ``tests/rnf/timing_field_check.py``'s and
@@ -289,6 +330,22 @@ applied is taken from the run's own ``RNF_FIELDS_LOAD`` trace, exactly as
 ``applied_field_check`` takes it. Nothing here measures branch N, the
 lagged time level (``RNF_lagFlds``) or the state-change form of the
 budget.
+
+**Correct by inspection, unexercised in fact.** The ``hFacC`` factor of
+the inversion is numerically **inert** on both configurations: measured,
+``hFacC(:,:,1)`` is exactly 1.0 at all 7 lab_sea and all 1189 cs32 target
+cells, and forcing it to 1.0 leaves every residual bitwise unchanged
+(review A of this issue). So the factor is right by reading
+``RNF_TENDENCY_APPLY_*`` and not by measurement here; a partial surface
+cell, a cavity column under pkg/shelfice, or an r\* case is where it
+would first actually be exercised.
+
+**Where the must-fail controls run.** Both are enrolled, but not in the
+same suite: ``focused`` carries only the ``fracsum`` control, so the
+suite that runs on every candidate has **no must-fail for the per-cell
+leg** -- the one that proves the per-cell criterion can see a
+perturbation is the ``permute`` control, and it is in ``scientific``
+only (review B).
 
 Usage
 =====
@@ -340,9 +397,10 @@ CELL_RTOL = 1.0e-12
 #: the other three carry the units of their own property; those are held
 #: against vacuity by the per-dump `nonzero_expected` count instead.
 FLOOR = 1.0e-30
-#: Fraction scaling of the ``fracsum`` control. Under ``RNF_fracTol``
-#: (1e-6, ``rnf_init_fixed.F:650``) so the package accepts the file, and
-#: five orders above :data:`RTOL` so the budget cannot miss it.
+#: Fraction scaling of the ``fracsum`` control. Under ``RNF_fracTol``,
+#: which is 1e-6 (``RNF.h:650``) and is compared against the per-source
+#: fraction sum at ``rnf_init_fixed.F:911``, so the package accepts the
+#: file; and five orders above :data:`RTOL` so the budget cannot miss it.
 FRAC_PERTURB = 5.0e-7
 #: Name of the passive tracer the lab_sea cases give the runoff, and the
 #: ``runoff_ptracer_<NAME>`` variable that feeds it.
@@ -483,6 +541,18 @@ CLOSURES = ("volume", "heat", "salt", "tracer")
 #: out bitwise identical; "heat" is not among them because it reads
 #: ``theta`` for ``T_ref``.
 STATE_FREE = ("volume", "salt", "tracer")
+
+
+def declared_closures(case):
+    """Return the closures ``case`` is supposed to measure.
+
+    All four except on a case without ``tracer``, where the file carries
+    no ``runoff_ptracer_<NAME>`` variable and no tracer stream is dumped.
+    :func:`judge` requires every closure this returns to be **present**
+    in the measurement, so that one which stopped being measured fails
+    instead of disappearing.
+    """
+    return tuple(c for c in CLOSURES if c != "tracer" or case["tracer"])
 
 
 def table_path(case):
@@ -833,7 +903,19 @@ def nr_of(data):
 
 
 def layer_thickness(run_dir):
-    """Return delR(1) of the run's own ``data``, in metres."""
+    """Return delR(1) of the run's own ``data``, in metres.
+
+    **Limitation (review A).** This takes the first number after
+    ``delR=``/``delZ=``, so a list written in the repeat form
+    ``delR = 23*10.,`` would return 23.0 rather than 10.0. Both
+    configurations this check runs list their levels explicitly, and a
+    wrong thickness fails loudly rather than quietly -- it enters the
+    inversion linearly, so the residual moves by the same factor, with a
+    gain of 1.0 against a 1e-12 criterion. :func:`nr_of`, which parses
+    the same list for the level *count*, does handle the repeat form; this
+    function deliberately does not acquire a second parser for a form no
+    case uses, and the asymmetry is recorded here rather than hidden.
+    """
     data = read_file(run_dir, "data")
     if data is None:
         raise ValueError(f"{run_dir} has no data file")
@@ -862,13 +944,28 @@ def write_input(case, input_dir, table, perturb=None):
       ``dumpFreq`` and ``dumpInitAndLast`` (so the state dump the
       temperature reference is read from exists at every step), and a
       shorter ``endTime``/``nTimeSteps``;
-    * needed by the measurement: ``nonlinFreeSurf = 0`` and
-      ``useRealFreshWaterFlux = .FALSE.``, so that ``recip_hFacC`` is the
-      static one the run's ``hFacC.data`` holds
-      (``update_surf_dr.F:57``), and ``salt_EvPrRn = 0``, so that
-      ``S_ref`` is 0. All three are read back from the parameter dump by
-      :func:`judge`;
-    * the case's own: ``tracForcingOutAB`` where the case sets it.
+    * needed by the measurement, and read back from the parameter dump by
+      :func:`judge` so that no case is judged against a setting it did
+      not run: ``nonlinFreeSurf = 0``, which is what makes
+      ``recip_hFacC`` the static one the run's ``hFacC.data`` holds --
+      its only rewrite is guarded by
+      ``useLatest .AND. nonlinFreeSurf.GT.0``
+      (``update_surf_dr.F:49``, assigning at ``:57``) -- and
+      ``salt_EvPrRn = 0``, so that ``S_ref`` is 0;
+    * needed, but **not** read back, and not for the reason an earlier
+      version of this docstring gave: ``useRealFreshWaterFlux = .FALSE.``
+      and ``select_rStar = 0``. Neither has any bearing on
+      ``recip_hFacC``; the guard above names only ``nonlinFreeSurf``.
+      ``select_rStar = 0`` is there because ``CONFIG_CHECK`` refuses r*
+      with a linear free surface, and ``useRealFreshWaterFlux = .FALSE.``
+      only reaches the salinity and tracer branch tests
+      (``rnf_tendency_apply.F:298-299`` and ``:455-456``), which
+      ``salt_EvPrRn = 0`` and ``PTRACERS_EvPrRn(1) = 0`` already
+      short-circuit -- so it changes nothing this check measures and is
+      set for consistency with ``nonlinFreeSurf = 0`` rather than out of
+      need;
+    * the case's own: ``tracForcingOutAB`` where the case sets it, also
+      read back by :func:`judge`.
     """
     exp_dir = os.path.join(VERIF, case["experiment"])
     base = os.path.join(exp_dir, case["input"])
@@ -1379,6 +1476,28 @@ def judge(case, run_dir, result, control=None):
                 f"must have a temperature on every source of every record "
                 f"it uses")
 
+    # --- every closure the case declares has to be present at all
+    #
+    # A closure whose right-hand side is exactly 0 on every dump gets
+    # ``residual = None`` in :func:`measure`, never reaches ``worst``, and
+    # every ``if name in data["worst"]`` test below then silently skips
+    # it. So a closure that stopped being measured would be **absent**
+    # rather than failed -- on the plain cases and on both controls
+    # alike, and the fracsum must-fail would be satisfied by whatever
+    # closures were left. Nothing is vacuous today, because
+    # :func:`series` hard-codes salt >= 0.1, tracer >= 1.0 and
+    # temperature >= 2.0, but a guard that is measured once and not
+    # asserted does not stop a later edit from undoing it (LL-009).
+    declared = declared_closures(case)
+    result["declared_closures"] = list(declared)
+    absent = [c for c in declared if c not in data["worst"]]
+    if absent:
+        problems.append(
+            f"every closure this case declares to be measured on at least "
+            f"one dump; {absent} produced no residual at all, which means "
+            f"its source sum was exactly zero on every dump and the closure "
+            f"was silently not measured rather than failed")
+
     # --- the four closures, and the per-cell criterion
     result["budget_pass"] = True
     result["cell_pass"] = True
@@ -1412,13 +1531,26 @@ def judge(case, run_dir, result, control=None):
                 "not): the control perturbed nothing the oracle looks at")
         return result
     if control == "fracsum":
-        if result["budget_pass"]:
+        # Per closure, not in aggregate. ``budget_pass`` is the
+        # conjunction of "every closure closed", so ``not budget_pass``
+        # -- which is what this branch used to test -- is satisfied by
+        # **one** closure discriminating, and heat, salt and tracer could
+        # all go blind with every enrolled command still passing. Each
+        # one that is present has to see the perturbation on its own.
+        # Measured today: volume 1.472e-07, heat 1.676e-07, salt
+        # 1.637e-07, tracer 1.414e-07, all five orders above RTOL.
+        blind = [c for c in CLOSURES
+                 if c in data["worst"] and data["worst"][c][0] <= RTOL]
+        result["fracsum_blind"] = blind
+        if blind:
+            shown = ", ".join(f"{c} {data['worst'][c][0]:.3e}"
+                              for c in blind)
             problems.append(
-                f"the budget to fail on a file whose fractions sum to "
-                f"{1.0 + FRAC_PERTURB!r} (it closed to "
-                f"{max(data['worst'][k][0] for k in CLOSURES if k in data['worst']):.3e}"
-                f"): a budget that cannot see {FRAC_PERTURB:g} of extra "
-                f"water is not measuring the closure")
+                f"every closure to fail on a file whose fractions sum to "
+                f"{1.0 + FRAC_PERTURB!r}; {shown} closed to {RTOL:g} or "
+                f"better, so {len(blind)} of the four cannot see "
+                f"{FRAC_PERTURB:g} of extra water and is not measuring its "
+                f"own closure")
         if not result["cell_pass"]:
             problems.append(
                 "the per-cell comparison to still pass on the scaled file "
