@@ -269,6 +269,37 @@ RUNOFF-013 produced six instances of one class. (1) An acceptance instrument enr
 
 ## LESSON: A clean sweep has two blind spots, and a guard row needs a mechanical token [LL-015]
 
+**Forward note added 2026-10-08 by Arch, because an immutable record's open
+instruction lost its anchor.** The RUNOFF-013 retrospective
+(`devel-loop/self-improvement/assessments/retrospectives/d2c8ac1f….json`)
+carries a live to-do: *"docs/verification_matrix.md:38 still says two centres are
+'at least' 0.5·(s_from + s_to) apart where RNF.h was corrected to 'about' with
+the reason. Fix in the next issue that edits that row."*
+
+RUNOFF-016 inserted the budget-closure row at line 38, so **that citation now
+resolves to a different, plausible-looking row**, and the row it meant — "Target
+cell centres: `target_lon`/`target_lat` against `XC`,`YC`" — is at 43. Review A
+named why this is worse than an ordinary dangling pointer: a future reader
+follows the citation, finds no "at least" claim in the row it lands on, and can
+reasonably conclude the fix-me was already discharged. **A silently-vanishing
+to-do is worse than a reference that fails loudly.**
+
+The citing artifact cannot be corrected: those retrospectives are stored under a
+filename that **is** their content hash, so editing one in place breaks the
+name↔content identity that makes it citable at all. Hence this forward note
+instead, keyed to the row's **title** rather than its line.
+
+**Still outstanding:** the "at least" → "about" wording in the *Target cell
+centres* row of `docs/verification_matrix.md`. Fix it in the next issue that
+edits that row, and prefer a row title or a `path::symbol` anchor over a line
+number — review A's reason being that a `path::symbol` reference is *gated*,
+since `doc_contract` hashes symbol targets into the seal, while a bare line
+number has no such guard. Four further stale record citations found by the same
+sweep are listed in RUNOFF-016's round-2 record; they predate that issue by
+content and two of them quote text that exists nowhere, so they fail loudly and
+mislead nobody.
+
+
 ### Lesson and applicability
 A stale-figure sweep reports on the table, not on the document: a statement survives if no row is spelled the way the prose spells it. Separately, a document outside the inventory is not swept at all, and there no wording helps. When a row is meant as a guard rather than a regression test for one sentence, spell a mechanical token — a dead `file:line`, a removed symbol, a deleted flag name — because those survive rewording.
 
