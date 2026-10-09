@@ -668,5 +668,5 @@
     "mode": "owner_authorization",
     "authorization_reference": "esx/project_profile.md#runtime-and-operations (commit cadence)"
   },
-  "python": "/home/ifenty/miniforge3/envs/ecco/bin/python"
+  "python": "/home/ifenty/miniforge3/envs/mitgcm_rnf/bin/python"
 }

@@ -405,14 +405,23 @@ This is the scientific contract agents read. Executable paths and commands are i
   - **Fortran 77:** fixed-form `.F` through CPP, built with gfortran 12.2.0, MPI
     and NetCDF 4.9.0 (`-lnetcdff`) inside the `mitgcm:latest` container image,
     built from `../MITgcm_verification_docker/Dockerfile` (Debian bookworm).
-  - **Python:** the conda env `/home/ifenty/miniforge3/envs/ecco` (Python 3.10.19,
-    numpy 2.2.6, netCDF4 1.7.4, xarray 2025.6.1, pytest 9.1.1, all conda-forge
-    except pytest). Run ESX verification as
-    `/home/ifenty/miniforge3/envs/ecco/bin/python tools/esx/verify.py …`, so
+  - **Python:** the conda env `/home/ifenty/miniforge3/envs/mitgcm_rnf`, dedicated
+    to this project: Python 3.14.7, numpy 2.4.6, netCDF4 1.7.4, xarray 2026.7.0,
+    pytest 9.1.1, pyyaml 6.0.3, scipy 1.17.1, cftime 1.6.5, matplotlib 3.11.2, all
+    conda-forge. Run ESX verification as
+    `/home/ifenty/miniforge3/envs/mitgcm_rnf/bin/python tools/esx/verify.py …`, so
     `{python}` resolves to that env. Hooks use the system `python3` (stdlib only).
+    - **Why a dedicated env (2026-10-09).** Until then the project ran on the
+      shared env `envs/ecco` (Python 3.10.19). On 2026-10-08 at 19:42 something
+      outside this project renamed it to `envs/ecco_py310` and created a new
+      `envs/ecco` with Python 3.14.7 and no matplotlib. `pytest -q tests/runoff`
+      then failed at import, blocking RUNOFF-008's final verification. At the
+      owner's direction Arch created `mitgcm_rnf` with the same 3.14.7 packages
+      plus matplotlib (`pytest -q tests/runoff`: 334 passed). Do not repoint the
+      project at a shared env, and do not modify `ecco` or `ecco_py310`.
     - **Pinned interpreter for the documentation contract.** Run `loop_gate.py`,
       `doc_contract.py` and `audit.py` with the env interpreter, never the system
-      `python3` (3.13.12). `doc_inventory.python_units` digests
+      `python3` (3.13.12). Seals from 2026-10-09 on are taken under 3.14.7. `doc_inventory.python_units` digests
       `ast.dump(ModuleContext().visit(tree))`, and `ast.dump` output changed
       between 3.10 and 3.13, so the same unmodified tree yields a different
       inventory digest: `7230056ee9…` under 3.10.19 and `8086e2cb…` under
