@@ -1517,3 +1517,138 @@ def test_loop_cannot_complete_over_an_unattempted_notification():
     gate, promise = tail.index('if self._deferred_notice:'), tail.index('print(PROMISE)')
     assert gate < promise, 'the completion promise is reachable before the pending notice is honoured'
     assert 'return 0' in tail[gate:promise]
+
+
+def _process_fixture(root, *, blocking=None, closeouts=3):
+    """A disposable root with one process finding recurring across `closeouts` retrospectives."""
+    state = root / 'devel-loop/loop_state'
+    ledger = root / 'devel-loop/self-improvement/open-ESX-team-issues.md'
+    state.mkdir(parents=True)
+    ledger.parent.mkdir(parents=True)
+    fields = ('**Date Identified**: 2026-10-09  01:00\n**Status**: Proposed\n**UUID**: TEAM-FIXTURE-001\n'
+              '**Category**: fixture\n**Severity**: High\n')
+    if blocking:
+        fields += f'**Blocking**: {blocking}\n'
+    ledger.write_text('# Open\n\n## \U0001F534 PROPOSED: fixture\n\n' + fields + '\n### Issue\nx\n')
+    history, retros = [], []
+    for n in range(closeouts):
+        stamp = f'2026-10-0{n + 1}T00:00:00+00:00'
+        history.append({'id': f'RUNOFF-90{n}', 'timestamp': stamp})
+        retros.append({'id': f'RUNOFF-90{n}', 'closes_timestamp': stamp,
+                       'problems': [{'category': 'fixture', 'summary': 's' * 20, 'evidence': 'e' * 20,
+                                     'minutes_lost': 1}],
+                       'solutions': [{'problem': 0, 'action': 'filed', 'issue': 'TEAM-FIXTURE-001'}]})
+    for name, rows in (('loop_history.jsonl', history), ('retrospective_history.jsonl', retros)):
+        (state / name).write_text(''.join(json.dumps(r) + '\n' for r in rows))
+    return state
+
+
+def _close_one_more(state, n):
+    stamp = f'2026-10-1{n}T00:00:00+00:00'
+    with (state / 'loop_history.jsonl').open('a') as handle:
+        handle.write(json.dumps({'id': f'RUNOFF-95{n}', 'timestamp': stamp}) + '\n')
+
+
+def test_a_recurring_advisory_finding_blocks_no_work(tmp_path):
+    """esx-fix.md C: recurrence surfaces a recommendation, never a project-wide stop.
+
+    On 2026-10-09 TEAM-ARCH-UNVERIFIED-CLAIM-001 recurred and every scientific
+    issue was refused until a process fix was implemented, because recurrence
+    alone made a finding `required_before_next_start`.
+    """
+    import team_retrospective as retro
+    _process_fixture(tmp_path)
+    assert retro.classify(tmp_path)['TEAM-FIXTURE-001']['classification'] == 'advisory'
+    assert retro.followup_due(tmp_path) == [] and retro.followup_due(tmp_path, 'RUNOFF-008', 'scientific_change') == []
+    retro.require_followup(tmp_path, 'RUNOFF-008', 'scientific_change')      # preparable and dispatchable
+    assert retro.advisories(tmp_path) == ['TEAM-FIXTURE-001'], 'it is still surfaced'
+
+
+def test_a_blocking_finding_stops_only_the_work_it_names(tmp_path):
+    """A blocker names its scope, evidence and clearing condition, and stops only that scope."""
+    import team_retrospective as retro
+    import self_improvement as si
+    assert si.blocking_error('all; evidence that is long enough; clears when x') is not None, 'condition too short'
+    assert si.blocking_error('everything; e; clears when the receipt is fixed') is not None, 'scope'
+    _process_fixture(tmp_path, blocking='issue:RUNOFF-008; the receipt for this issue is corrupt; '
+                                        'clears when the receipt is re-issued from a clean run')
+    assert retro.followup_due(tmp_path, 'RUNOFF-008', 'scientific_change') == ['TEAM-FIXTURE-001']
+    with pytest.raises(ValueError, match='blocks issue:RUNOFF-008'):
+        retro.require_followup(tmp_path, 'RUNOFF-008', 'scientific_change')
+    retro.require_followup(tmp_path, 'RUNOFF-014', 'scientific_change')      # unrelated work proceeds
+    assert retro.followup_due(tmp_path) == [], 'a scoped blocker does not stop selection itself'
+    assert retro.scoped_blockers(tmp_path) == [('TEAM-FIXTURE-001', 'issue:RUNOFF-008')]
+
+
+def test_a_deferral_persists_until_its_trigger_and_reopens_on_new_evidence(tmp_path):
+    """Unchanged recurrence needs no renewed justification; its trigger brings it back once."""
+    import team_retrospective as retro
+    state = _process_fixture(tmp_path, blocking='all; the evidence index is corrupt for every suite; '
+                                                'clears when the index is rebuilt and verified')
+    assert retro.followup_due(tmp_path) == ['TEAM-FIXTURE-001']
+    with pytest.raises(ValueError, match='needs --trigger'):
+        retro.decide_followup(tmp_path, 'TEAM-FIXTURE-001', 'deferred', 'r' * 50)
+    retro.decide_followup(tmp_path, 'TEAM-FIXTURE-001', 'deferred', 'deferred until four more closeouts ' * 2,
+                          trigger='closeouts:4')
+    for n in range(3):                       # three unrelated closeouts: still deferred, no renewal
+        _close_one_more(state, n)
+        assert retro.followup_due(tmp_path) == [], n
+    _close_one_more(state, 3)                # the fourth fires the trigger: one reconsideration
+    assert retro.followup_due(tmp_path) == ['TEAM-FIXTURE-001']
+
+    # A milestone trigger fires when current_status.md gains the heading.
+    retro.decide_followup(tmp_path, 'TEAM-FIXTURE-001', 'deferred', 'deferred until the tracer milestone ' * 2,
+                          trigger='milestone:two-tracer closure')
+    assert retro.followup_due(tmp_path) == []
+    (tmp_path / 'current_status.md').write_text('# Milestones\n\n## 2026-11-01 — two-tracer closure (RUNOFF-008)\n')
+    assert retro.followup_due(tmp_path) == ['TEAM-FIXTURE-001']
+
+
+def test_a_deferral_is_void_when_its_classification_changes(tmp_path):
+    """New evidence reopens triage promptly; a deferral is no indefinite waiver."""
+    import team_retrospective as retro
+    _process_fixture(tmp_path)
+    retro.decide_followup(tmp_path, 'TEAM-FIXTURE-001', 'deferred', 'advisory, deferred to the next milestone ' * 2,
+                          trigger='closeouts:10')
+    assert retro.advisories(tmp_path) == []
+    ledger = tmp_path / 'devel-loop/self-improvement/open-ESX-team-issues.md'
+    ledger.write_text(ledger.read_text().replace(
+        '**Severity**: High\n', '**Severity**: High\n**Blocking**: all; a receipt was found forged in the index; '
+                                'clears when the index is rebuilt and verified\n'))
+    assert retro.followup_due(tmp_path) == ['TEAM-FIXTURE-001'], 'the advisory deferral must not cover a blocker'
+
+
+def test_pending_commentary_is_listed_and_merged_not_blocking(tmp_path):
+    """Lightweight reflection: measurements now, commentary later, nothing invented to pass."""
+    import team_retrospective as retro
+    state = _process_fixture(tmp_path, closeouts=2)
+    rows = [json.loads(l) for l in (state / 'retrospective_history.jsonl').read_text().splitlines()]
+    rows.append({'id': 'RUNOFF-902', 'closes_timestamp': '2026-10-03T00:00:00+00:00', 'commentary': 'pending',
+                 'problems': [], 'solutions': []})
+    (state / 'retrospective_history.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in rows))
+    assert retro.pending_commentary(tmp_path) == ['RUNOFF-902']
+    with (state / retro.COMMENTARY).open('w') as handle:
+        handle.write(json.dumps({'id': 'RUNOFF-902', 'closes_timestamp': '2026-10-03T00:00:00+00:00',
+                                 'problems': rows[0]['problems'], 'solutions': rows[0]['solutions']}) + '\n')
+    assert retro.pending_commentary(tmp_path) == []
+    merged = retro.reflections(tmp_path)
+    assert len(merged) == 3 and merged[-1]['problems'] == rows[0]['problems'], 'completion merged, not appended'
+    assert 'TEAM-FIXTURE-001' in retro.classify(tmp_path)
+
+
+def test_self_assessment_is_advisory_and_demands_nothing_invented(tmp_path):
+    """esx-fix.md C: no inherited "before continuing" obligation, no invented entry."""
+    import loop_gate
+    lessons = tmp_path / 'lessons_learned.md'
+    lessons.write_text('# Lessons\n')
+    os.utime(lessons, (0, 0))
+    state = tmp_path / 'devel-loop/loop_state'
+    state.mkdir(parents=True)
+    (state / 'loop_history.jsonl').write_text(''.join(
+        json.dumps({'id': f'X-{n}', 'timestamp': f'2026-10-0{n % 9 + 1}T00:00:00+00:00'}) + '\n' for n in range(12)))
+    gate = loop_gate.Gate.__new__(loop_gate.Gate)
+    gate.root = tmp_path
+    text = gate.self_assessment_notice()
+    assert text and 'advisory, does not block' in text
+    assert 'before continuing' not in text and 'nothing new this window' not in text
+    assert 'nothing is required' in text

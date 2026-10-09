@@ -50,13 +50,23 @@ Record an approach that was tried deliberately, worked and should be repeated in
 summary and evidence (at least 20 characters each) and no minutes_lost or
 solution. An empty problems list needs an evidence-based explanation: either a
 `no_problem_reason` of at least 60 characters or at least one confirmation whose
-evidence is at least 60 characters. Recurrence scheduling counts problems only.
+evidence is at least 60 characters -- or accept the reflection with
+`"commentary": "pending"`, which carries the automatic measurements only and
+blocks nothing; add the commentary later with `loop_gate.py --complete-retro`
+from `loop_state/retrospective-commentary.json`. Nothing need be invented to
+pass. Recurrence scheduling counts problems only.
 
 Use `carry_forward` for new brief rules. Repeated rules are flagged for promotion
 into [the standing rules](../loop_rules.md); retire rules once code enforces them.
 Repeated problems owned by the same open issue in two of the last three reflections
-block further unrelated work until a measured fix or explicit one-closeout deferral.
-Use `python3 tools/esx/self_improvement.py plan` and `followup --help`.
+are surfaced by `--next` as a non-blocking PROCESS ADVISORY. A finding blocks work
+only when its ledger entry carries
+`**Blocking**: SCOPE; EVIDENCE; clears when CONDITION`, with SCOPE `all`,
+`issue:ID` or `kind:KIND`, and then it blocks only work in that scope. Record a
+fix, or a deferral with `--trigger closeouts:N|issue:ID|milestone:TEXT`; a
+deferral persists across unrelated closeouts until its trigger fires and is void
+if the entry's classification changes. Use
+`python3 tools/esx/self_improvement.py plan` and `followup --help`.
 
 Accepted reflections are immutable in runtime history and archived with their
 accounting under `assessments/retrospectives/` for version control. Include these

@@ -93,7 +93,7 @@ class Gate:
 
     def prepare(self, issue, kind, risks, owner, priority, map_ref, targets, docs, use, diagnosis=None, budget_kind=None):
         team_retrospective.require_clear(self.root)
-        team_retrospective.require_followup(self.root)
+        team_retrospective.require_followup(self.root, issue, kind)
         audit.check(self.root, self.ledger_overrides)
         opened, _, _ = validate_records(self.root, self.ledger_overrides)
         require(issue in opened and opened[issue]['state'] != 'blocked', 'select an actionable open issue')
@@ -159,8 +159,8 @@ class Gate:
         at --prepare and marks the receipt late, which closeout then reports.
         """
         team_retrospective.require_clear(self.root)
-        team_retrospective.require_followup(self.root)
         start = self.read('issue-start.json')
+        team_retrospective.require_followup(self.root, start['id'], start['workflow'].get('kind'))
         opened, _, _ = validate_records(self.root, self.ledger_overrides)
         require(start['id'] in opened and opened[start['id']]['state'] != 'blocked', 'start issue is not selectable')
         self.check_diagnosis(start, json_lines(local(self.root, f'{STATE}/loop_history.jsonl')))
@@ -402,9 +402,13 @@ class Gate:
         history = json_lines(local(self.root, f'{STATE}/loop_history.jsonl'))
         count = sum(1 for row in history if str(row.get('start_timestamp') or row.get('timestamp') or '') > since)
         if count >= window:
-            return (f'SELF-ASSESSMENT: {count} loop iterations completed since lessons_learned.md was last '
-                    f'updated (threshold {window}). Record a process lesson (or an explicit '
-                    f'"nothing new this window" entry) before continuing -- see ARCHITECT.md#closure-and-communication. '
+            # Advisory, so it must not carry a "before continuing" obligation, and
+            # it must not demand an invented entry when there is nothing to record
+            # (esx-fix.md C).
+            return (f'SELF-ASSESSMENT (advisory, does not block): {count} loop iterations completed since '
+                    f'lessons_learned.md was last updated (threshold {window}). If these iterations taught a '
+                    f'process lesson, record it -- see ARCHITECT.md#closure-and-communication; if not, nothing is '
+                    f'required. '
                     f'A process lesson is about the loop itself, not the science: e.g. repeated correction rounds on '
                     f'the same footer field, discarded review identities, or a recurring dispatch failure mode.')
         return None
@@ -685,8 +689,20 @@ class Gate:
             return 0
         followup = team_retrospective.followup_due(self.root)
         if followup:
-            print('NEXT: PROCESS FOLLOW-UP: ' + ', '.join(followup) + '; run tools/esx/self_improvement.py plan')
+            print('NEXT: PROCESS FOLLOW-UP: ' + ', '.join(followup) + ' blocks all work; run '
+                  'tools/esx/self_improvement.py plan and record a fix or a deferral with a trigger')
             return 0
+        # Information, never an instruction: recurrence surfaces evidence and a
+        # triage recommendation, not a mandatory repair (esx-fix.md C).
+        for uuid, scope in team_retrospective.scoped_blockers(self.root):
+            print(f'PROCESS BLOCKER: {uuid} blocks {scope} only; other work may proceed')
+        advisory = team_retrospective.advisories(self.root)
+        if advisory:
+            print('PROCESS ADVISORY: recurring, non-blocking: ' + ', '.join(advisory)
+                  + '; triage when convenient (self_improvement.py plan), or defer with a trigger')
+        for retro_id in team_retrospective.pending_commentary(self.root):
+            print(f'RETROSPECTIVE COMMENTARY PENDING: {retro_id}; complete it when convenient with '
+                  '--complete-retro. It does not block work.')
         actionable = [row for row in opened.values() if row['state'] != 'blocked']
         for row in opened.values():
             if row['blocker'] and row['blocker'].split(' — ', 1)[0] in closed:
@@ -742,7 +758,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[2])
     mode = parser.add_mutually_exclusive_group(required=True)
-    for name in ('next', 'check-start', 'check-done', 'closeout-doctor', 'doctor', 'code-sig', 'draft-retro', 'check-retro', 'timings'):
+    for name in ('next', 'check-start', 'check-done', 'closeout-doctor', 'doctor', 'code-sig', 'draft-retro', 'check-retro',
+                 'complete-retro', 'timings'):
         mode.add_argument('--' + name, action='store_true')
     mode.add_argument('--prepare', metavar='ISSUE')
     parser.add_argument('--kind', choices=workflow.KINDS, default='investigation')
@@ -766,6 +783,9 @@ def main():
         if args.draft_retro:
             result = team_retrospective.draft(gate.root)
             atomic_json(local(gate.root, f'{STATE}/retrospective-draft.json'), result)
+        elif args.complete_retro:
+            # The human commentary for a retrospective accepted with it pending.
+            result = team_retrospective.complete_commentary(gate.root, gate.read('retrospective-commentary.json'))
         elif args.check_retro:
             with team_accounting.phase(gate.root, gate.read('retrospective.json')['id'], 'retrospective', role='arch'):
                 result = team_retrospective.accept(gate.root, gate.read('retrospective.json'))
@@ -799,7 +819,7 @@ def main():
         return 0
     except (ValueError, OSError, KeyError, TypeError, SyntaxError, subprocess.SubprocessError) as exc:
         print(f'ESX gate: BLOCKED: {exc}', file=sys.stderr)
-        if not any((args.next, args.draft_retro, args.check_retro, args.timings, args.closeout_doctor,
+        if not any((args.next, args.draft_retro, args.check_retro, args.complete_retro, args.timings, args.closeout_doctor,
                     args.doctor, args.code_sig, args.prepare, args.check_start)):
             # --check-done stops at its first unmet condition. The read-only
             # closeout doctor already evaluates them all independently, but

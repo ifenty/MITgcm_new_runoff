@@ -235,7 +235,44 @@ def check_issue(root: Path, issue: Issue, closed: bool) -> list[str]:
             errors.append(f"{at}: implemented-open record needs Implementation-Reference")
         if status == "Blocked" and not issue.fields.get("Blocked-By"):
             errors.append(f"{at}: Blocked record needs Blocked-By")
+        if issue.fields.get("Blocking") is not None:
+            problem = blocking_error(issue.fields["Blocking"])
+            if problem:
+                errors.append(f"{at}: Blocking {problem}")
     return errors
+
+
+#: The scope a blocking process finding may stop. Anything narrower than `all`
+#: leaves unrelated authorized work free to proceed (esx-fix.md C).
+BLOCKING_SCOPE = re.compile(r'all|issue:[A-Za-z0-9_-]+|kind:[a-z_]+')
+
+
+def parse_blocking(value):
+    """`scope; evidence; clears when condition` -> (scope, evidence, condition), or None."""
+    parts = [p.strip() for p in str(value).split(';')]
+    if len(parts) != 3 or not BLOCKING_SCOPE.fullmatch(parts[0]):
+        return None
+    return parts[0], parts[1], parts[2]
+
+
+def blocking_error(value):
+    """Why a `Blocking` field is not a usable classification, or None.
+
+    esx-fix.md C: "A blocking decision must name the affected issue/operation,
+    concrete evidence, and condition that clears it. Severity or recurrence alone
+    must not imply a project-wide stop." So a process finding is ADVISORY unless
+    its entry carries this field, and the field must say all three.
+    """
+    parsed = parse_blocking(value)
+    if parsed is None:
+        return ('must read "SCOPE; EVIDENCE; clears when CONDITION" with SCOPE one of all, issue:ID or '
+                'kind:KIND')
+    scope, evidence, condition = parsed
+    if len(evidence) < 20:
+        return 'evidence must be concrete (at least 20 characters)'
+    if not condition.lower().startswith('clears when') or len(condition) < 20:
+        return 'condition must start "clears when" and say what clears it'
+    return None
 
 
 def index_text(closed: list[Issue]) -> str:
@@ -334,6 +371,9 @@ def main(argv: list[str] | None = None) -> int:
     followup.add_argument('--issue', required=True)
     followup.add_argument('--disposition', choices=('implemented', 'deferred'), required=True)
     followup.add_argument('--reason', required=True)
+    followup.add_argument('--trigger', metavar='closeouts:N|issue:ID|milestone:TEXT',
+                          help='for --disposition deferred: when the deferral lapses and the finding resurfaces '
+                               'once. It persists across unrelated closeouts until then.')
     followup.add_argument('--evidence', metavar='PATH#SHA256',
                           help='for --disposition implemented: a process validation receipt as PATH#SHA256, where '
                                'PATH is the JSON written by `process_evidence.py --output PATH --source FILE -- '
@@ -360,12 +400,18 @@ def main(argv: list[str] | None = None) -> int:
         import team_retrospective
         if args.command == 'plan':
             due = team_retrospective.followup_due(root)
-            value = {'required_followup': due, 'queue': [
+            classes = team_retrospective.classify(root)
+            value = {'required_followup': due, 'advisory_followup': team_retrospective.advisories(root),
+                     'queue': [
                 {'issue': r.uuid, 'status': r.fields.get('Status'), 'severity': r.fields.get('Severity'),
+                 'recurring': r.uuid in classes,
+                 'classification': (classes.get(r.uuid) or {}).get('classification'),
+                 'blocks': (classes.get(r.uuid) or {}).get('scope'),
                  'required_before_next_start': r.uuid in due}
                 for r in sorted(parse(root / OPEN), key=lambda r: (r.uuid not in due, r.uuid))]}
         else:
-            value = team_retrospective.decide_followup(root, args.issue, args.disposition, args.reason, args.evidence)
+            value = team_retrospective.decide_followup(root, args.issue, args.disposition, args.reason, args.evidence,
+                                                       args.trigger)
         print(json.dumps(value, indent=2))
         return 0
     if args.command in ('promote', 'recover'):

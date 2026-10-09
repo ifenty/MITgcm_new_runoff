@@ -860,7 +860,10 @@ def _run_turn(root, *, role=None, issue=None, prompt, session=None, correction_r
                 raise ValueError("peer message must stay within the assigned issue")
         if not probe:
             team_retrospective.require_clear(root)
-            team_retrospective.require_followup(root, issue)
+            start_path = root / "devel-loop/loop_state/issue-start.json"
+            started = json.loads(start_path.read_text()) if start_path.is_file() else {}
+            team_retrospective.require_followup(
+                root, issue, ((started.get("workflow") or {}).get("kind") if started.get("id") == issue else None))
         issue_budget, run_budget = team_budget.assignment(root, issue)
         source_signature = None
         if (root / "esx/project.json").is_file():

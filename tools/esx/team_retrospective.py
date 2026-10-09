@@ -10,6 +10,7 @@ without extending a spending limit.
 """
 import hashlib
 import json
+import re
 from pathlib import Path
 import team_accounting as accounting
 
@@ -35,45 +36,140 @@ def require_clear(root):
     if debt: raise ValueError('RETROSPECTIVE_REQUIRED: ' + debt['id'] + '; run --draft-retro then --check-retro')
 
 
-def followup_due(root):
-    """Recurring process owners need a measured fix or explicit bounded deferral.
+def classify(root):
+    """Every recurring process finding with its ONE authoritative classification.
 
-    Decisions bind to the latest closeout, so another recurrence cannot inherit an
-    indefinite deferral. This is a process queue, never a scientific candidate.
+    esx-fix.md C: preparation, the start check, --next and retained dispatch all
+    enforced process debt independently, and recurrence alone made a finding
+    project-blocking -- on 2026-10-09 TEAM-ARCH-UNVERIFIED-CLAIM-001 recurred and
+    stopped every scientific issue until a process fix was implemented. A finding
+    is ADVISORY unless its ledger entry carries a valid `Blocking` field naming
+    the scope it stops, the evidence and the clearing condition; only then does
+    it block, and only work in that scope.
     """
     import self_improvement as si
-    open_ids = {r.uuid for r in si.parse(Path(root) / si.OPEN)}
+    rows = {r.uuid: r for r in si.parse(Path(root) / si.OPEN)}
+    out = {}
+    for uuid in recurring_issues(root, set(rows)):
+        value = rows[uuid].fields.get('Blocking')
+        parsed = si.parse_blocking(value) if value and not si.blocking_error(value) else None
+        out[uuid] = {'classification': 'blocking' if parsed else 'advisory',
+                     'scope': parsed[0] if parsed else None,
+                     'evidence': parsed[1] if parsed else None,
+                     'clears': parsed[2] if parsed else None}
+    return out
+
+
+TRIGGER = re.compile(r'(closeouts):([1-9][0-9]*)|(issue):([A-Za-z0-9_-]+)|(milestone):(.{3,})')
+
+
+def trigger_fired(root, decision, history):
+    """Whether a persistent deferral's trigger has fired (esx-fix.md C)."""
+    match = TRIGGER.fullmatch(str(decision.get('trigger') or ''))
+    if not match:
+        return True
+    if match.group(1):
+        return len(history) >= decision.get('closeouts_at_decision', 0) + int(match.group(2))
+    if match.group(3):
+        from records import validate_records
+        _, closed, _ = validate_records(root)
+        return match.group(4) in closed
+    status = Path(root) / 'current_status.md'
+    headings = [line for line in status.read_text().splitlines() if line.startswith('#')] if status.exists() else []
+    return any(match.group(6).strip().lower() in line.lower() for line in headings)
+
+
+def decided(root, uuid, classification, history):
+    """Whether a recorded decision currently settles this finding.
+
+    An `implemented` decision, and a legacy deferral with no trigger, bind to the
+    latest closeout exactly as before. A deferral WITH a trigger persists across
+    unrelated closeouts until the trigger fires, so an unchanged recurrence needs
+    no new justification; and it is void the moment the finding's classification
+    differs from the one it was recorded against -- new evidence reopens triage
+    promptly, and a deferral is never an indefinite correctness waiver.
+    """
+    if not history:
+        return False
+    for row in reversed(accounting.rows(Path(root) / accounting.STATE / 'improvement_decisions.jsonl')):
+        if row.get('issue') != uuid or row.get('disposition') not in ('implemented', 'deferred'):
+            continue
+        if row.get('disposition') == 'deferred' and row.get('trigger'):
+            if row.get('classification', 'advisory') != classification:
+                return False
+            return not trigger_fired(root, row, history)
+        return row.get('closes_timestamp') == history[-1]['timestamp']
+    return False
+
+
+def applies(scope, issue, kind):
+    return scope == 'all' or scope == f'issue:{issue}' or scope == f'kind:{kind}'
+
+
+def followup_due(root, issue=None, kind=None):
+    """Blocking process findings that stop THIS work: in scope and not decided.
+
+    With no issue and kind this is the set that stops selection itself, i.e. the
+    `all`-scoped blockers. Advisory findings never appear here.
+    """
     history = accounting.rows(Path(root) / accounting.STATE / 'loop_history.jsonl')
     if not history:
         return []
-    last = history[-1]
-    decisions = accounting.rows(Path(root) / accounting.STATE / 'improvement_decisions.jsonl')
-    decided = {r['issue'] for r in decisions if r.get('closes_timestamp') == last['timestamp']
-               and r.get('disposition') in ('implemented', 'deferred')}
-    return [issue for issue in recurring_issues(root, open_ids) if issue not in decided]
+    return [uuid for uuid, c in classify(root).items()
+            if c['classification'] == 'blocking' and uuid != issue and applies(c['scope'], issue, kind)
+            and not decided(root, uuid, 'blocking', history)]
 
 
-def require_followup(root, issue=None):
-    due = followup_due(root)
-    if due and issue not in due:
-        raise ValueError('IMPROVEMENT_FOLLOWUP_REQUIRED: ' + ', '.join(due)
-                         + '; run self_improvement.py plan and record a fix or bounded deferral')
+def advisories(root):
+    """Recurring findings to surface as information: advisory and not deferred."""
+    history = accounting.rows(Path(root) / accounting.STATE / 'loop_history.jsonl')
+    return [uuid for uuid, c in classify(root).items()
+            if c['classification'] == 'advisory' and not decided(root, uuid, 'advisory', history)]
 
 
-def decide_followup(root, issue, disposition, reason, evidence=None):
-    """Record a current fix or explicit one-iteration deferral; no provider launch."""
+def scoped_blockers(root):
+    """Blocking findings whose scope is narrower than `all`: (uuid, scope)."""
+    history = accounting.rows(Path(root) / accounting.STATE / 'loop_history.jsonl')
+    return [(uuid, c['scope']) for uuid, c in classify(root).items()
+            if c['classification'] == 'blocking' and c['scope'] != 'all'
+            and not decided(root, uuid, 'blocking', history)]
+
+
+def require_followup(root, issue=None, kind=None):
+    due = followup_due(root, issue, kind)
+    if due:
+        rows = classify(root)
+        detail = '; '.join(f"{u} blocks {rows[u]['scope']} ({rows[u]['clears']})" for u in due)
+        raise ValueError('IMPROVEMENT_FOLLOWUP_REQUIRED: ' + detail
+                         + '; run self_improvement.py plan and record a fix or a deferral with a trigger')
+
+
+def decide_followup(root, issue, disposition, reason, evidence=None, trigger=None):
+    """Record a fix, or a deferral bound to a trigger; no provider launch.
+
+    `trigger` is closeouts:N, issue:ID (fires when that issue closes) or
+    milestone:TEXT (fires when current_status.md gains a heading containing it).
+    """
     if disposition not in ('implemented', 'deferred') or len(reason.strip()) < 40:
         raise ValueError('implemented/deferred disposition and substantive reason required')
-    if issue not in followup_due(root):
-        raise ValueError('issue is not currently due for process follow-up')
+    findings = classify(root)
+    if issue not in findings:
+        raise ValueError('issue is not a recurring process finding')
+    if disposition == 'deferred':
+        if not TRIGGER.fullmatch(str(trigger or '')):
+            raise ValueError('a deferral needs --trigger closeouts:N, issue:ID or milestone:TEXT, so it persists '
+                             'across unrelated closeouts and resurfaces when its condition changes')
     if disposition == 'implemented':
         from process_evidence import validation_errors
         errors = validation_errors(root, evidence)
         if errors:
             raise ValueError('; '.join(errors))
-    last = accounting.rows(Path(root) / accounting.STATE / 'loop_history.jsonl')[-1]
+    history = accounting.rows(Path(root) / accounting.STATE / 'loop_history.jsonl')
     record = {'issue': issue, 'disposition': disposition, 'reason': reason, 'evidence': evidence,
-              'closes_timestamp': last['timestamp'], 'recorded_at': accounting.now()}
+              'closes_timestamp': history[-1]['timestamp'], 'recorded_at': accounting.now(),
+              'classification': findings[issue]['classification']}
+    if disposition == 'deferred':
+        record.update(trigger=trigger, closeouts_at_decision=len(history))
     accounting.append(Path(root) / accounting.STATE / 'improvement_decisions.jsonl', record)
     return record
 
@@ -165,9 +261,38 @@ def confirmation_errors(record):
     return errors, explains
 
 
+COMMENTARY = 'retrospective_commentary.jsonl'
+
+
+def reflections(root, last=3):
+    """The latest accepted retrospectives, each merged with its completed commentary.
+
+    A retrospective accepted with commentary pending (esx-fix.md C, lightweight
+    reflection) carries measurements only; its problems arrive later in a
+    separate commentary record. Kept in its own file so a completion is never
+    mistaken for an extra retrospective in the recurrence window.
+    """
+    state = Path(root) / accounting.STATE
+    completions = {(r.get('id'), r.get('closes_timestamp')): r for r in accounting.rows(state / COMMENTARY)}
+    out = []
+    for record in accounting.rows(state / 'retrospective_history.jsonl')[-last:]:
+        done = completions.get((record.get('id'), record.get('closes_timestamp')))
+        out.append(dict(record, **{k: done[k] for k in ('problems', 'solutions', 'confirmations')
+                                   if k in done}) if done else record)
+    return out
+
+
+def pending_commentary(root):
+    """Accepted retrospectives whose human commentary is still pending."""
+    state = Path(root) / accounting.STATE
+    completed = {(r.get('id'), r.get('closes_timestamp')) for r in accounting.rows(state / COMMENTARY)}
+    return [r['id'] for r in accounting.rows(state / 'retrospective_history.jsonl')
+            if r.get('commentary') == 'pending' and (r.get('id'), r.get('closes_timestamp')) not in completed]
+
+
 def recurring_issues(root, open_ids):
     """A twice-recurring categorized problem prioritizes its owning process issue."""
-    records = accounting.rows(Path(root) / accounting.STATE / 'retrospective_history.jsonl')[-3:]
+    records = reflections(root)
     occurrences = {}
     for record in records:
         seen = set()
@@ -191,7 +316,7 @@ def effectiveness_errors(root, ref):
 
 def recurrence_errors(root, record, open_ids):
     """A repeated unresolved problem must have an open owner or a verified new fix."""
-    prior = {p.get('category') for r in accounting.rows(Path(root)/accounting.STATE/'retrospective_history.jsonl')[-3:]
+    prior = {p.get('category') for r in reflections(root)
              for p in r.get('problems',[]) if isinstance(p,dict)}
     errors=[]
     for i, problem in enumerate(record.get('problems',[]) or []):
@@ -216,6 +341,58 @@ def accept(root, record):
     errors = validate_measurements(root, record, last)
     errors += si.validate(Path(root))
     require(not errors, '; '.join(errors))
+    require(record.get('commentary', 'complete') in ('complete', 'pending'),
+            'commentary must be "complete" or "pending"')
+    if record.get('commentary') == 'pending':
+        # Lightweight reflection (esx-fix.md C): the measurements are captured
+        # automatically and validated above; the human commentary may follow,
+        # and neither it nor a missing cost observation blocks unrelated work.
+        # Nothing has to be invented to clear the gate -- the 60-character
+        # explanation floor pushed exactly that.
+        require(record.get('problems') == [] and record.get('solutions') == [] and not record.get('confirmations'),
+                'a pending-commentary retrospective carries measurements only; add problems later with '
+                '--complete-retro')
+        require(isinstance(record.get('carry_forward'), list), 'carry_forward must be a list')
+    else:
+        content_checks(root, record, require_explanation=True)
+    path = Path(root) / accounting.STATE / 'retrospective_history.jsonl'
+    existing = next((r for r in accounting.rows(path) if (r.get('id'), r.get('closes_timestamp')) ==
+                    (record['id'], record['closes_timestamp'])), None)
+    require(existing is None or existing == record, 'accepted retrospective is immutable; retain the original evidence')
+    if existing is None:
+        archived = {'retrospective': record, 'accounting': json.loads((Path(root) / record['accounting']['path']).read_text())}
+        key = hashlib.sha256(json.dumps(archived, sort_keys=True).encode()).hexdigest()
+        accounting.atomic(Path(root) / si.BASE / 'assessments/retrospectives' / (key + '.json'), archived)
+        accounting.append(path, record)
+    persist_debt(root, 'retrospective accepted')
+    return {'status': 'accepted', 'id': record['id'], 'already_accepted': existing is not None,
+            'commentary': record.get('commentary', 'complete')}
+
+
+def complete_commentary(root, record):
+    """Add the human commentary to a retrospective accepted with it pending."""
+    from project import require
+    state = Path(root) / accounting.STATE
+    key = (record.get('id'), record.get('closes_timestamp'))
+    accepted = next((r for r in accounting.rows(state / 'retrospective_history.jsonl')
+                     if (r.get('id'), r.get('closes_timestamp')) == key), None)
+    require(accepted is not None and accepted.get('commentary') == 'pending',
+            'no accepted retrospective with pending commentary for that id and closes_timestamp')
+    require(key not in {(r.get('id'), r.get('closes_timestamp')) for r in accounting.rows(state / COMMENTARY)},
+            'commentary already completed for that retrospective')
+    content_checks(root, dict(accepted, **record, schema_version=accepted.get('schema_version')),
+                   require_explanation=True)
+    entry = {k: record[k] for k in ('id', 'closes_timestamp', 'problems', 'solutions', 'confirmations',
+                                    'no_problem_reason', 'carry_forward') if k in record}
+    entry['completed_at'] = accounting.now()
+    accounting.append(state / COMMENTARY, entry)
+    return {'status': 'commentary completed', 'id': record['id']}
+
+
+def content_checks(root, record, require_explanation):
+    """Validate a reflection's problems, solutions and confirmations; raise on the first defect."""
+    import self_improvement as si
+    from project import require
     problems, solutions = record.get('problems'), record.get('solutions')
     require(isinstance(problems, list) and isinstance(solutions, list), 'problems and solutions must be lists')
     require(isinstance(record.get('carry_forward'), list) and all(isinstance(r, str) and r.strip() for r in record['carry_forward']), 'carry_forward must be a list of nonempty strings')
@@ -262,22 +439,13 @@ def accept(root, record):
     require(covered == set(range(len(problems))), 'each problem needs a disposition')
     errors, confirmed = confirmation_errors(record)
     require(not errors, '; '.join(errors))
-    require(bool(problems) or confirmed or len(str(record.get('no_problem_reason', ''))) >= EXPLANATION_FLOOR,
-            'explain a no-problem result using measured evidence: a no_problem_reason or a confirmation '
-            'whose evidence is at least %d characters' % EXPLANATION_FLOOR)
+    if require_explanation:
+        require(bool(problems) or confirmed or len(str(record.get('no_problem_reason', ''))) >= EXPLANATION_FLOOR,
+                'explain a no-problem result using measured evidence: a no_problem_reason or a confirmation '
+                'whose evidence is at least %d characters, or accept it with "commentary": "pending"'
+                % EXPLANATION_FLOOR)
     errors = recurrence_errors(root, record, opened)
     require(not errors, '; '.join(errors))
-    path = Path(root) / accounting.STATE / 'retrospective_history.jsonl'
-    existing = next((r for r in accounting.rows(path) if (r.get('id'), r.get('closes_timestamp')) ==
-                    (record['id'], record['closes_timestamp'])), None)
-    require(existing is None or existing == record, 'accepted retrospective is immutable; retain the original evidence')
-    if existing is None:
-        archived = {'retrospective': record, 'accounting': json.loads((Path(root) / record['accounting']['path']).read_text())}
-        key = hashlib.sha256(json.dumps(archived, sort_keys=True).encode()).hexdigest()
-        accounting.atomic(Path(root) / si.BASE / 'assessments/retrospectives' / (key + '.json'), archived)
-        accounting.append(path, record)
-    persist_debt(root, 'retrospective accepted')
-    return {'status': 'accepted', 'id': record['id'], 'already_accepted': existing is not None}
 
 
 def rule_key(rule):

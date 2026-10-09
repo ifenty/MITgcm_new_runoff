@@ -228,6 +228,7 @@ or native, and before closure: run it straight after --prepare and the start
 announcement, and `--next` asks for it while it is missing. A check skipped until
 after the work began can only be taken with `--late-reason`, which marks the
 receipt late. Every closeout, including partial and blocked, needs a measured
-retrospective before more work. Resolve recurring process owners or record a
-bounded deferral. Report observed USD, unknown charges and coordinator coverage;
+retrospective before more work; its commentary may be left pending. A recurring
+process finding is advisory unless its entry is classified Blocking, and then it
+blocks only its named scope: fix it, or defer it with a trigger. Report observed USD, unknown charges and coordinator coverage;
 never infer zero spend from absent provider data. Retain versionable evidence.
