@@ -1458,3 +1458,31 @@ The structural suite passes.
 
 ### Expected Effect
 The owner chooses per dispatch, and each footer can be attributed to a model. Implement after RUNOFF-008 closes: every file it edits is inside RUNOFF-008's acceptance scope (measured 2026-10-09). Port to ESX-Team with the pilot fixes.
+
+## 🔴 PROPOSED: an owner's permission approval rewrites .claude/settings.local.json, which is inside the acceptance scope, so it stales the active seal
+
+**Date Identified**: 2026-10-09  09:05
+**Status**: Proposed
+**UUID**: TEAM-SETTINGS-LOCAL-IN-ACCEPTANCE-001
+**Category**: acceptance_scope
+**Severity**: Medium
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-09-settings-local-scope/assessment.md
+**Anchors**: tools/esx/project.py::inventory_paths; tools/esx/project.py::administrative; .claude/settings.local.json
+
+### Issue
+`.claude/settings.local.json` is git-ignored, but `project.py`'s inventory includes it, and the inventory is the acceptance scope. When the owner approves a permission prompt with "always allow", the Claude Code harness appends an allow rule to that file. Any approval during an active issue therefore moves the candidate signature and stales the sealed report and every reviewer approval (LL-006, LL-017). No project change has occurred, and nobody on the team edited the file.
+
+### Evidence
+RUNOFF-008 correction round 1, 2026-10-09. Replacement Bob `ad208460ccaf86130` drafted against `af354f05…` and found `.claude/settings.local.json::<module>` changed at 08:28:51 -0700, 13 minutes after `c68788d`. The change was one allow rule, verbatim Arch's first Bash command of session 84006f57 (the loop resume), approved by the owner. Restoring only that file's baseline bytes returns the signature from `c8e6be78…` to `cb41a501…` exactly (Bob's `sig_probe.py`, `devel-loop/loop_state/scratch/ad208460ccaf86130/`). Bob correctly stopped before sealing, which cost one extra turn.
+
+### Potential Impact
+Any owner approval mid-review or during final verification can strand the seal and the approvals. A suite run on the old candidate is then stale. The cost repeats each time the owner approves a prompt, and the owner cannot see that approving a prompt has this effect.
+
+### Proposed Fix
+Treat `.claude/settings.local.json` as administrative: exclude it from `inventory_paths` and from the signature. It holds per-user harness permission state, not project policy. The checked-in `.claude/settings.json` stays in scope, because it is policy. If some part of the local file must stay witnessed (hooks, for example), digest only those keys and leave out `permissions.allow`.
+
+### Acceptance Criteria
+A `tests/esx` guard shows that appending a `permissions.allow` entry to `.claude/settings.local.json` leaves `project.py signature` unchanged, while editing `.claude/settings.json` still changes it. The structural suite passes.
+
+### Expected Effect
+Owner permission approvals never stale a seal or review again: zero signature moves from `settings.local.json` permission edits. Implement after RUNOFF-008 closes, since `project.py` is inside its acceptance scope. Port it with the pilot fixes.

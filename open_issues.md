@@ -421,6 +421,15 @@ Mixed-layer response to warm or cold river water could differ from the dense exf
 ### Proposed action and acceptance
 Run a KPP configuration (e.g. lab_sea or cs32 with KPP) with a strongly warm/cold source both ways; report the difference in mixed-layer depth and surface T. Acceptance: a documented decision with the measured effect, reviewed by Richard; the package design updated.
 
+**Owner decision, 2026-10-09 (decides this issue's question; the measurement is no longer needed to choose):** "we want to slot this runoff package in as cleanly as possible, and that means following existing conventions for adding volume, heat, salt, and other tracers. In the case of fluxes entering the surface grid cell, we should use the surface flux fields that mitgcm's other surface forcing uses. However, just like our shelfice package, we need to explicitly track all subsurface fluxes where the fluxes are applied to tendencies. we need all the diagnostics for that so we can close the budgets"
+
+What this means for the package (Arch's reading; the mechanism is for the implementing issue to establish from source, not from this note):
+- **Surface targets** (the model's surface cell in open water): heat, salt and passive tracers go through the surface flux fields the rest of the surface forcing uses (`surfaceForcingT`, `surfaceForcingS`, and for passive tracers `surfaceForcingPTr` in `pkg/ptracers/PTRACERS_FIELDS.h`), so KPP, the `TFLUX`/`SFLUX` diagnostics and the ptracers surface path see them. Volume already uses the exf `runoff` field (decision 2). This **supersedes decisions 3 and 4 of `docs/package_design.md` for surface targets**, and the 2026-10-02 direction "T/S fluxes follow the shelfice/icefront tendency pattern" with them. Whether the cleanest route is to fill an existing exf field (for example `runoftemp` for heat) or a hook at the end of `EXTERNAL_FORCING_SURF` like `SHELFICE_FORCING_SURF`'s is a design question for the implementing issue: prefer whatever the existing convention already does.
+- **Subsurface targets** (`target_level > 1`, RUNOFF-025, and the top wet cell under an ice shelf, RUNOFF-020): fluxes applied as tendencies, as pkg/shelfice and icefront do, and **explicitly tracked**: every subsurface volume, heat, salt and tracer flux gets diagnostics sufficient to close the budgets (RUNOFF-015, RUNOFF-016).
+- **Records to change** once RUNOFF-008 closes (both are inside its acceptance scope, so editing them now would stale its seal): `docs/package_design.md` decisions 3, 4 and 8, and `esx/project_profile.md` (the two "shelfice/icefront tendency pattern" lines).
+- **Landed work affected:** the T/S tendency terms (RUNOFF-013) and the tracer term (RUNOFF-008) currently apply to surface targets as tendencies and move to the surface fields. RUNOFF-008 is closed on its current mechanism: its analytic rows and its two-tracer budget closures measure the applied totals, so they become the regression witnesses the reroute must still pass; the Package-column rows read `RNFgT`/`RNFgS`/`RNFtrNN`, which will need re-deriving. RUNOFF-043/RUNOFF-044 (pkg/longstep) must be re-evaluated, because `LONGSTEP_FORCING_SURF` builds the long-step surface forcing itself. RUNOFF-037 (the exf runoff-temperature range check) matters more if heat goes through `runoftemp`.
+- Next: this issue becomes the implementing issue for the surface route, selected after RUNOFF-008 closes.
+
 ## UNRESOLVED: Python runoff tools assume level 1 is the surface (pressure coordinates)
 
 **Date Identified**: 2026-10-03T11:00:00Z
@@ -539,6 +548,16 @@ Carry forward from RUNOFF-013 (review B, correction round 1, 2026-10-05): **a nu
   1. Re-prepare RUNOFF-008 as `scientific_change`.
   2. Correction round 1 with the same identities. Bob `a23fa823c56a8ffb7` reseals with `doc_contract.py draft --previous af354f05…`, giving the four files their own dispositions; there are no test or Fortran changes. Richard `ad98e39fd4b872093` re-confirms only the changed lines and the new seal.
   3. Build a fresh review packet, then run `final_verification.py` as arch with Bash `run_in_background`. This is the first live test of TEAM-LOOPHOLD-NO-RELEASE-001: the loop must resume within minutes of the suite finishing.
+- **Correction round 1 and final verification, 2026-10-09 (Arch):**
+  - Neither native subagent of the ended session was resumable. Replacement Bob `ad208460ccaf86130` resealed the report (`0c8886e4…`).
+    - The candidate signature is `c8e6be78…`, not `cb41a501…`: the owner's "don't ask again" approval added one allow rule to `.claude/settings.local.json`, which lies inside the acceptance scope (TEAM-SETTINGS-LOCAL-IN-ACCEPTANCE-001).
+  - Replacement Richard `a0199106f3c3c2fc8` confirmed the seal: APPROVE_WITH_FIXES, empty must-fix.
+    - His own focused run passed 13/13, and all 89 round-0 figure lines reproduce verbatim.
+    - An A/B of seven tendency and budget measurements, envs/mitgcm_rnf against the 3.10 stack of ecco_py310 (used read-only, not modified), gave 2004 floats bitwise identical.
+  - Final verification by Arch, packet `packets/runoff-008-final.json`: **EXECUTED PASS**, 09:40–11:53 -0700.
+    - Receipt `final-verification/4a411df2…`.
+    - This was the first live final verification of the pilot. The session was re-invoked at the moment the suite finished, so TEAM-LOOPHOLD-NO-RELEASE-001 holds in practice.
+  - The owner's 2026-10-09 decision on RUNOFF-031 will move this term, for surface targets, to `surfaceForcingPTr`. This issue's oracles are the regression witnesses for that move.
 - Enrolment: focused `tendency_term_check.py --case L_set --case U_set --case L_unset --case U_unset`; scientific `budget_check.py --build` (now including `lab_sea_ptr2` and `lab_sea_unfed`) plus `--build --case lab_sea_ptr2 --mpi 0 --control swap` and `--build --case lab_sea_unfed --mpi 0 --control feed_zero` (62 → 64 commands). Not covered: two tracers on MPI (no `_mpiN` build of it), cs32 (no pkg/ptracers), branch N, tracer series in time modes other than this fixed period (RUNOFF-029).
 
 
