@@ -1363,3 +1363,51 @@ changing it. It is now a `KIND NOTICE` printed at --prepare, and closeout -- whi
 measures the files that actually changed -- stays the authoritative refusal
 (871d8b3). Separately, esx-fix.md F1 (9da9318) moved ESX regression tests out of
 the scientific inventory, so an ESX-test-only issue no longer triggers it at all.
+## 🔴 PROPOSED: the project interpreter can change identity between iterations and nothing checks it before a suite fails
+
+**Date Identified**: 2026-10-09  00:50
+**Status**: Proposed
+**UUID**: TEAM-ENV-INTERPRETER-DRIFT-001
+**Category**: environment_drift
+**Severity**: Medium
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-09-runoff-008/assessment.md
+**Anchors**: tools/esx/loop_gate.py:prepare; tools/esx/project.py:environment; esx/project_profile.md
+
+### Issue
+`esx/project.json` names an interpreter path, and the profile pins its version. When the
+environment at that path is replaced, `--prepare`, `--check-start` and the structural
+suite all pass. The first failure comes hours later, inside a role's focused-suite run.
+Separately, the generated brief tells the implementer to cite the focused suite as
+`independent_check`. It does not say what to cite when that suite cannot pass for an
+environment reason, so capture refuses the honest footer.
+
+### Evidence
+RUNOFF-008 (2026-10-09): `envs/ecco` went from 3.10.19 to 3.14.7 without matplotlib at
+2026-10-08 19:43. It was detected 2.5 h into the iteration, at Bob's focused run, and it
+blocked final verification (partial closeout). Bob's first footer was captured incomplete
+for citing the failed suite record and was re-emitted. The documentation-contract digests
+also depend on the interpreter version (TEAM-DOCCONTRACT-AST-DUMP-DIGEST-001), so a silent
+interpreter change can also stale seals.
+
+### Potential Impact
+Lost iteration time; a blocked closeout; seals or baselines computed under a different
+interpreter from the one the profile documents.
+
+### Proposed Fix
+Record the interpreter identity (`sys.version`, executable path, and a digest of the
+installed distribution set) in the verification `environment()` and at `--prepare`. When
+it differs from the last accepted iteration's identity, print an `INTERPRETER CHANGED`
+notice in `--next` and `--prepare` naming both, and have `--doctor` import-check the
+modules the configured suites need. Add one line to brief.py's Evidence section: when the
+configured suite cannot pass for a documented environment reason, cite one passing
+`verify.py --command` record you own, and keep the failed suite record in evidence and
+limits.
+
+### Acceptance Criteria
+A fixture that swaps the configured interpreter for one of another minor version makes
+`--prepare` print the notice, and makes `--doctor` exit non-zero when a declared import
+fails. The brief template carries the citation rule.
+
+### Expected Effect
+An interpreter change is detected at iteration start (0 minutes into a role turn), not
+mid-iteration.
