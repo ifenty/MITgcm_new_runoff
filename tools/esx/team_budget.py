@@ -111,9 +111,6 @@ def transaction(root, write=True):
             accounting.atomic(path, value)
 
 
-USABLE_TURN_FRACTION = 0.5    # a scope deadline must leave at least this much of the turn
-
-
 def reserve(root, event, issue, budget, *, run=None, run_budget=None, correction=0, amount=None, turn_seconds=None, turn_calls=None):
     budget = limits(override=budget)
     amount = budget['turn_usd'] if amount is None else amount
@@ -159,21 +156,10 @@ def reserve(root, event, issue, budget, *, run=None, run_budget=None, correction
         now = time.time()
         horizon = now + turn_seconds if turn_seconds is not None else now + min(c['minutes'] for _, c in scopes) * 60
         soft_horizon = now + turn_seconds * .8 if turn_seconds is not None else now + min(c['minutes'] for _, c in scopes) * 48
-        # A scope deadline bounds this turn only while it still leaves a usable
-        # horizon. The elapsed case was already excluded above, but a deadline a
-        # few minutes in the future is just as fatal: the scope clock runs
-        # through a provider-limit pause, so the first resumed turn was clamped
-        # to the original issue deadline and killed after 33 minutes of work
-        # (TEAM-PAUSE-DEADLINE-CLAMP-001). A nearly-spent nominal deadline is an
-        # overrun to record -- `observe` above already does that -- not a reason
-        # to kill the turn that is doing the work. This module's own doctrine
-        # says so: "Each exceeded dimension is recorded and the work proceeds;
-        # only the loop's own max_iterations terminates a run."
-        usable = now + USABLE_TURN_FRACTION * (horizon - now)
         deadlines = [horizon] + [d for d in (ledger['scopes'][k].get('deadline', ledger['scopes'][k]['started'] + c['minutes'] * 60)
-                                            for k, c in scopes) if d >= usable]
+                                            for k, c in scopes) if d > now]
         soft_deadlines = [soft_horizon] + [d for d in (ledger['scopes'][k].get('soft_deadline', ledger['scopes'][k]['started'] + c['minutes'] * 48)
-                                                      for k, c in scopes) if d >= usable]
+                                                      for k, c in scopes) if d > now]
         receipt = {'event_id': event, 'scopes': [k for k, _ in scopes], 'reserved_usd': amount,
                    'charged_usd': amount, 'reported_usd': None, 'status': 'reserved',
                    'deadline': min(deadlines), 'soft_deadline': min(soft_deadlines),

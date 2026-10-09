@@ -563,7 +563,7 @@ def test_latest_orientation_requires_a_fresh_receipt(monkeypatch, tmp_path):
 
 
 # --------------------------------------------------------------------------
-# TEAM-PAUSE-EARLY-LIFT-001 / TEAM-PAUSE-DEADLINE-CLAMP-001
+# TEAM-PAUSE-EARLY-LIFT-001 / TEAM-PAUSE-DEADLINE-CLAMP-001 (the latter reverted)
 # --------------------------------------------------------------------------
 
 def test_provider_limit_pause_is_not_lifted_before_a_known_reset():
@@ -596,33 +596,28 @@ def test_provider_limit_pause_is_not_lifted_before_a_known_reset():
         "(TEAM-PAUSE-EARLY-LIFT-001)")
 
 
-def test_a_nearly_spent_scope_deadline_does_not_kill_the_turn():
-    """A scope deadline must leave a usable horizon or not bound the turn.
+def test_a_live_scope_deadline_and_an_owner_extension_still_bound_the_turn():
+    """Owner-authorized wall-clock limits bound a turn; a pause does not extend them.
 
-    Guards TEAM-PAUSE-DEADLINE-CLAMP-001. The scope clock runs through a
-    provider-limit pause, so after a 93-minute outage the first resumed turn was
-    clamped to the original issue deadline and killed after 33 minutes of work.
-    The fully-elapsed case was already excluded; a deadline a few minutes in the
-    future is equally fatal and was not.
-
-    This module's own doctrine is that an exceeded nominal dimension is recorded
-    and the work proceeds, so a nearly-spent deadline is an overrun to observe,
-    not a turn to kill.
+    TEAM-PAUSE-DEADLINE-CLAMP-001's local fix (af5165f) let a scope deadline bind
+    a turn only while it left half the turn's horizon. That was broader than the
+    pause it targeted: ESX-Team's own suite measured a live 10-minute deadline no
+    longer bounding a long turn, and -- worse -- an OWNER-AUTHORIZED 20-minute
+    extension bounding the resumed turn at 6000 s instead of 4200 s, i.e. past
+    what the owner authorized. esx-fix.md D: "Waiting does not extend
+    owner-authorized money or wall-clock limits." Reverted to upstream; a turn
+    resumed near its deadline is what budget.extend is for.
     """
     import team_budget
-
-    assert 0 < team_budget.USABLE_TURN_FRACTION <= 1
-    source = (TOOLS / "team_budget.py").read_text()
-    tree = ast.parse(source)
-    functions = {node.name: node for node in ast.walk(tree)
-                 if isinstance(node, ast.FunctionDef)}
-    body = ast.get_source_segment(source, functions["reserve"]) or ""
-    assert "USABLE_TURN_FRACTION" in body, (
-        "reserve() no longer requires a scope deadline to leave a usable horizon")
-    assert "if d > now]" not in body, (
-        "a scope deadline is again accepted merely for being in the future, so a "
-        "turn resumed near the deadline is killed at launch "
-        "(TEAM-PAUSE-DEADLINE-CLAMP-001)")
+    import time as clock
+    from pathlib import Path
+    import tempfile
+    assert not hasattr(team_budget, 'USABLE_TURN_FRACTION'), 'the horizon rule is back'
+    with tempfile.TemporaryDirectory() as folder:
+        root = Path(folder)
+        cap = team_budget.limits(override={'minutes': 10})
+        reservation = team_budget.reserve(root, 'one', 'TEST', cap, turn_seconds=99_999)
+        assert reservation['deadline'] < clock.time() + 10 * 60 + 1
 
 
 def test_manual_pause_is_never_auto_lifted():
@@ -1056,9 +1051,14 @@ def test_verification_outcome_is_decided_by_the_runner_not_the_log():
     # A crash is a failure of the candidate, not an interruption...
     result, record = _attempt([py, '-c', 'import os, signal; os.kill(os.getpid(), signal.SIGSEGV)'])
     assert result['type'] == 'ValueError' and record['outcome'] == 'failed' and 'crashed' in record['reason']
-    # ...while a kill the runner did not observe has no established cause.
+    # ...a termination signal is an interruption, established by the return code
+    # itself (ESX-Team's own suite SIGTERMs the suite's child and requires it)...
     result, record = _attempt([py, '-c', 'import os, signal; os.kill(os.getpid(), signal.SIGKILL)'])
-    assert result['type'] == 'RunInfrastructure' and record['termination'] == 9
+    assert result['type'] == 'RunInterrupted' and (record['outcome'], record['termination']) == ('interrupted', 9)
+    assert record['completed_commands'] == 0, 'a command ended by a signal did not complete'
+    # ...and any other signal has no established cause: infrastructure, no verdict.
+    result, record = _attempt([py, '-c', 'import os, signal; os.kill(os.getpid(), signal.SIGUSR1)'])
+    assert result['type'] == 'RunInfrastructure' and record['termination'] == signal.SIGUSR1
 
     # Process-group SIGTERM to the runner, the RUNOFF-040 shape: interrupted,
     # with the signal recorded from the handler rather than parsed from text.
@@ -1354,6 +1354,13 @@ def test_prepare_refuses_a_kind_its_owning_target_contradicts():
         ROOT, cfg, 'harness_change', ['tests/footprint_claim_sweep.py::tracked', 'docs/code_map.md::<module>']) is None
     assert loop_gate.kind_contradiction(
         ROOT, cfg, 'documentation', ['docs/code_map.md::<module>', 'tests/rnf/refusal_check.py::cases']) is None
+    # It INFORMS and never refuses: whether the work will edit its owner is
+    # unknown at --prepare, and as a refusal it rejected 44 of ESX-Team's own
+    # regression fixtures, each an `investigation` over a source it only reads.
+    import inspect
+    src = inspect.getsource(loop_gate.Gate.prepare)
+    assert 'kind_contradiction' in src and 'notices.append' in src
+    assert 'require(contradiction' not in src
 
 
 def test_framework_tests_leave_the_scientific_identity_only():
@@ -1489,3 +1496,24 @@ def test_check_done_refusal_shows_every_unmet_requirement(monkeypatch, capsys):
     assert loop_gate.main() == 1
     err = capsys.readouterr().err
     assert 'BLOCKED: first one' in err and 'closeout doctor unavailable' in err
+
+
+def test_loop_cannot_complete_over_an_unattempted_notification():
+    """Work comes before notifications, but completion does not.
+
+    TEAM-NOTIFY-OUTAGE-NO-BACKOFF-001 (af5165f) rightly stopped a notification
+    demand from hiding the work -- but it deferred the notice past the
+    no-actionable-work branch too, so the loop could emit its completion promise
+    with a required notification never attempted. Found only by running ESX-Team's
+    own suite against this project's tools:
+    test_autonomous_loop::test_required_pending_prevents_completion_until_attempt
+    (rc 3 where 0 was required). esx-fix.md D keeps the delivery-attempt policy.
+    A structural backstop, because this project does not run that suite.
+    """
+    import inspect
+    import loop_gate
+    src = inspect.getsource(loop_gate.Gate._next_instruction)
+    tail = src[src.index("terminal='no actionable work'"):]
+    gate, promise = tail.index('if self._deferred_notice:'), tail.index('print(PROMISE)')
+    assert gate < promise, 'the completion promise is reachable before the pending notice is honoured'
+    assert 'return 0' in tail[gate:promise]

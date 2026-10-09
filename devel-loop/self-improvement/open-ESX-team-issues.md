@@ -6,7 +6,8 @@ are separate from ESX transformation issues and are not selected by `loop_gate.p
 **Heading marker tracks `Status`, and the two must agree.** 🔴 PROPOSED is an
 issue with no fix landed; 🟡 IMPLEMENTED is a fix landed and awaiting
 publication or effectiveness evidence, with an `Implementation-Reference`;
-🟢 VERIFIED lives in `closed-ESX-team-issues.md` once effectiveness evidence
+⚪ BLOCKED waits on its `Blocked-By` (an owner decision, say), with no fix in
+force; 🟢 VERIFIED lives in `closed-ESX-team-issues.md` once effectiveness evidence
 exists. The marker was added to this ledger on 2026-10-08 after every one of the
 20 entries had been marked `Status: Implemented` in several passes while every
 heading still read 🔴 PROPOSED — so the file announced itself as entirely
@@ -226,16 +227,16 @@ With paused_until in the future, a working Stop leaves the loop paused and does 
 ### Expected Effect
 No iterations are lost to the grace-allowance summary turn.
 
-## 🟡 IMPLEMENTED: Provider-limit pause time still shortens later role turns
+## ⚪ BLOCKED: Provider-limit pause time still shortens later role turns
 
 **Date Identified**: 2026-10-03  09:50
-**Status**: Implemented — awaiting publication/effectiveness evidence
+**Status**: Blocked
 **UUID**: TEAM-PAUSE-DEADLINE-CLAMP-001
 **Category**: loop_pause
 **Severity**: Medium
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-02-runoff-010/assessment.md
 **Anchors**: tools/esx/team_budget.py
-**Implementation-Reference**: af5165f (team_budget.USABLE_TURN_FRACTION: a scope deadline bounds a turn only while it leaves half of it)
+**Blocked-By**: OWNER-DECISION — whether provider-limit pause time counts against an issue's nominal wall-clock minutes. esx-fix.md D says waiting does not extend owner-authorized limits, which makes the clamp correct and budget.extend the remedy; the local fix contradicted that and was reverted.
 
 ### Issue
 `team_budget.reserve` clamps each turn to the issue scope's nominal deadline (`started + minutes`) while that deadline is still in the future. The scope clock keeps running through a provider-limit pause. After the 07:37–09:10Z outage, the first resumed Bob turn (`--timeout 5400`) was killed at 09:46Z. That was the original issue deadline (09:36Z) plus grace, after 33 minutes of work. Bob also reported that the resumed brief carried the old deadline, so the turn before it stopped at once.
@@ -257,6 +258,23 @@ After a pause of N minutes, a turn dispatched with `--timeout T` gets at least m
 ### Expected Effect
 No turns are lost after an outage.
 
+
+### Reverted 2026-10-09: the fix let a turn outrun an owner-authorized extension
+
+The local fix (af5165f) made a scope deadline bind a turn only while it left
+half the turn's horizon (`USABLE_TURN_FRACTION`). That was broader than the pause
+it targeted. Run against ESX-Team 1.6.3's own regression suite, it failed two
+modules: `test_team_operations::test_a_live_scope_deadline_still_bounds_a_longer_turn`
+(a live 10-minute deadline no longer bounded a long turn) and
+`test_parity_integration::test_owner_extension_does_not_reset_unknown_spend`,
+where an owner-authorized 20-minute extension should bound the resumed turn at
+4200 s and the fix ran it to 6000 s -- past what the owner authorized. esx-fix.md
+D: "Waiting does not extend owner-authorized money or wall-clock limits." So the
+clamp this entry complains about is the intended behaviour under that rule, and
+a turn resumed near its deadline is served by `budget.extend`, which exists.
+`team_budget.py` is restored to upstream byte-for-byte. Whether pause time should
+count against nominal minutes at all is the owner's policy decision, hence
+Blocked-By OWNER-DECISION.
 ## 🟡 IMPLEMENTED: doc_contract digests `ast.dump` output, so a valid sealed report reads as stale under a different Python
 
 **Date Identified**: 2026-10-04  18:10

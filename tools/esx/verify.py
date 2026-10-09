@@ -49,6 +49,10 @@ class RunInfrastructure(ValueError):
 
 
 FAILURE_LINE = re.compile(r'\b(FAILED|ERROR)\b')
+# pytest ends every completed session with e.g. "==== 3 passed in 0.12s ====".
+# Retained for consumers that inspect a log, as ESX-Team's own suite does; it is
+# deliberately NOT used to classify an outcome, which comes from the runner.
+PYTEST_SUMMARY = re.compile(r'^=+ .+ in [0-9.]+s\b.*=+\s*$', re.M)
 
 
 def failure_lines(text):
@@ -64,6 +68,9 @@ def failure_lines(text):
 #: the candidate, not an interruption of the run.
 CRASH_SIGNALS = frozenset(s for s in (getattr(signal, n, None) for n in
                           ('SIGSEGV', 'SIGBUS', 'SIGFPE', 'SIGILL', 'SIGABRT', 'SIGTRAP', 'SIGSYS')) if s)
+#: Requests to stop, delivered from outside: the command was interrupted.
+TERMINATION_SIGNALS = frozenset(s for s in (getattr(signal, n, None) for n in
+                                ('SIGTERM', 'SIGINT', 'SIGHUP', 'SIGKILL', 'SIGQUIT')) if s)
 
 
 def classify(index, argv, rc, error):
@@ -94,8 +101,17 @@ def classify(index, argv, rc, error):
     if rc < 0:
         if -rc in CRASH_SIGNALS:
             return 'failed', -rc, f'{where} crashed with signal {-rc}'
-        return 'infrastructure', -rc, (f'{where} was terminated by signal {-rc}, a cause the runner did not '
-                                       'observe and cannot attribute to the candidate')
+        if -rc in TERMINATION_SIGNALS:
+            # The operating system reports that the command was TERMINATED by a
+            # signal it did not raise by crashing: external termination is
+            # established by the return code itself, so this is an interruption
+            # with no verdict (esx-fix.md B: "Direct SIGTERM ... produce
+            # interrupted attempts when the cause is established"). Measured
+            # against ESX-Team's own suite, which terminates the suite's child
+            # with SIGTERM and requires "interrupted".
+            return 'interrupted', -rc, f'{where} was terminated from outside the runner by signal {-rc}'
+        return 'infrastructure', -rc, (f'{where} ended on signal {-rc}, a cause the runner did not observe and '
+                                       'cannot attribute to the candidate')
     # A positive status is the command's own report. 124 is NOT read as a
     # timeout and 128+N is NOT read as an interruption: the runner records its
     # own timeouts and signals separately, so a command returning either has
@@ -229,8 +245,11 @@ def _run(root, suite, owner, fresh, override):
                 completed += 1
                 continue
             outcome, termination, reason = classify(index_, argv, rc, error)
-            if error is None:
-                completed += 1          # it ran to its own exit, with a failure status
+            if error is None and rc > 0:
+                # It ran to its own exit, with a failure status. A command ended
+                # by a signal did NOT complete; counting it once made an
+                # interrupted record claim "2 of 2 commands completed".
+                completed += 1
             ended_at = {'index': index_, 'argv': argv, 'exit': rc}
             break
     try:
@@ -265,7 +284,10 @@ def _run(root, suite, owner, fresh, override):
     if outcome == 'source_changed':
         raise SourceChanged(f'source changed during verification; {progress}', log)
     if outcome == 'timeout':
-        raise RunTimedOut(f'verification timed out ({reason}); {progress}', log)
+        # Worded as a failure, as upstream consumers match it: a timeout is the
+        # configured verdict on a hung candidate. Its own class and status keep
+        # it distinct from a completed failure (esx-fix.md B.1).
+        raise RunTimedOut(f'verification failed: timed out ({reason}); {progress}', log)
     if outcome == 'failed':
         failure = ValueError(f'verification failed ({reason}); {progress}')
         failure.log = log

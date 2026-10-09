@@ -53,8 +53,9 @@ def kind_contradiction(root, cfg, kind, targets):
     """Why `kind` cannot be right for work owned by ``targets[0]``, or None.
 
     Closeout refuses a non-scientific kind once the scientific signature has
-    moved, and an owning target inside that inventory makes the move certain, so
-    the contradiction is knowable at --prepare. RUNOFF-042 was prepared as
+    moved. An owning target inside that inventory makes the move LIKELY, not
+    certain: an investigation reads its owner without changing it. An earlier
+    version of this docstring said "certain", and the check refused on it. RUNOFF-042 was prepared as
     harness_change with all three targets under tests/, and the gate said so only
     at --check-done, after two implementation rounds and four reviews
     (TEAM-PREPARE-KIND-UNCHECKED-001).
@@ -83,6 +84,7 @@ def kind_contradiction(root, cfg, kind, targets):
 class Gate:
     def __init__(self, root, ledger_overrides=None):
         self.ledger_overrides = ledger_overrides
+        self.notices = []
         self.root = Path(root).resolve()
         self.cfg = config(self.root)
 
@@ -96,8 +98,16 @@ class Gate:
         opened, _, _ = validate_records(self.root, self.ledger_overrides)
         require(issue in opened and opened[issue]['state'] != 'blocked', 'select an actionable open issue')
         require(opened[issue]['anchors'], 'file source/test anchors in the issue before preparing work')
+        # A NOTICE, never a refusal. Whether the work will EDIT its owning target
+        # is unknown here: an investigation or documentation issue legitimately
+        # orients on a scientific source it only reads, and closeout -- which
+        # measures the files that actually changed -- remains the authoritative
+        # refusal. This was a refusal for one release and it refused 44 of
+        # ESX-Team's own regression fixtures, every one an `investigation` over
+        # a source file (TEAM-PREPARE-KIND-UNCHECKED-001, corrected).
         contradiction = kind_contradiction(self.root, self.cfg, kind, targets)
-        require(contradiction is None, contradiction or '')
+        if contradiction:
+            self.notices.append('KIND NOTICE: ' + contradiction + '. Ignore this if the work only reads it.')
         hist = json_lines(local(self.root, f'{STATE}/loop_history.jsonl'))
         state = local(self.root, f'{STATE}/issue-start.json')
         if state.exists():
@@ -707,6 +717,18 @@ class Gate:
         # Held and printed after the primary instruction rather than instead of
         # it; see next().
         self._deferred_notice = notifications.notice(self.root)
+        if self._deferred_notice:
+            # Work-first ordering must not extend to COMPLETION. Deferring the
+            # notice behind the work is right everywhere else, but here there is no
+            # work left, so emitting the promise would end the loop with a required
+            # notification never attempted. Measured against ESX-Team's own suite:
+            # test_autonomous_loop::test_required_pending_prevents_completion_until_attempt
+            # failed (rc 3 where 0 was required) after TEAM-NOTIFY-OUTAGE-NO-BACKOFF-001
+            # deferred the notice past this branch. esx-fix.md D: the delivery-
+            # attempt policy stays enforced.
+            print(f'NEXT: no actionable work; {len(opened)} blocked issue(s) remain. Deliver or dispose of the '
+                  'pending notification below before the loop can complete.')
+            return 0
         print(f'NEXT: no actionable work; {len(opened)} blocked issue(s) remain')
         loop = local(self.root, '.claude/esx-loop.local.md')
         if loop.exists() and re.search(r'(?m)^active:\s*true\s*$', loop.read_text()):
@@ -762,7 +784,7 @@ def main():
         elif args.prepare:
             result = gate.prepare(args.prepare, args.kind, args.risk, args.owner, args.priority,
                                   args.map, args.target, args.doc, args.use, args.diagnosis, args.budget_kind)
-            for notice in gate.lesson_notices():
+            for notice in gate.notices + list(gate.lesson_notices()):
                 print(notice, file=sys.stderr)
         elif args.check_start:
             result = gate.check_start(args.late_reason)
