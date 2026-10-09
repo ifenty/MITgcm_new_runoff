@@ -1139,3 +1139,151 @@ predicate and a fix that silences one silences the other.
 An uncaptured-completion notice means something again: it appears only when an
 agent's work is genuinely unavailable to closeout, so reading it is worthwhile.
 Measured as zero standing notices across iterations with no defective turn.
+
+## 🔴 PROPOSED: the verification hold promises a resume that nothing delivers, so every final verification stalls the loop
+
+**Date Identified**: 2026-10-09  02:10
+**Status**: Proposed
+**UUID**: TEAM-LOOPHOLD-NO-RELEASE-001
+**Category**: loop_liveness
+**Severity**: High
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
+**Anchors**: tools/esx/ralph_stop.py:_step_locked; tools/esx/ralph_stop.py:verification_running
+
+### Issue
+
+When Arch's own final verification is running, `_step_locked` allows the stop
+and tells the session *"The loop resumes when it finishes; nothing is wrong."*
+**Nothing resumes it.** The harness re-invokes a session only for work it
+tracks — a native subagent's completion, or a `run_in_background` shell exiting.
+A final verification launched with `subprocess.Popen(..., start_new_session=True)`
+is invisible to it, so when the suite finishes the loop simply stays stopped
+until a human types something.
+
+The branch fifteen lines below already knows this exact fact and handles it:
+*"A retained CLI turn sends no completion notification, so this session has to
+stay in its turn"* — it blocks and waits. The verification branch was written
+without that reasoning, so it holds correctly and never releases.
+
+`TEAM-LOOPHOLD-ARCH-BACKGROUND-WORK-001` fixed the opposite failure — the hold
+spending iterations — and was validated twice live. Both validations checked
+only that the loop **held**. Neither checked that it **released**, and that is
+the half that is broken.
+
+### Evidence
+
+Every verification hold in `.claude/esx-loop-exit.log`, with the time until the
+next loop event of any kind:
+
+```
+2026-10-07T03:51:34  HOLD it=6 verification (RUNOFF-040) -> next event after 21:04:52
+2026-10-08T05:44:32  HOLD it=7 verification (RUNOFF-016) -> next event after  7:51:34
+2026-10-08T15:19:13  HOLD it=8 verification (RUNOFF-042) -> next event: NONE
+```
+
+Three of three. Each suite takes about 108 minutes. RUNOFF-042's is exact:
+started `15:18:42Z`, finished `17:06:29Z` (6467 s, EXECUTED PASS), and nothing
+happened until the owner asked *"are you in the loop?"* at about `01:50Z` —
+**about 8 h 44 min idle after the work was done**, and the owner had to ask
+*"is esx-team broken? why 9 hours of idle"*. The first two gaps may include time
+the session was closed or the owner away, which this log cannot separate; the
+third cannot, because the session was open and idle throughout.
+
+Contrast, same log: the native-subagent holds at `15:00:05Z` and `15:11:16Z`
+were followed within minutes by the next event, because the harness notifies
+when a subagent finishes.
+
+### Potential Impact
+
+Every scientific issue ends in a mandatory final verification, so this costs a
+stall on **every** scientific closeout — the step the loop cannot skip. It also
+inverts the purpose of a finite loop budget: the budget is preserved perfectly
+while wall-clock time is spent without limit, which is the failure LL-018 warns
+the loop will not report. The hold message actively prevents diagnosis by
+saying *"nothing is wrong."*
+
+### Proposed Fix
+
+Two parts, and both are needed.
+
+1. **Launch through a tracked mechanism.** Arch's long runs belong in the Bash
+   tool with `run_in_background: true`, which survives the turn **and**
+   re-invokes the session on exit. The `Popen(start_new_session=True)` pattern
+   was a lesson learned in a **subagent** context, where a turn is capped near
+   59 minutes and no tracked background exists; it was carried into the main
+   session, where the tracked alternative does. The code map and
+   `team_operations.md` should say which to use where.
+2. **Stop promising a resume the hook cannot deliver.** When the run is a
+   detached process the hook cannot see the end of, the verification branch
+   should do what the retained-dispatch branch does — block with a bounded
+   foreground wait — or at minimum say plainly that the loop will **not**
+   resume on its own and must be woken. A hold message that is false is worse
+   than none.
+
+Also worth one line: when `verification_running` returns empty but the last
+logged event is a verification HOLD, the hook is looking at a released hold,
+and should say so.
+
+### Acceptance Criteria
+
+A final verification run under the loop is followed by the next loop event
+within minutes of the suite finishing, demonstrated live, not argued — the same
+standard the opposite fix was held to, applied this time to the release as well
+as the hold. And the hold message is shown to be true in the case it describes.
+
+### Expected Effect
+
+Zero idle time between a final verification finishing and the loop resuming.
+Measured as the gap after the last verification HOLD in the exit log.
+
+## 🔴 PROPOSED: --prepare accepts a workflow kind its own oriented targets contradict, and the gate says so only at closeout
+
+**Date Identified**: 2026-10-09  02:20
+**Status**: Proposed
+**UUID**: TEAM-PREPARE-KIND-UNCHECKED-001
+**Category**: workflow_misclassification
+**Severity**: Medium
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
+**Anchors**: tools/esx/loop_gate.py:prepare; tools/esx/workflow_policy.py:default_workflow
+
+### Issue
+
+`--prepare RUNOFF-042 --kind harness_change` was accepted although all three
+oriented targets were `tests/footprint_claim_sweep.py::…`, and every path under
+`tests/` is in the scientific inventory. The contradiction was knowable at
+`--prepare`. The gate reported it only at `--check-done` — *"scientific
+source/tests/configuration changed: amend workflow kind"* — after two
+implementation rounds and four reviews had been done under the wrong kind.
+
+### Evidence
+
+At closeout, `source_signature(scientific=True)` had moved `0464f812 →
+6fc64841`, and four committed paths were in the 272-path scientific inventory:
+`esx/project.json`, `tests/footprint_claim_sweep.py`,
+`tests/rnf/refusal_check.py`, `tests/esx/test_instrument_claims.py`. The
+amendment kept both approvals (the risk flag had already forced two reviewers)
+but added a mandatory 6467 s final scientific qualification that nobody had
+planned for, and that run then stalled the loop under
+`TEAM-LOOPHOLD-NO-RELEASE-001`.
+
+### Potential Impact
+
+Late discovery of a required step. Here it was cheap because a risk flag had
+already demanded two reviewers; under a no-risk `harness_change` it would have
+meant zero reviewers through two rounds, then a closeout that needs two.
+
+### Proposed Fix
+
+At `--prepare`, if any `--target` path is in the scientific inventory and
+`--kind` is not `scientific_change`, refuse — or warn and require an explicit
+reason. One set intersection against `inventory_paths(root, cfg, True)`.
+
+### Acceptance Criteria
+
+The RUNOFF-042 invocation (three `tests/` targets, `--kind harness_change`) is
+refused or warned at `--prepare`, demonstrated; a target set wholly outside the
+scientific inventory still prepares as before.
+
+### Expected Effect
+
+No workflow amendments at closeout for a kind the targets already contradicted.
