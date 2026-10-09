@@ -1412,3 +1412,49 @@ fails. The brief template carries the citation rule.
 ### Expected Effect
 An interpreter change is detected at iteration start (0 minutes into a role turn), not
 mid-iteration.
+
+## 🔴 PROPOSED: let the owner run Bob and Richard on a different model per dispatch
+
+**Date Identified**: 2026-10-09  03:30
+**Status**: Proposed
+**UUID**: TEAM-ROLE-MODEL-OVERRIDE-001
+**Category**: role_model_selection
+**Severity**: Low
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-09-runoff-008/assessment.md
+**Anchors**: tools/esx/agent_runtime.py:role_contract; .claude/ESX-team/manifest.md; esx/project.json
+
+### Issue
+Owner request (2026-10-09): "I'd like bob and richard to run as [a different model] sometimes; create an override to ESX-team to allow bob and richard to be run with different models." Today a role's model is either inherited from the main session or pinned for every dispatch by `model:` in `.claude/agents/<role>.md`. `agent_runtime.py` reads that pin (`role_contract`) and passes `--model`. There is no per-dispatch choice, no allowed list, and no record of which model produced a footer.
+
+### Evidence
+- `.claude/ESX-team/manifest.md`: "No model is pinned: the runtime inherits the configured model until the owner chooses per-role models."
+- The native Agent tool already accepts a per-call `model` (sonnet | opus | haiku | fable).
+- `team_accounting.stream_usage` already keeps `modelUsage` for retained CLI turns. Nothing records the model of a native subagent.
+- Open owner question: the model named was "Opus 5.5", which does not exist. The available models are Fable 5, Opus 5 (the current session's), Sonnet 5 and Haiku 4.5.
+
+### Potential Impact
+Without it the owner cannot use a stronger or cheaper model for chosen dispatches, and cannot compare models on measured cost and review quality.
+
+### Proposed Fix
+- **Configuration.** `esx/project.json` gets `runtime.role_models = {"bob": {"default": "inherit", "allowed": [...]}, "richard": {...}}`. The owner's standing directive goes in `esx/project_profile.md`.
+- **Native dispatch.** Arch passes the Agent tool's `model` from the allowed list and records it per runtime identity in the closeout (`agent_continuity.models`, `{agent_id: model}`).
+- **Retained dispatch.**
+  - `agent_runtime.py start --model NAME` is validated against the allowed list and saved in the session record and the runtime contract.
+  - `followup` and `message` reuse the saved model and refuse a different one. A different model is a different identity, so it is a replacement with a stated reason.
+- **Continuity.** The model is fixed for an identity through all of its correction rounds.
+  - When two Richards are required, they may run different models (diverse lenses).
+  - A pin in a role file's frontmatter still wins as the default.
+- **Measurement.** `--draft-retro` and the timings report cost and turns per model, so the owner can judge.
+
+### Acceptance Criteria
+`tests/esx` guards show:
+- a disallowed model is refused at `start`;
+- a followup that asks for a different model than the session's is refused;
+- `--model` reaches the CLI command line;
+- the closeout gate refuses a dispatch whose identity has no recorded model when `role_models` is configured;
+- `inherit` changes nothing for a project without `role_models`.
+
+The structural suite passes.
+
+### Expected Effect
+The owner chooses per dispatch, and each footer can be attributed to a model. Implement after RUNOFF-008 closes: every file it edits is inside RUNOFF-008's acceptance scope (measured 2026-10-09). Port to ESX-Team with the pilot fixes.
