@@ -1,0 +1,306 @@
+{
+  "retrospective": {
+    "accounting": {
+      "path": "devel-loop/loop_state/accounting/788a1dcfe71cdc1f28f33647f16ed0a558f8ae0cc766435c466a47f5da411c74.json",
+      "sha256": "788a1dcfe71cdc1f28f33647f16ed0a558f8ae0cc766435c466a47f5da411c74"
+    },
+    "carry_forward": [
+      "Native subagent identities end with their parent session: a session restart mid-issue always means replacements. Keep handoff files current at round boundaries.",
+      "The owner decided RUNOFF-031 on 2026-10-09: the surface route for heat, salt and tracers. docs/package_design.md decisions 3, 4 and 8 and the esx/project_profile.md tendency-pattern lines must be updated before RUNOFF-031 is implemented; RUNOFF-008 and RUNOFF-013 oracles are its regression witnesses.",
+      "Richard used envs/ecco_py310 read-only for an A/B against the brief constraint; unmodified. Briefs should say explicitly whether a read-only comparison env is permitted.",
+      "Optional follow-ups from review: esx/project_profile.md:434-440 netCDF4 warning text no longer reproduces; tests/esx/test_framework_fixes.py:44 should probe ecco_py310 to keep a 3.10 cross-version guard; a stale envs/ecco allow rule in .claude/settings.local.json is the owner's to prune."
+    ],
+    "closes_timestamp": "2026-10-09T15:32:16.031263+00:00",
+    "confirmations": [
+      {
+        "category": "loop_hold_release",
+        "summary": "TEAM-LOOPHOLD-NO-RELEASE-001 held in its first live use: the 2 h 13 min final verification launched with Bash run_in_background re-invoked the session the moment it exited, with no idle stall",
+        "evidence": "final_verification.py run 09:40-11:53:57 -0700; Arch read the result at 11:53:57; receipt devel-loop/loop_state/final-verification/4a411df24421e4347f5738c96910b5ec5f22753617692a13a1e92de61ff87f64.json"
+      },
+      {
+        "category": "independent_check",
+        "summary": "Richard settled the interpreter question with an end-to-end A/B across two Python stacks rather than accepting the implementer's timestamp inference, with controls still discriminating under both",
+        "evidence": "2004 floats bitwise identical; scratch devel-loop/loop_state/scratch/a0199106f3c3c2fc8/ab_summary.json"
+      },
+      {
+        "category": "replacement_handoff",
+        "summary": "Session-bound native subagents did not survive the owner restart; replacements with explicit predecessor IDs and handoff files finished the round without redoing review A",
+        "evidence": "SendMessage 'No transcript found' for a23fa823 and ad98e39f; replacements ad208460 and a0199106 recorded in agent_continuity.replacements"
+      }
+    ],
+    "id": "RUNOFF-008",
+    "iteration": 2,
+    "measured": {
+      "billing_status": "provider_reported_not_invoice_reconciled",
+      "coordinator": {
+        "provider_reported_usd": null,
+        "self_reported_minutes": null,
+        "self_reported_usd": null,
+        "tool_measured_minutes": 130.8
+      },
+      "coordinator_coverage": "missing",
+      "cost_scope": "cost_usd and span-based figures describe dispatched agents only; coordinator (Arch) cost is NOT included: no Arch accounting record exists for this iteration (record one with team_accounting.py record-arch)",
+      "cost_usd": {
+        "bob": 0.0,
+        "richard": 0.0
+      },
+      "dispatches": {
+        "bob": 3,
+        "richard": 1
+      },
+      "rounds": {
+        "bob": 1,
+        "richard": 1
+      },
+      "span_minutes": 211,
+      "unknown_cost_event_ids": [
+        "124c851a3cfe442eab6954128937b740",
+        "280756aaf0c849258dbe374b4e344ec2",
+        "7a1ec8d9f4724036896935af79fb093c",
+        "8d7c1ece2dc847f5910d90b6533ff72b"
+      ]
+    },
+    "no_problem_reason": "",
+    "problems": [
+      {
+        "category": "acceptance_scope",
+        "summary": "The owner's 'don't ask again' permission approval rewrote .claude/settings.local.json, which is inside the acceptance scope, moving the candidate mid-round (cb41a501 -> c8e6be78)",
+        "evidence": "Bob ad208460 draft-cr1 and sig_probe.py under devel-loop/loop_state/scratch/ad208460ccaf86130/; owner confirmation in devel-loop/self-improvement/assessments/2026-10-09-settings-local-scope/assessment.md",
+        "minutes_lost": 12
+      },
+      {
+        "category": "record_validation",
+        "summary": "Arch's new team-issue entry had an invalid Assessment field, so the capture of Bob's sealing turn cross-validated records and marked it incomplete",
+        "evidence": "dispatch event 280756aaf0c849258dbe374b4e344ec2 error 'invalid assessment/anchor: evidence must be a regular file'; footer-only re-emit 7a1ec8d9",
+        "minutes_lost": 4
+      },
+      {
+        "category": "closeout_contract",
+        "summary": "prepare-done left out candidate, map_delta and maintenance refs and imported a prior-iteration review, giving four serial strict-gate refusals at 2-3 minutes each",
+        "evidence": "devel-loop/self-improvement/assessments/2026-10-09-prepare-done-prior-import/assessment.md",
+        "minutes_lost": 15
+      }
+    ],
+    "schema_version": 3,
+    "solutions": [
+      {
+        "problem": 0,
+        "action": "filed",
+        "issue": "TEAM-SETTINGS-LOCAL-IN-ACCEPTANCE-001"
+      },
+      {
+        "problem": 1,
+        "action": "fixed",
+        "reference": "b70bfce6570a67e026ef75de2b28f831aabc5207",
+        "reason": "The entry now points at a real assessment file; the next capture validated and Bob's unchanged footer was re-emitted with no new work."
+      },
+      {
+        "problem": 2,
+        "action": "filed",
+        "issue": "TEAM-PREPARE-DONE-PACKET-FIELDS-001"
+      }
+    ],
+    "timestamp": "2026-10-09T19:06:39Z"
+  },
+  "accounting": {
+    "billing_status": "provider_reported_not_invoice_reconciled",
+    "by_phase": {
+      "orientation": {
+        "effort_seconds": 2.3896522521972656,
+        "elapsed_seconds": 2.3896522521972656,
+        "events": 6
+      },
+      "verification": {
+        "effort_seconds": 9106.824396848679,
+        "elapsed_seconds": 9106.824396848679,
+        "events": 3
+      }
+    },
+    "by_role": {
+      "bob": {
+        "dispatches": 3,
+        "reported_usd": 0.0,
+        "rounds": 1,
+        "seconds": 0.0,
+        "tool_calls": 0,
+        "unknown_cost_events": 3,
+        "unknown_tool_call_events": 3,
+        "usage": {}
+      },
+      "richard": {
+        "dispatches": 1,
+        "reported_usd": 0.0,
+        "rounds": 1,
+        "seconds": 0.0,
+        "tool_calls": 0,
+        "unknown_cost_events": 1,
+        "unknown_tool_call_events": 1,
+        "usage": {}
+      }
+    },
+    "child_elapsed_seconds": 0,
+    "components": [
+      {
+        "event_id": "124c851a3cfe442eab6954128937b740",
+        "kind": "unmetered_native",
+        "parent_event_id": "124c851a3cfe442eab6954128937b740",
+        "reported_usd": null,
+        "role": "bob",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "280756aaf0c849258dbe374b4e344ec2",
+        "kind": "unmetered_native",
+        "parent_event_id": "280756aaf0c849258dbe374b4e344ec2",
+        "reported_usd": null,
+        "role": "bob",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "7a1ec8d9f4724036896935af79fb093c",
+        "kind": "unmetered_native",
+        "parent_event_id": "7a1ec8d9f4724036896935af79fb093c",
+        "reported_usd": null,
+        "role": "bob",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "8d7c1ece2dc847f5910d90b6533ff72b",
+        "kind": "unmetered_native",
+        "parent_event_id": "8d7c1ece2dc847f5910d90b6533ff72b",
+        "reported_usd": null,
+        "role": "richard",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      }
+    ],
+    "coordinator": {
+      "coverage": "missing",
+      "included_in_reported_usd": "no",
+      "provider_reported_usd": null,
+      "self_reported": {
+        "minutes": null,
+        "records": [],
+        "records_without_usd": 0,
+        "usd": null
+      },
+      "tool_measured": {
+        "basis": "wall time of gate commands run as arch; excludes interactive session time",
+        "effort_seconds": 7846.160910129547,
+        "elapsed_seconds": 7846.160910129547,
+        "events": 2
+      }
+    },
+    "coordinator_coverage": "missing",
+    "end": "2026-10-09T19:03:30.131124+00:00",
+    "issue_id": "RUNOFF-008",
+    "missing_timing_event_ids": [
+      "124c851a3cfe442eab6954128937b740",
+      "280756aaf0c849258dbe374b4e344ec2",
+      "7a1ec8d9f4724036896935af79fb093c",
+      "8d7c1ece2dc847f5910d90b6533ff72b"
+    ],
+    "outside_child_intervals_seconds": 12674.099860906601,
+    "phase_events": [
+      {
+        "event_id": "a324bd445e384ad0b9602f6988253fc4",
+        "finished_at": "2026-10-09T15:32:48.605361+00:00",
+        "issue_id": "RUNOFF-008",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.40770117193460464,
+        "started_at": "2026-10-09T15:32:48.197650+00:00"
+      },
+      {
+        "event_id": "136376ad7c4e434895fb87756b635e44",
+        "finished_at": "2026-10-09T15:36:55.903626+00:00",
+        "issue_id": "RUNOFF-008",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.25918102636933327,
+        "started_at": "2026-10-09T15:36:55.644443+00:00"
+      },
+      {
+        "event_id": "2141061e207e442fa14e2fbecf671fd9",
+        "finished_at": "2026-10-09T15:48:49.320711+00:00",
+        "issue_id": "RUNOFF-008",
+        "phase": "verification",
+        "reason": null,
+        "role": "ad208460ccaf86130",
+        "seconds": 87.50223655812442,
+        "started_at": "2026-10-09T15:47:21.818479+00:00"
+      },
+      {
+        "event_id": "b7b220c1a8954fb6ad57f53c359902c7",
+        "finished_at": "2026-10-09T15:49:46.398765+00:00",
+        "issue_id": "RUNOFF-008",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.3704772312194109,
+        "started_at": "2026-10-09T15:49:46.028282+00:00"
+      },
+      {
+        "event_id": "b2bd225490ee48149ae0d578d2170614",
+        "finished_at": "2026-10-09T15:56:02.502588+00:00",
+        "issue_id": "RUNOFF-008",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.4136476069688797,
+        "started_at": "2026-10-09T15:56:02.088936+00:00"
+      },
+      {
+        "event_id": "619c2c2b9aeb44539e07b5dc957a0a28",
+        "finished_at": "2026-10-09T16:05:18.772927+00:00",
+        "issue_id": "RUNOFF-008",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.41925315000116825,
+        "started_at": "2026-10-09T16:05:18.353670+00:00"
+      },
+      {
+        "event_id": "2f7a41a079ee4c2ba36af2f36e9b70df",
+        "finished_at": "2026-10-09T16:27:20.192793+00:00",
+        "issue_id": "RUNOFF-008",
+        "phase": "verification",
+        "reason": null,
+        "role": "a0199106f3c3c2fc8",
+        "seconds": 1173.5689559783787,
+        "started_at": "2026-10-09T16:07:46.623827+00:00"
+      },
+      {
+        "event_id": "81c86a0508e14e0cbf34ee2bbab0a386",
+        "finished_at": "2026-10-09T16:35:20.683639+00:00",
+        "issue_id": "RUNOFF-008",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.519368545152247,
+        "started_at": "2026-10-09T16:35:20.164273+00:00"
+      },
+      {
+        "event_id": "d421470531944862892006b4b816e99e",
+        "finished_at": "2026-10-09T18:53:00.802628+00:00",
+        "issue_id": "RUNOFF-008",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 7845.753189077601,
+        "started_at": "2026-10-09T16:42:15.049429+00:00"
+      }
+    ],
+    "reported_usd": 0,
+    "schema_version": 2,
+    "span_seconds": 12674.099860906601,
+    "start": "2026-10-09T15:32:16.031263+00:00",
+    "unknown_cost_event_ids": [
+      "124c851a3cfe442eab6954128937b740",
+      "280756aaf0c849258dbe374b4e344ec2",
+      "7a1ec8d9f4724036896935af79fb093c",
+      "8d7c1ece2dc847f5910d90b6533ff72b"
+    ]
+  }
+}

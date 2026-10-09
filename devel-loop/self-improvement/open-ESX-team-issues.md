@@ -1486,3 +1486,35 @@ A `tests/esx` guard shows that appending a `permissions.allow` entry to `.claude
 
 ### Expected Effect
 Owner permission approvals never stale a seal or review again: zero signature moves from `settings.local.json` permission edits. Implement after RUNOFF-008 closes, since `project.py` is inside its acceptance scope. Port it with the pilot fixes.
+
+## 🔴 PROPOSED: prepare-done drafts a closeout the strict gate refuses, one field at a time, after a re-prepared iteration
+
+**Date Identified**: 2026-10-09  12:10
+**Status**: Proposed
+**UUID**: TEAM-PREPARE-DONE-PACKET-FIELDS-001
+**Category**: closeout_contract
+**Severity**: Medium
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-09-prepare-done-prior-import/assessment.md
+**Anchors**: tools/esx/workflow_records.py::prepare_done; tools/esx/workflow_policy.py::<module>; tools/esx/loop_lifecycle.py::<module>
+
+### Issue
+`workflow_records.py prepare-done` builds the closeout draft from dispatch selections and the prior closeout, but leaves out fields that the final review packet already carries: `candidate`, `map_delta`, and `maintenance.documentation`/`orientation`. It also imports a prior iteration's reviewer completion into `subagents`, and the strict gate then refuses that completion as a current approval. Each gap surfaces as a separate refusal.
+
+### Evidence
+RUNOFF-008 closeout 2026-10-09: four serial refusals, about 15 minutes in total (see the assessment). This recurs: the round-0 retrospective carry-forward recorded about 25 minutes of serial closeout rejections.
+
+### Potential Impact
+Coordinator time spent on every scientific closeout, worst after a re-prepared iteration, plus the risk of a hand-copied field being wrong.
+
+### Proposed Fix
+- Add a `--packet` option to `prepare-done`, which copies `candidate`, `map_delta` and `maintenance` verbatim and fills `agent_continuity.<role>` from `subagents`.
+- Import prior-iteration completions as history (`preparation.prior`) instead of as current `subagents` entries.
+- Have `--closeout-doctor` report every refusal at once instead of stopping at the first.
+
+### Acceptance Criteria
+- A `tests/esx` case re-prepares an issue across two iteration timestamps.
+- `prepare-done --packet` then yields a draft whose only pending items are judgments: outcome, summary, scope decisions and the replacement reasons.
+- `--closeout-doctor` lists every structural refusal in one call.
+
+### Expected Effect
+Zero structural refusals at a scientific closeout once the judgment fields are filled.
