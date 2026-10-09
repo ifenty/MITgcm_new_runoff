@@ -1626,8 +1626,10 @@ def cases(data_pkg, data_exf, info=None):
          "forbid": no_error},
         # The control of the two runoff-tracer refusals above: the same
         # file, with the name the ptracer really has. It must run, report
-        # the match, and apply the term, which is the only case that
-        # reaches RNF_TENDENCY_APPLY_PTR at all. Without it, both
+        # the match, and apply the term, which is the only case of this
+        # script that reaches RNF_TENDENCY_APPLY_PTR at all (the tracer
+        # term's value is measured by tendency_term_check.py and
+        # budget_check.py, RUNOFF-008). Without it, both
         # refusals could be refusing every tracer variable and would
         # still pass.
         {"name": "ptracer_match",

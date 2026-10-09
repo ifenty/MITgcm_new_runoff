@@ -199,7 +199,11 @@
         "--case",
         "L_set",
         "--case",
-        "U_set"
+        "U_set",
+        "--case",
+        "L_unset",
+        "--case",
+        "U_unset"
       ],
       [
         "{python}",
@@ -565,7 +569,8 @@
       ],
       [
         "{python}",
-        "tests/rnf/budget_check.py"
+        "tests/rnf/budget_check.py",
+        "--build"
       ],
       [
         "{python}",
@@ -576,6 +581,28 @@
         "0",
         "--control",
         "permute"
+      ],
+      [
+        "{python}",
+        "tests/rnf/budget_check.py",
+        "--build",
+        "--case",
+        "lab_sea_ptr2",
+        "--mpi",
+        "0",
+        "--control",
+        "swap"
+      ],
+      [
+        "{python}",
+        "tests/rnf/budget_check.py",
+        "--build",
+        "--case",
+        "lab_sea_unfed",
+        "--mpi",
+        "0",
+        "--control",
+        "feed_zero"
       ],
       [
         "{python}",

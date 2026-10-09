@@ -1179,14 +1179,30 @@ applies to sparse runoff as well. A file that also supplies that tracer would
 count it twice; `RNF_CHECK` warns when both are active.
 
 **Consequence for issues.** RUNOFF-008 is replaced by this decision and can be
-closed into RUNOFF-013 or a tracer issue of its own. RUNOFF-016 checks tracer
-budgets with the density factor: `tests/rnf/budget_check.py` closes
-`Σ_c (mC_n)(c)·rA(c) = rhoConstFresh·Σ_s flux_s·C_{s,n}` at 2.079e-16 relative,
-which is the tracer term's first numerical oracle. It runs on **one** tracer on
-lab_sea only (`PTRACERS_num = 1` there; cs32 does not compile pkg/ptracers), so
-the `RNF_trPtr` mapping of several runoff tracers onto several ptracers is still
-unmeasured. RUNOFF-017 gains the unmatched-name and
-ptracers-off refusals. RUNOFF-029 covers tracer series in every time mode.
+closed into RUNOFF-013 or a tracer issue of its own. The tracer term has **two**
+oracles (RUNOFF-008):
+
+- `tests/rnf/tendency_term_check.py` has an analytic single-cell row for each
+  of the four linear-free-surface reference arms (`PTRACERS_EvPrRn` set or
+  unset, in branch L or U): the `RNFtr01` diagnostic against
+  `[(mC) − m·C_ref]·mass2rUnit·D` (measured 0.00e+00), and the two-run
+  difference of the tracer's own state change `Tp_gTr01` against package plus
+  model term (at most 1.68e-15). On lab_sea the model's term is
+  `LONGSTEP_FORCING_SURF`'s, not `PTRACERS_FORCING_SURF`'s, because
+  pkg/longstep takes the ptracer step over; the arms are the same, with
+  `EmPmR` replaced by its long-step average.
+- `tests/rnf/budget_check.py` (RUNOFF-016) closes
+  `Σ_c (mC_n)(c)·rA(c) = rhoConstFresh·Σ_s flux_s·C_{s,n}` at 1.962e-16
+  relative on a non-degenerate series, per runoff tracer from `RNFtrNN` and per
+  ptracer from `ForcTrNN`. The second is the one that sees the `RNF_trPtr`
+  mapping, measured on a `PTRACERS_num = 2` lab_sea build with the file's
+  variables in the opposite order to `PTRACERS_names`; a swap of the two
+  fails it at 5.0e-01 and 3.3e-01. A ptracer the file does not feed is
+  measured to receive exactly nothing.
+
+Neither runs on cs32, which does not compile pkg/ptracers, nor in branch N
+(RUNOFF-014). RUNOFF-017 gains the unmatched-name and ptracers-off refusals.
+RUNOFF-029 covers tracer series in every time mode.
 
 ## Decision 5: target level and cavities
 
@@ -1468,7 +1484,7 @@ for one of its own terms (`model/src/apply_forcing.F:607-613`).
 | `RNFsaln ` | g/kg | `(mS)/m` where `m > 0` |
 | `RNFnsrc ` | 1 | number of sources feeding the cell |
 | `RNFgT   `, `RNFgS   ` | °C/s, g/kg/s | tendencies at the target level (3D) |
-| `RNFtrNN ` | tracer units·kg/m²/s | `(mC_n) − m·C_ref,n` for runoff tracer `NN` |
+| `RNFtrNN ` | tracer units·kg/m²/s | `(mC_n) − m·C_ref,n` for runoff tracer `NN`, i.e. the `NN`-th `runoff_ptracer_*` variable of the file, not ptracer `NN` |
 
 **Monitor** (`RNF_MONITOR`, at `monitorFreq`, in the style of
 `pkg/exf/exf_monitor.F:189-198`):
@@ -1485,9 +1501,13 @@ output in the monitor block.
 **Consequence for issues.** RUNOFF-015 implements this list. RUNOFF-016 reads
 the **diagnostics** of the applied terms (`RNFgT`, `RNFgS`, `RNFtrNN`, the three
 RUNOFF-013 registered) and the exf `EXFroff`; it does **not** read the monitor
-sums, which do not exist yet, and it did not need them. `tests/rnf/budget_check.py`
-is the only reader of `RNFtrNN`, so that diagnostic's fill is observed by it
-alone. RUNOFF-022 needs no pickup file and tests the
+sums, which do not exist yet, and it did not need them. `RNFtrNN` is read by
+`tests/rnf/budget_check.py` and, since RUNOFF-008, by
+`tests/rnf/tendency_term_check.py` (`RNFtr01` against the analytic term), so
+its fill is observed by both. Because it is numbered by runoff tracer and filled
+from that runoff tracer's sums whichever ptracer it is added to, it cannot see
+the runoff-tracer-to-ptracer mapping; `budget_check` reads the ptracers' own
+`ForcTrNN` for that (RUNOFF-008). RUNOFF-022 needs no pickup file and tests the
 restart of the record state.
 
 ## Decision 9: TAF and adjoint

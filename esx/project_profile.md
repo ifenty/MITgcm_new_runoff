@@ -178,7 +178,12 @@ This is the scientific contract agents read. Executable paths and commands are i
     becoming a `.GE.` — the direction a weakened-guard mutant cannot
     measure. The two refusals that remain unenrolled need another build: a name matching more than one
     `PTRACERS_names` entry, which needs `PTRACERS_num ≥ 2`, and the branch for
-    a model compiled without `pkg/ptracers` at all.
+    a model compiled without `pkg/ptracers` at all. The first is reachable by
+    input and was measured once on the `PTRACERS_num = 2` lab_sea build that
+    `tests/rnf/budget_check.py --build` compiles (RUNOFF-008): it stops
+    naming the variable and the count 2, but only with `useMNC = .FALSE.`,
+    since pkg/mnc refuses two equal `PTRACERS_names` first. It stays
+    unenrolled because `refusal_check.py` runs every case on one binary.
     - **Not a gap after all.** Earlier wording here carried, as an optional
       hardening, "two runoff-tracer variables whose names differ only in
       trailing blanks, which both match the same ptracer and of which

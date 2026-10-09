@@ -357,8 +357,11 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
   only over the cells the file names, so water delivered elsewhere enters the sum.
   Worst residuals measured (RUNOFF-016): volume 0.0 on both grids; heat
   3.353e-16 (lab_sea, 1 and 2 processes) and 1.444e-16 (cs32, 1 and 4 processes);
-  salt 2.107e-16 on both; tracer 2.079e-16 (lab_sea only, since cs32 does not
-  compile pkg/ptracers). The closure is held to round-off and not bitwise,
+  salt 2.107e-16 on both; tracer 1.962e-16 (lab_sea only, since cs32 does not
+  compile pkg/ptracers; RUNOFF-008 re-measured it on a non-degenerate tracer
+  series, and added a two-tracer case on a `PTRACERS_num = 2` build whose four
+  tracer closures, per runoff tracer and per ptracer, are 1.962e-16 to
+  2.170e-16). The closure is held to round-off and not bitwise,
   because dividing a flux by a cell area and multiplying it back is not exact in
   floating point.
 - A **permutation** of one source's fractions across its own target cells is

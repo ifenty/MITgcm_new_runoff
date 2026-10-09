@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Budget-closure oracle of the runoff volume, heat, salt and tracer (RUNOFF-016).
+"""Budget-closure oracle of the runoff volume, heat, salt and tracers (RUNOFF-016, -008).
 
 What this closes, and against what
 ==================================
@@ -12,7 +12,9 @@ against. The existing numerical instruments are per-cell:
 analytic row of the decision-3 table at **one** cell of **one** tile in a
 single-process run, and ``tests/rnf/exf_heat_check.py`` cross-checks the
 heat term alone against ``pkg/exf``'s own dense computation. Neither sums
-over targets, and the tracer term had no numerical oracle at all.
+over targets. (When this check was written the tracer term had no
+numerical oracle at all; ``tendency_term_check`` now carries analytic
+tracer rows too, RUNOFF-008.)
 
 This check sums. For every dump of every case, over **every cell of the
 global layout** -- so over every tile of every process, and not only over
@@ -25,10 +27,17 @@ closure     summed over all cells                equals, over the sources
 volume      ``RNF_vflx(c) * rA(c)``              ``sum_s flux_s``
 heat        ``(mT)(c) * rA(c)``                  ``rhoConstFresh * sum_{s: T present} flux_s*T_s``
 salt        ``(mS)(c) * rA(c)``                  ``rhoConstFresh * sum_s flux_s*S_s``
-tracer n    ``(mC_n)(c) * rA(c)``                ``rhoConstFresh * sum_s flux_s*C_{s,n}``
+tracer k    ``(mC_k)(c) * rA(c)``, from ``RNFtrNN``  ``rhoConstFresh * sum_s flux_s*C_{s,k}``
+ptracer n   ``(mC)(c) * rA(c)``, from ``ForcTrNN``  ``rhoConstFresh * sum_s flux_s*C_{s,name(n)}``
 ==========  ===================================  =========================
 
-A cell with no runoff contributes exactly 0 to all four, so the wider sum
+``tracer k`` is runoff tracer k, the k-th ``runoff_ptracer_*`` variable
+of the file; ``ptracer n`` is passive tracer n of ``data.ptracers``,
+closed against the series of the variable *named* like it. The two are
+not the same closure, and the difference is the mapping ``RNF_trPtr``:
+see "Several tracers" below.
+
+A cell with no runoff contributes exactly 0 to every closure, so the wider sum
 costs nothing and cannot divide by a zero thickness: ``EXFroff`` is 0
 there and the inverted tendency is 0 both because the package writes
 nothing there and because the factor it is multiplied by vanishes wherever
@@ -39,7 +48,7 @@ model reported for that step, so the closure is a statement about where
 the water and its properties went, not about the arithmetic of one cell.
 ``docs/model_contract.md`` states it under Invariants.
 
-How the four quantities are observed, with no model change
+How the quantities are observed, with no model change
 ----------------------------------------------------------
 
 ``RNF_vflx`` is dumped directly: ``RNF_EXF_RUNOFF``
@@ -85,8 +94,16 @@ package's salinity branch is the ``salt_EvPrRn`` one, which is where
   (``model/src/set_defaults.F:265``) and makes ``S_ref`` exactly 0
   (``rnf_tendency_apply.F:296-297``), so ``(mS)`` comes straight out of
   ``RNFgS``. :func:`judge` asserts the run reported 0.
-* tracer: ``PTRACERS_EvPrRn(1) = 0`` makes ``C_ref`` exactly 0
-  (``rnf_tendency_apply.F:453-454``), asserted the same way.
+* tracer: ``PTRACERS_EvPrRn(n) = 0`` makes ``C_ref`` exactly 0
+  (``rnf_tendency_apply.F:453-454``), asserted the same way for every
+  fed ptracer. With ``PTRACERS_ref(n) = 0`` as well, and these runs in
+  branch U (``convertFW2Salt`` = 35, asserted not -1), the model's own
+  freshwater term for the tracer, ``EmPmR*(PTRACERS_ref -
+  PTRACERS_EvPrRn)``, is exactly 0 too
+  (``pkg/longstep/longstep_forcing_surf.F:126-145``: lab_sea compiles
+  pkg/longstep, which sets ``surfaceForcingPTr`` in place of
+  ``PTRACERS_FORCING_SURF``), so the ptracer's whole forcing tendency
+  ``ForcTrNN`` is the package term and inverts with the same factor.
 * temperature: in a build with ``ALLOW_ATM_TEMP`` and ``ALLOW_RUNOFF``
   -- which both committed experiments have -- ``T_ref`` is the ambient
   ``theta`` whatever ``temp_EvPrRn`` is set to
@@ -191,7 +208,7 @@ two runs of the same case differing in exactly one namelist value,
 The state-change form of the budget, which does need the forcing out of
 Adams-Bashforth, is the one ``tests/rnf/tendency_term_check.py`` builds,
 and that script already refuses to judge a run that does not report
-``tracForcingOutAB = 1`` (``tendency_term_check.py:981-985``); the AB
+``tracForcingOutAB = 1`` (``tendency_term_check.judge``); the AB
 claim of the issue is instrumented there, not here, and nothing in this
 file measures a state-change budget.
 
@@ -282,7 +299,8 @@ should not be conflated:
 
 * ``tendency_term_check`` is blind **by construction**: it writes
   ``frac[:] = 1.0`` and its oracle multiplies by a literal ``1.0``
-  (``tendency_term_check.py:358`` and ``:879``) rather than by the file's
+  (``tendency_term_check.write_sparse``, and ``expected`` and
+  ``expected_tracer`` there) rather than by the file's
   fraction, so a fraction error is not representable in its cases;
 * ``refusal_check`` and ``RNF_INIT_VARIA``'s own pair of sums are blind
   **by tolerance only**, which is weaker: the pair differs by less than
@@ -304,24 +322,63 @@ spread over many tiles and -- on 4 processes -- over many processes; the
 closure there is the statement that the per-tile source vectors and the
 global layout add back up to the file.
 
-The tracer closure runs only on ``lab_sea``. ``cs32`` does not compile
+The tracer closures run only on ``lab_sea``. ``cs32`` does not compile
 ``pkg/ptracers`` (``verification/global_ocean.cs32x15/code/packages.conf``)
 and giving it the package would change the binary every other committed
-cs32 oracle is measured through, so the tracer closure is **not measured
-on the cube sphere**. ``lab_sea``'s build has ``PTRACERS_num = 1``, so it
-carries exactly one passive tracer: the closure is measured on a real
-tracer with real values, but the mapping of several runoff tracers onto
-several ptracers (``RNF_trPtr``) is **not** exercised, and an error that
-swapped two runoff tracers would not show up here. The one tracer series
-is also **degenerate across sources**: :func:`series` gives it
-``1.0 + 0.2r + 0.1(k mod 3)``, which on lab_sea's four sources takes only
-three distinct values, so sources 0 (``newfound``) and 3 (``baffin``)
-carry identical tracer values at every record and this -- the project's
-only tracer oracle -- cannot distinguish those two sources from each
-other at all. The same shape leaves temperature with 7 and salinity with
-5 distinct values over cs32's 1189 sources. The sums are correct either
-way, because they are sums; but no reader should take them for
-per-source resolution.
+cs32 oracle is measured through, so the tracer closures are **not
+measured on the cube sphere**.
+
+Several tracers (RUNOFF-008)
+----------------------------
+
+``lab_sea``'s ordinary build has ``PTRACERS_num = 1``, so the one-tracer
+cases carry exactly one passive tracer. The mapping of several runoff
+tracers onto several ptracers is measured on a second binary,
+``build_esx_ptr2``: lab_sea's ``code/`` plus a ``PTRACERS_SIZE.h`` with
+``PTRACERS_num = 2``, written by :func:`write_ptr2_code` and compiled by
+``--build`` under ``tendency_term_check.build_if_stale``'s staleness rule
+(single process only; there is no MPI variant of it). On it:
+
+* ``lab_sea_ptr2`` feeds ptracers ``rnfa``, ``rnfb`` from a file whose
+  variables are in the **opposite** order, so ``RNF_trPtr`` = (2, 1).
+  The ``RNFtrNN`` closures are **blind to that mapping**: the package
+  names the diagnostic after the runoff tracer and fills it from
+  ``RNF_apXTr(...,iRnf)`` whichever ptracer it is added to
+  (``rnf_tendency_apply.F:480-500``). The ``ForcTrNN`` closures are what
+  see it, since that is what each ptracer actually received. Measured:
+  the four tracer closures close at 1.962e-16 to 2.170e-16, runoff tracer
+  1 matching ptracer 2 and runoff tracer 2 matching ptracer 1.
+* ``--control swap`` exchanges the two variables' **names** and keeps
+  their data in place, which is a swapped ``RNF_trPtr`` made by the
+  input. It must leave the ``RNFtrNN`` closures at round-off and fail
+  every ``ForcTrNN`` closure: measured 5.002e-01 and 3.334e-01. A mutant
+  binary with ``RNF_trPtr(n) = n`` (an identity mapping, which on this
+  file *is* a swap) gives the same two figures and fails the plain case.
+* ``lab_sea_unfed`` has a file that feeds only ``rnfa``. The unfed
+  ``rnfb`` must get nothing, judged by :func:`judge_unfed` on two legs:
+  its ``ForcTrNN`` exactly 0.0 everywhere, and its state bitwise equal
+  to a reference run with no ``runoff_ptracer_*`` variable at all.
+  ``--control feed_zero`` adds a zero-valued ``rnfb`` variable, so the
+  package applies ``-m*C_ref`` to it (``PTRACERS_ref`` = 0.5 there, and
+  ``PTRACERS_EvPrRn`` unset): both legs must see it, and do (``ForcTr``
+  non-zero on all 6 dumps, 676 state values differing). The two legs
+  are **not** equally strong: a mutant that applies the term to *every*
+  ptracer no variable feeds is caught by the forcing leg (``ForcTr02``
+  up to 3.422e-08) and **missed** by the state leg, because the
+  reference run uses the same binary and, having no tracer variables at
+  all, receives the same wrong term. The state leg is decisive only for
+  a defect that depends on the file's variables; the forcing leg is the
+  one that holds either way.
+
+The tracer series are non-degenerate (:func:`series`): every
+(record, source, tracer) value is distinct and the two tracers are not
+proportional, asserted when the series is built. The series this check
+had before RUNOFF-008 gave sources 0 (``newfound``) and 3 (``baffin``)
+the same tracer value at every record (12 distinct values of 20), so the
+tracer leg could not tell those two sources apart. Temperature and
+salinity keep 7 and 5 distinct per-source shapes over cs32's 1189
+sources. The sums are correct either way, because they are sums; but
+no reader should take them for per-source resolution on cs32.
 
 Nothing here measures the *choice* of record, which is
 ``tests/rnf/timing_field_check.py``'s and
@@ -337,25 +394,28 @@ the inversion is numerically **inert** on both configurations: measured,
 cells, and forcing it to 1.0 leaves every residual bitwise unchanged
 (review A of this issue). So the factor is right by reading
 ``RNF_TENDENCY_APPLY_*`` and not by measurement here; a partial surface
-cell, a cavity column under pkg/shelfice, or an r\* case is where it
+cell, a cavity column under pkg/shelfice, or an r-star case is where it
 would first actually be exercised.
 
-**Where the must-fail controls run.** Both are enrolled, but not in the
-same suite: ``focused`` carries only the ``fracsum`` control, so the
+**Where the must-fail controls run.** All four are enrolled, but not in
+the same suite: ``focused`` carries only the ``fracsum`` control, so the
 suite that runs on every candidate has **no must-fail for the per-cell
 leg** -- the one that proves the per-cell criterion can see a
 perturbation is the ``permute`` control, and it is in ``scientific``
-only (review B).
+only (review B) -- and none for the tracer mapping: the two-tracer
+cases and their ``swap`` and ``feed_zero`` controls are in
+``scientific``, each with ``--build``.
 
 Usage
 =====
 
-    python3 tests/rnf/budget_check.py [--case NAME ...] [--mpi N]
-                                      [--control permute|fracsum]
+    python3 tests/rnf/budget_check.py [--case NAME ...] [--mpi N] [--build]
+                                      [--control permute|fracsum|swap|feed_zero]
                                       [--keep] [--json PATH] [--timeout S]
 
 Exit status: 0 if every selected case passes, 1 if one fails or none ran,
-2 if a binary is missing or a selection does not exist.
+2 if a binary is missing or could not be built, or a selection does not
+exist.
 """
 import argparse
 import json
@@ -372,17 +432,25 @@ from refusal_check import (ROOT, VERIF, add_to_namelist,  # noqa: E402
                            kill_run, read_file, replace_line)
 from applied_field_check import (dump_name, dump_iteration,  # noqa: E402
                                  record_trace, set_namelist, time_step)
-from tendency_term_check import param, read_mds  # noqa: E402
+from tendency_term_check import (build_if_stale, param,  # noqa: E402
+                                 param_all, read_mds, report_build,
+                                 write_mods_code)
 
 #: The scratch input directories this check writes, one per run.
 PREFIX = "input.rnfbudget_"
 #: Binary of the ordinary build; the MPI ones are this plus ``_mpiN``.
 BUILD = "build_esx"
+#: The lab_sea build with ``PTRACERS_num = 2`` (RUNOFF-008), compiled by
+#: ``--build`` from the mods directory :func:`write_ptr2_code` writes.
+#: Single process only: no ``_mpiN`` variant of it exists.
+PTR2_BUILD = "build_esx_ptr2"
+PTR2_CODE = "code_rnfterm_ptr2"
 #: Name of the sparse file each case writes into its scratch input.
 SPARSE_FILE = "runoff_budget.nc"
-#: Diagnostic stream names, one file each.
-STREAMS = {"vol": "rnfBudV", "heat": "rnfBudT", "salt": "rnfBudS",
-           "tracer": "rnfBudC"}
+#: Diagnostic stream names of the three closures every case has, one
+#: file each. The tracer streams depend on the case: see
+#: :func:`case_streams`.
+STREAMS = {"vol": "rnfBudV", "heat": "rnfBudT", "salt": "rnfBudS"}
 #: Relative tolerance of every budget closure (RUNOFF-016 acceptance).
 RTOL = 1.0e-12
 #: Relative tolerance of the per-cell comparison. Not bitwise: the
@@ -402,9 +470,27 @@ FLOOR = 1.0e-30
 #: fraction sum at ``rnf_init_fixed.F:911``, so the package accepts the
 #: file; and five orders above :data:`RTOL` so the budget cannot miss it.
 FRAC_PERTURB = 5.0e-7
-#: Name of the passive tracer the lab_sea cases give the runoff, and the
-#: ``runoff_ptracer_<NAME>`` variable that feeds it.
+#: Name of the passive tracer the one-tracer lab_sea cases give the
+#: runoff, and the ``runoff_ptracer_<NAME>`` variable that feeds it.
 TRACER_NAME = "rnfbud"
+#: ``PTRACERS_names`` of the two-tracer cases (RUNOFF-008), in
+#: ``data.ptracers`` order. Their file writes the variables in the
+#: **opposite** order (``PTR2_FILE``), so that runoff tracer 1 feeds
+#: ptracer 2 and the reverse: an identity ``RNF_trPtr`` would then put
+#: each tracer's water into the other ptracer, which is what the
+#: per-ptracer closures and the ``swap`` control are there to see.
+PTR2_NAMES = ("rnfa", "rnfb")
+PTR2_FILE = ("rnfb", "rnfa")
+#: ``PTRACERS_ref`` of the unfed ptracer of ``lab_sea_unfed``. Non-zero
+#: on purpose: with ``PTRACERS_EvPrRn`` unset the reference the package
+#: would use for it in branch U is ``PTRACERS_ref``, so a term wrongly
+#: applied to it with no source tracer, ``-m*C_ref``, is non-zero and
+#: visible (the ``feed_zero`` control measures exactly that).
+UNFED_REF = 0.5
+#: The value the model prints for an unset real parameter
+#: (``eesupp/inc/EEPARAMS.h:81``), which is how an unset
+#: ``PTRACERS_EvPrRn`` reads back.
+UNSET_RL = 1.234567e5
 #: How far above :data:`RTOL` the rule-ignoring heat closure
 #: (``heat_naive``) has to be on a case that declares ``missing``, so that
 #: the case really tells the missing-temperature rule apart from its
@@ -420,8 +506,11 @@ DATA_DIAGNOSTICS = """# Budget-closure oracle of tests/rnf/budget_check.py.
 #   RNFgT    :: the runoff temperature tendency term, as pkg/rnf applied
 #               it, at the surface level
 #   RNFgS    :: the same for salinity
-#   RNFtr01  :: the same for runoff tracer 1 (lab_sea only)
-# The three tendency streams are level 1 only: that is the surface level
+#   RNFtrNN  :: the same for runoff tracer NN, i.e. the NN-th
+#               runoff_ptracer_* variable of the file (lab_sea only)
+#   ForcTrNN :: the forcing tendency of ptracer NN (PTRACERS_INTEGRATE's
+#               gTrForc), i.e. what that ptracer actually received
+# The tendency streams are level 1 only: that is the surface level
 # of every column of these set-ups (z coordinates, no pkg/shelfice), and
 # the only level at which the terms are non-zero.
  &DIAGNOSTICS_LIST
@@ -432,32 +521,58 @@ DATA_DIAGNOSTICS = """# Budget-closure oracle of tests/rnf/budget_check.py.
  &
 """
 
-DATA_PTRACERS = """# One passive tracer for the runoff tracer closure of
-# tests/rnf/budget_check.py.
-#   PTRACERS_EvPrRn(1) = 0 makes C_ref exactly 0 in
-#     RNF_TENDENCY_APPLY_PTR, so the applied term is (mC_1)*mass2rUnit*D
-#     and the budget can invert it without a reference value.
-#   PTRACERS_Iter0 = {iter0} is nIter0, so the tracer is initialized from
-#     PTRACERS_ref rather than from a pickup this scratch run has none of.
-#   No GM/Redi and no KPP on the tracer, and no diffusion: the tendency
-#     term the check reads is filled where pkg/rnf computes it, so none of
-#     this changes what is measured; they are off so the run cannot fail
-#     for a reason that has nothing to do with runoff.
- &PTRACERS_PARM01
- PTRACERS_numInUse = 1,
- PTRACERS_Iter0 = {iter0},
- PTRACERS_names(1) = '{name}',
- PTRACERS_long_names(1) = 'runoff budget check tracer',
- PTRACERS_units(1) = '1',
- PTRACERS_advScheme(1) = 30,
- PTRACERS_diffKh(1) = 0.,
- PTRACERS_diffKr(1) = 0.,
- PTRACERS_ref(:,1) = {nr}*0.,
- PTRACERS_EvPrRn(1) = 0.,
- PTRACERS_useGMRedi(1) = .FALSE.,
- PTRACERS_useKPP(1) = .FALSE.,
- &
-"""
+def data_ptracers(case, iter0, nr):
+    """Return the ``data.ptracers`` of a tracer case.
+
+    One block per name of ``case["ptracers"]``, in that order, which is
+    the ``PTRACERS_names`` order and so the ptracer numbering.
+
+    * ``PTRACERS_EvPrRn(n) = 0`` and ``PTRACERS_ref(:,n) = 0`` for every
+      **fed** ptracer. The first makes ``C_ref`` exactly 0 in
+      ``RNF_TENDENCY_APPLY_PTR`` (``rnf_tendency_apply.F:453-454``), so
+      the term is ``(mC)*mass2rUnit*D`` and can be inverted without a
+      reference value; the second makes the model's own freshwater term
+      for the tracer vanish too, since these runs are in branch U
+      (``convertFW2Salt`` = 35, the default lab_sea keeps) where that
+      term is ``EmPmR*(PTRACERS_ref - PTRACERS_EvPrRn)*mass2rUnit``
+      (``pkg/longstep/longstep_forcing_surf.F:126-145``, the routine that
+      sets ``surfaceForcingPTr`` under pkg/longstep). So the ptracer's own
+      forcing tendency ``ForcTrNN`` holds the package term and nothing
+      else, which is what lets it be closed per ptracer.
+    * The unfed ptracer of ``case["unfed_ref"]`` gets that
+      ``PTRACERS_ref`` and **no** ``PTRACERS_EvPrRn``: unset, the model
+      adds nothing for it in any arm, and a package term wrongly applied
+      to it would subtract ``m*PTRACERS_ref`` and be seen.
+    * ``PTRACERS_Iter0`` is ``nIter0``, so each tracer is initialized from
+      ``PTRACERS_ref`` rather than from a pickup this scratch run has
+      none of. No GM/Redi, no KPP and no diffusion on the tracers: they
+      would not change the terms this check reads, which are filled where
+      they are computed, and are off so that the run cannot fail for a
+      reason that has nothing to do with runoff.
+    """
+    names = case["ptracers"]
+    lines = ["# Written by tests/rnf/budget_check.py.",
+             " &PTRACERS_PARM01",
+             f" PTRACERS_numInUse = {len(names)},",
+             f" PTRACERS_Iter0 = {iter0},"]
+    for n, name in enumerate(names, start=1):
+        unfed = name not in case["file_tracers"]
+        ref = case.get("unfed_ref", 0.0) if unfed else 0.0
+        lines += [f" PTRACERS_names({n}) = '{name}',",
+                  f" PTRACERS_long_names({n}) = 'runoff budget tracer "
+                  f"{name}',",
+                  f" PTRACERS_units({n}) = '1',",
+                  f" PTRACERS_advScheme({n}) = 30,",
+                  f" PTRACERS_diffKh({n}) = 0.,",
+                  f" PTRACERS_diffKr({n}) = 0.,",
+                  f" PTRACERS_ref(:,{n}) = {nr}*{ref!r},",
+                  f" PTRACERS_useGMRedi({n}) = .FALSE.,",
+                  f" PTRACERS_useKPP({n}) = .FALSE.,"]
+        if not unfed:
+            lines.append(f" PTRACERS_EvPrRn({n}) = 0.,")
+    lines.append(" &")
+    return "\n".join(lines) + "\n"
+
 
 #: The cases.
 #:
@@ -475,7 +590,13 @@ DATA_PTRACERS = """# One passive tracer for the runoff tracer closure of
 #: ``packages.conf``) and so has no calendar for a dated time axis.
 #: ``missing`` maps a source index to the records whose temperature is
 #: missing, or to ``"all"``.
-#: ``tracer`` asks for the passive-tracer closure.
+#: ``ptracers`` are the ``PTRACERS_names`` of the run, in order (empty:
+#: pkg/ptracers off), and ``file_tracers`` the ``runoff_ptracer_<NAME>``
+#: variables of its file, in file order, which is the runoff-tracer
+#: numbering of ``RNFtrNN``. A ptracer the file does not feed is
+#: *unfed*: it gets no closure and is judged by :func:`judge_unfed`
+#: against a reference run whose file has no tracer variable at all.
+#: ``build`` names a non-default binary (``PTR2_BUILD``).
 #: ``minimal_pkgs`` switches off pkg/seaice, pkg/thsice, pkg/kpp and
 #: pkg/gmredi; see :func:`write_input`.
 #: ``steps`` is the number of time steps; ``mpi`` the process counts.
@@ -484,7 +605,8 @@ CASES = (
      "input": "input.rnof_sp_const", "data_from": "input.rnof_sp_const",
      "table_from": ("lab_sea", "input.rnof_const", "runoff_sparse.nc"),
      "records": 5, "period": 2, "steps": 6,
-     "tracer": True, "mpi": (0, 2), "min_records": 2,
+     "ptracers": (TRACER_NAME,), "file_tracers": (TRACER_NAME,),
+     "mpi": (0, 2), "min_records": 2,
      "perturb_source": 3},
     # The cube sphere: 1189 sources over six facets and, on 4 processes,
     # over four processes. One constant record (no pkg/cal there).
@@ -493,7 +615,7 @@ CASES = (
      "table_from": ("global_ocean.cs32x15", "input.rnof_sp_icedyn",
                     "runoff_sparse_const.nc"),
      "records": None, "period": None, "steps": 3,
-     "tracer": False, "mpi": (0, 4), "min_records": 1,
+     "ptracers": (), "file_tracers": (), "mpi": (0, 4), "min_records": 1,
      "perturb_source": 0},
     # The missing-temperature rule. Source 0 has no temperature in any
     # record and source 1 has none in record 3, which the interpolating
@@ -505,11 +627,13 @@ CASES = (
      "input": "input.rnof_sp_const", "data_from": "input.rnof_sp_const",
      "table_from": ("lab_sea", "input.rnof_const", "runoff_sparse.nc"),
      "records": 5, "period": 2, "steps": 6,
-     "tracer": True, "mpi": (0, 2), "min_records": 2,
+     "ptracers": (TRACER_NAME,), "file_tracers": (TRACER_NAME,),
+     "mpi": (0, 2), "min_records": 2,
      "missing": {0: "all", 1: (3,)}, "perturb_source": 3},
     # The Adams-Bashforth pair. Two runs of the lab_sea case that differ
     # in exactly one namelist value, tracForcingOutAB, and in nothing
-    # else: the four residuals have to come out identical, which is the
+    # else: the residuals of every closure that reads no state (all but
+    # heat) have to come out identical, which is the
     # measurement that this instrument is upstream of the extrapolation.
     # Both carry ``minimal_pkgs`` because pkg/seaice refuses
     # tracForcingOutAB other than 1 outright, so the comparison could not
@@ -519,40 +643,153 @@ CASES = (
      "input": "input.rnof_sp_const", "data_from": "input.rnof_sp_const",
      "table_from": ("lab_sea", "input.rnof_const", "runoff_sparse.nc"),
      "records": 5, "period": 2, "steps": 6,
-     "tracer": True, "mpi": (0,), "min_records": 2,
+     "ptracers": (TRACER_NAME,), "file_tracers": (TRACER_NAME,),
+     "mpi": (0,), "min_records": 2,
      "trac_forcing_out_ab": 1, "minimal_pkgs": True,
      "perturb_source": 3},
     {"name": "ab_in", "experiment": "lab_sea",
      "input": "input.rnof_sp_const", "data_from": "input.rnof_sp_const",
      "table_from": ("lab_sea", "input.rnof_const", "runoff_sparse.nc"),
      "records": 5, "period": 2, "steps": 6,
-     "tracer": True, "mpi": (0,), "min_records": 2,
+     "ptracers": (TRACER_NAME,), "file_tracers": (TRACER_NAME,),
+     "mpi": (0,), "min_records": 2,
      "trac_forcing_out_ab": 0, "minimal_pkgs": True, "same_as": "ab_out",
+     "perturb_source": 3},
+    # Two runoff tracers feeding two ptracers (RUNOFF-008), on the
+    # PTRACERS_num = 2 build. The file carries the variables in the
+    # opposite order to PTRACERS_names, so RNF_trPtr is (2, 1): an
+    # identity mapping or a swap would put each tracer's water into the
+    # other ptracer, which the per-ptracer closures (ForcTrNN against the
+    # series of the variable *named* like that ptracer) cannot miss,
+    # because :func:`series` gives the two tracers different,
+    # non-proportional values at every (record, source).
+    {"name": "lab_sea_ptr2", "experiment": "lab_sea",
+     "input": "input.rnof_sp_const", "data_from": "input.rnof_sp_const",
+     "table_from": ("lab_sea", "input.rnof_const", "runoff_sparse.nc"),
+     "records": 5, "period": 2, "steps": 6,
+     "ptracers": PTR2_NAMES, "file_tracers": PTR2_FILE,
+     "build": PTR2_BUILD, "mpi": (0,), "min_records": 2,
+     "perturb_source": 3},
+    # A ptracer the file does not feed adds nothing (RUNOFF-008): the
+    # same build and the same two ptracers, with a file that carries
+    # only runoff_ptracer_rnfa. rnfb must get no term at all; see
+    # :func:`judge_unfed` for the oracle and the feed_zero control.
+    {"name": "lab_sea_unfed", "experiment": "lab_sea",
+     "input": "input.rnof_sp_const", "data_from": "input.rnof_sp_const",
+     "table_from": ("lab_sea", "input.rnof_const", "runoff_sparse.nc"),
+     "records": 5, "period": 2, "steps": 6,
+     "ptracers": PTR2_NAMES, "file_tracers": ("rnfa",),
+     "unfed_ref": UNFED_REF,
+     "build": PTR2_BUILD, "mpi": (0,), "min_records": 2,
      "perturb_source": 3},
 )
 
-#: The four closures the acceptance is about. ``heat_naive`` is measured
-#: alongside them but is not one of them: it is the heat closure with the
+#: The closures every case has. The tracer closures come on top, per
+#: case (:func:`closures_of`). ``heat_naive`` is measured alongside them
+#: but is not one of them: it is the heat closure with the
 #: missing-temperature rule deliberately ignored, and it is required to
 #: *fail* on a case that declares ``missing``.
-CLOSURES = ("volume", "heat", "salt", "tracer")
-#: The closures that read no model state, and so cannot be moved by the
-#: time-stepping scheme. The Adams-Bashforth pair requires these to come
-#: out bitwise identical; "heat" is not among them because it reads
-#: ``theta`` for ``T_ref``.
-STATE_FREE = ("volume", "salt", "tracer")
+CLOSURES = ("volume", "heat", "salt")
+#: The one closure that reads model state, ``theta`` for ``T_ref``. Every
+#: other closure reads none, so cannot be moved by the time-stepping
+#: scheme, and the Adams-Bashforth pair requires those to come out
+#: bitwise identical.
+STATE_READING = ("heat",)
+
+
+def write_ptr2_code():
+    """Write the mods directory of the ``PTRACERS_num = 2`` lab_sea build.
+
+    ``lab_sea/code`` has no ``PTRACERS_SIZE.h``, so lab_sea compiles the
+    package default, ``PTRACERS_num = 1``
+    (``pkg/ptracers/PTRACERS_SIZE.h:16``), which has room for exactly one
+    passive tracer. This writes ``lab_sea/code`` plus a copy of that
+    header with the one value changed to 2, through
+    ``tests/rnf/tendency_term_check.write_mods_code``; nothing in
+    ``lab_sea/code`` itself is edited. Returns the directory.
+    """
+    with open(os.path.join(ROOT, "MITgcm", "pkg", "ptracers",
+                           "PTRACERS_SIZE.h")) as fh:
+        text = fh.read()
+    new, count = re.subn(r"(?m)^(\s+PARAMETER\s*\(\s*PTRACERS_num\s*=\s*)1"
+                         r"(\s*\))", r"\g<1>2\g<2>", text)
+    if count != 1:
+        raise ValueError(f"pkg/ptracers/PTRACERS_SIZE.h has {count} "
+                         f"'PARAMETER(PTRACERS_num = 1 )' lines, expected 1")
+    return write_mods_code(PTR2_CODE, {"PTRACERS_SIZE.h": new})
+
+
+def tracer_closures(case):
+    """Return the tracer closures of ``case``, as ``(name, field, stream, series)``.
+
+    Two kinds, which see different things:
+
+    * ``tracer``, ``tracer2``, ...: runoff tracer k, i.e. the k-th
+      ``runoff_ptracer_*`` variable of the file, read from ``RNFtrNN``.
+      ``RNF_TENDENCY_APPLY_PTR`` names that diagnostic after the runoff
+      tracer, not after the ptracer (``rnf_tendency_apply.F:499``), and
+      fills it from ``RNF_apXTr(...,iRnf)`` whichever ptracer it is
+      applied to, so this closure is **blind to the mapping**
+      ``RNF_trPtr``: it measures what the package loaded.
+    * ``ptracer``, ``ptracer2``, ...: ptracer n, read from ``ForcTrNN``,
+      the forcing tendency ``PTRACERS_INTEGRATE`` actually adds to that
+      ptracer (``pkg/ptracers/ptracers_integrate.F:301-310``), against
+      the series of the file variable **named** like it. With the
+      settings of :func:`data_ptracers` the model adds nothing else to
+      it, so this is the closure that sees which ptracer the water went
+      into. Only fed ptracers have one.
+
+    ``series`` is the name of the file variable whose source series is
+    the right-hand side, as the committed (unperturbed) file has it.
+    """
+    out = []
+    for k, name in enumerate(case["file_tracers"], start=1):
+        out.append(("tracer" if k == 1 else f"tracer{k}", f"RNFtr{k:02d}",
+                    f"rnfBudC{k:02d}", name))
+    for n, name in enumerate(case["ptracers"], start=1):
+        if name in case["file_tracers"]:
+            out.append(("ptracer" if n == 1 else f"ptracer{n}",
+                        f"ForcTr{n:02d}",
+                        f"rnfBudP{n:02d}", name))
+    return out
+
+
+def unfed_ptracers(case):
+    """Return ``(n, name, stream)`` of every ptracer the file does not feed."""
+    return [(n, name, f"rnfBudU{n:02d}")
+            for n, name in enumerate(case["ptracers"], start=1)
+            if name not in case["file_tracers"]]
+
+
+def closures_of(case):
+    """Return every closure ``case`` measures: the three plus its tracers."""
+    return CLOSURES + tuple(c[0] for c in tracer_closures(case))
 
 
 def declared_closures(case):
     """Return the closures ``case`` is supposed to measure.
 
-    All four except on a case without ``tracer``, where the file carries
-    no ``runoff_ptracer_<NAME>`` variable and no tracer stream is dumped.
-    :func:`judge` requires every closure this returns to be **present**
-    in the measurement, so that one which stopped being measured fails
-    instead of disappearing.
+    :func:`closures_of`. :func:`judge` requires every closure this
+    returns to be **present** in the measurement, so that one which
+    stopped being measured fails instead of disappearing.
     """
-    return tuple(c for c in CLOSURES if c != "tracer" or case["tracer"])
+    return closures_of(case)
+
+
+def case_streams(case):
+    """Return ``{key: stream}`` of every diagnostic stream ``case`` dumps.
+
+    The tracer streams carry a two-digit number (``rnfBudC01``,
+    ``rnfBudP02``, ``rnfBudU02``) so that no stream name is a prefix of
+    another: :func:`stream_dumps` globs ``<stream>*`` and refuses any file
+    that is not one of that stream's dumps.
+    """
+    out = dict(STREAMS)
+    for name, _field, stream, _series in tracer_closures(case):
+        out[name] = stream
+    for n, _name, stream in unfed_ptracers(case):
+        out[f"unfed{n}"] = stream
+    return out
 
 
 def table_path(case):
@@ -601,15 +838,27 @@ def series(table, case):
     ``RNF_cellVolMax`` that the committed case already satisfies
     (``RNF_EXF_RUNOFF``), and under ``RNF_srcFluxMax``.
 
-    The temperature, the salinity and the tracer vary with both the
+    The temperature, the salinity and the tracers vary with both the
     source and the record, and none of them is a multiple of the flux, so
     a flux-weighted sum cannot be confused with an unweighted one. The
     temperature of a source listed in ``missing`` is stored as the fill
     value in the records named there.
 
-    Returns a dict of float64 arrays plus ``tvld``, the per-record
-    validity flag of the temperature, which is what ``RNF_LOAD_REC``
-    stores as ``RNF_bufTvld``.
+    **The tracer series are non-degenerate (RUNOFF-008).** Every
+    (record, source, tracer) value is distinct, and no two tracers are
+    proportional, which is asserted here rather than left to the
+    formula: an earlier ``1.0 + 0.2r + 0.1(k mod 3)`` gave lab_sea's
+    sources 0 and 3 the same value at every record, so the tracer leg
+    could not tell those two sources apart, and a single shared shape
+    would let a swap of two tracers pass a closure that is a sum. A
+    tracer's series depends on its position in ``case["ptracers"]``
+    (``PTRACERS_names`` order), so a name keeps its series whatever
+    position the file gives its variable.
+
+    Returns a dict of float64 arrays -- ``trc`` is a dict of them, by
+    tracer name, over ``case["file_tracers"]`` -- plus ``tvld``, the
+    per-record validity flag of the temperature, which is what
+    ``RNF_LOAD_REC`` stores as ``RNF_bufTvld``.
     """
     import numpy as np
     nrec = case["records"] or 1
@@ -627,8 +876,28 @@ def series(table, case):
     # carry what the file says
     out["salt"] = (0.1 + 0.03 * np.arange(nrec, dtype=np.float64)[:, None]
                    + 0.01 * (k % 5.0)[None, :])
-    out["trc"] = (1.0 + 0.2 * np.arange(nrec, dtype=np.float64)[:, None]
-                  + 0.1 * (k % 3.0)[None, :])
+    rec = np.arange(nrec, dtype=np.float64)[:, None]
+    out["trc"] = {}
+    for name in case["file_tracers"]:
+        j = float(case["ptracers"].index(name))
+        out["trc"][name] = ((1.0 + 0.5 * j) + (0.2 + 0.05 * j) * rec
+                            + (0.1 + 0.07 * j) * k[None, :]
+                            + 0.003 * (k * k)[None, :])
+    if out["trc"]:
+        every = np.concatenate([v.ravel() for v in out["trc"].values()])
+        if np.unique(every).size != every.size:
+            raise ValueError(f"the tracer series hold {every.size} values of "
+                             f"which only {np.unique(every).size} are "
+                             f"distinct: some (record, source, tracer) "
+                             f"cannot be told apart")
+        names = list(out["trc"])
+        for a in range(len(names)):
+            for b in range(a + 1, len(names)):
+                ratio = out["trc"][names[a]] / out["trc"][names[b]]
+                if float(np.ptp(ratio)) < 1.0e-3:
+                    raise ValueError(f"tracers {names[a]} and {names[b]} "
+                                     f"are proportional: a swap of the two "
+                                     f"would scale a closure, not break it")
     tvld = np.ones((nrec, nsrc), dtype=np.float64)
     for src, where in (case.get("missing") or {}).items():
         if where == "all":
@@ -640,7 +909,7 @@ def series(table, case):
     return out
 
 
-def write_sparse(path, table, case, dt, perturb=None):
+def write_sparse(path, table, case, dt, perturb=None, no_tracers=False):
     """Write the sparse runoff file of one case.
 
     The target table is the committed one of ``table_from``; the time
@@ -658,7 +927,22 @@ def write_sparse(path, table, case, dt, perturb=None):
     ``case["perturb_source"]`` cyclically shifted across its own target
     entries, which leaves their sum at exactly 1) or ``"fracsum"`` (those
     same fractions scaled by ``1 + FRAC_PERTURB``, which leaves the sum
-    inside ``RNF_fracTol``). Returns what was perturbed, for the report.
+    inside ``RNF_fracTol``), or one of the two tracer controls of
+    RUNOFF-008, which leave the table alone:
+
+    * ``"swap"`` exchanges the **names** of the two tracer variables and
+      keeps their data where it was, so runoff tracer k still carries
+      the series the oracle expects for position k while each series now
+      reaches the other ptracer -- exactly what a swapped ``RNF_trPtr``
+      would do, made by the input;
+    * ``"feed_zero"`` adds a variable for every unfed ptracer, holding
+      0.0 at every record and source: the package then applies to that
+      ptracer the term it would apply if it fed a tracer the file does
+      not carry, ``-m*C_ref``.
+
+    ``no_tracers`` writes no ``runoff_ptracer_*`` variable at all, which
+    is the reference run of :func:`judge_unfed`. Returns what was
+    perturbed, for the report.
     """
     import netCDF4
     import numpy as np
@@ -684,7 +968,7 @@ def write_sparse(path, table, case, dt, perturb=None):
                     f"would perturb nothing")
         elif perturb == "fracsum":
             frac[rows] = table["target_fraction"][rows] * (1.0 + FRAC_PERTURB)
-        else:
+        elif perturb not in ("swap", "feed_zero"):
             raise ValueError(f"unknown perturbation {perturb!r}")
         done = {"perturb": perturb, "source": table["ids"][src],
                 "entries": rows.tolist(),
@@ -692,6 +976,24 @@ def write_sparse(path, table, case, dt, perturb=None):
                 "to": frac[rows].tolist(),
                 "sum_from": float(table["target_fraction"][rows].sum()),
                 "sum_to": float(frac[rows].sum())}
+    # The tracer variables: (name written, series it carries).
+    written = [(name, value["trc"][name]) for name in case["file_tracers"]]
+    if perturb == "swap":
+        if len(written) != 2:
+            raise ValueError(f"the swap control needs exactly two tracer "
+                             f"variables; {case['name']} has {len(written)}")
+        written = [(written[1][0], written[0][1]),
+                   (written[0][0], written[1][1])]
+        done["tracers"] = [w[0] for w in written]
+    if perturb == "feed_zero":
+        unfed = [name for _, name, _ in unfed_ptracers(case)]
+        if not unfed:
+            raise ValueError(f"the feed_zero control needs an unfed "
+                             f"ptracer; {case['name']} has none")
+        written += [(name, np.zeros((nrec, nsrc))) for name in unfed]
+        done["tracers"] = [w[0] for w in written]
+    if no_tracers:
+        written = []
     with netCDF4.Dataset(path, "w") as ds:
         ds.set_auto_maskandscale(False)
         atts = {"mitgcm_runoff_schema_version": "1.0",
@@ -753,11 +1055,11 @@ def write_sparse(path, table, case, dt, perturb=None):
         out = ds.createVariable("runoff_salinity", "f8", ("time", "source"))
         out.units = "g kg-1"
         out[:] = value["salt"]
-        if case["tracer"]:
-            out = ds.createVariable(f"runoff_ptracer_{TRACER_NAME}", "f8",
+        for name, data in written:
+            out = ds.createVariable(f"runoff_ptracer_{name}", "f8",
                                     ("time", "source"))
             out.units = "1"
-            out[:] = value["trc"]
+            out[:] = data
     return done
 
 
@@ -766,7 +1068,8 @@ def source_series(table, case, records):
 
     ``records`` is ``(rec0, year0, rec1, year1, fac)`` as
     ``RNF_FIELDS_LOAD`` reported it for the step. The flux, the salinity
-    and the tracer are combined the way ``rnf_fields_load.F:324-387``
+    and every tracer (``trc`` is a dict by tracer name, as in
+    :func:`series`) are combined the way ``rnf_fields_load.F:324-387``
     combines them:
 
     * ``fac == 1``: record ``rec0`` alone, with no arithmetic;
@@ -814,7 +1117,15 @@ def source_series(table, case, records):
         tvld = np.where(value["tvld"][rec1 - 1] > 0.0, tvld, 0.0)
     temp = np.where(tvld > 0.0, combine("temp"), 0.0)
     out = {"flux": combine("flux"), "salt": combine("salt"),
-           "trc": combine("trc"), "temp": temp, "tvld": tvld}
+           "temp": temp, "tvld": tvld, "trc": {}}
+    for name, data in value["trc"].items():
+        if not need1:
+            out["trc"][name] = data[rec0 - 1].copy()
+        elif not need0:
+            out["trc"][name] = data[rec1 - 1].copy()
+        else:
+            out["trc"][name] = fac * data[rec0 - 1] \
+                + (1.0 - fac) * data[rec1 - 1]
     return out
 
 
@@ -828,9 +1139,9 @@ def dense_fields(table, source, rac, ncells, frac=None):
         mflxT += wVol * tvld_s
         mXT   += wVol * tvld_s * T_s
         mXS   += wVol * S_s
-        mXTr  += wVol * C_s
+        mXTr  += wVol * C_s                          (per tracer)
 
-    then one pass multiplying the four property sums and the mass flux by
+    then one pass multiplying the property sums and the mass flux by
     ``rhoConstFresh`` (``rnf_fields_load.F:446-488``). The scaling by
     ``rhoConstFresh`` is left to the caller, which has the run's own
     value; what is returned is in volume-flux units, which is how the
@@ -849,7 +1160,9 @@ def dense_fields(table, source, rac, ncells, frac=None):
     import numpy as np
     fraction = table["target_fraction"] if frac is None else frac
     out = {k: np.zeros(ncells, dtype=np.float64)
-           for k in ("vflx", "mflxT", "mXT", "mXS", "mXTr")}
+           for k in ("vflx", "mflxT", "mXT", "mXS")}
+    out["mXTr"] = {name: np.zeros(ncells, dtype=np.float64)
+                   for name in source["trc"]}
     cells = table["target_cell"]
     owner = table["target_source"]
     for k in range(cells.size):
@@ -860,20 +1173,24 @@ def dense_fields(table, source, rac, ncells, frac=None):
         out["mflxT"][c] += w * source["tvld"][s]
         out["mXT"][c] += w * source["tvld"][s] * source["temp"][s]
         out["mXS"][c] += w * source["salt"][s]
-        out["mXTr"][c] += w * source["trc"][s]
+        for name, trc in source["trc"].items():
+            out["mXTr"][name][c] += w * trc[s]
     return out
 
 
 def diagnostics_text(case, dt):
     """Return the ``data.diagnostics`` of a case: one stream per quantity."""
-    wanted = [("vol", "EXFroff ", None), ("heat", "RNFgT   ", 1),
-              ("salt", "RNFgS   ", 1)]
-    if case["tracer"]:
-        wanted.append(("tracer", "RNFtr01 ", 1))
+    wanted = [("EXFroff ", STREAMS["vol"], None),
+              ("RNFgT   ", STREAMS["heat"], 1),
+              ("RNFgS   ", STREAMS["salt"], 1)]
+    for _name, field, stream, _series in tracer_closures(case):
+        wanted.append((f"{field:8s}", stream, 1))
+    for n, _name, stream in unfed_ptracers(case):
+        wanted.append((f"ForcTr{n:02d}", stream, 1))
     lines = []
-    for n, (key, field, level) in enumerate(wanted, start=1):
+    for n, (field, stream, level) in enumerate(wanted, start=1):
         lines.append(f"  fields(1,{n}) = '{field}',")
-        lines.append(f"  fileName({n}) = '{STREAMS[key]}',")
+        lines.append(f"  fileName({n}) = '{stream}',")
         lines.append(f"  frequency({n}) = -{dt!r},")
         if level is not None:
             lines.append(f"  levels(1,{n}) = {float(level)!r},")
@@ -926,7 +1243,7 @@ def layer_thickness(run_dir):
     return float(match.group(1).replace("D", "E").replace("d", "e"))
 
 
-def write_input(case, input_dir, table, perturb=None):
+def write_input(case, input_dir, table, perturb=None, no_tracers=False):
     """Build the scratch input directory of one run; return ``(dt, info)``.
 
     Every regular file of the case's committed sparse input is copied,
@@ -960,7 +1277,7 @@ def write_input(case, input_dir, table, perturb=None):
       with a linear free surface, and ``useRealFreshWaterFlux = .FALSE.``
       only reaches the salinity and tracer branch tests
       (``rnf_tendency_apply.F:298-299`` and ``:455-456``), which
-      ``salt_EvPrRn = 0`` and ``PTRACERS_EvPrRn(1) = 0`` already
+      ``salt_EvPrRn = 0`` and ``PTRACERS_EvPrRn(n) = 0`` already
       short-circuit -- so it changes nothing this check measures and is
       set for consistency with ``nonlinFreeSurf = 0`` rather than out of
       need;
@@ -1034,7 +1351,7 @@ def write_input(case, input_dir, table, perturb=None):
         raise ValueError(f"{case['input']} has no data.pkg")
     flags = {"useDiagnostics": ".TRUE.", "useRNF": ".TRUE.",
              "useMNC": ".FALSE."}
-    if case["tracer"]:
+    if case["ptracers"]:
         flags["usePTRACERS"] = ".TRUE."
     if case.get("minimal_pkgs"):
         flags.update({"useSEAICE": ".FALSE.", "useKPP": ".FALSE.",
@@ -1047,7 +1364,7 @@ def write_input(case, input_dir, table, perturb=None):
     with open(pkg_path, "w") as fh:
         fh.write(pkg)
 
-    if case["tracer"]:
+    if case["ptracers"]:
         iter0 = 0
         start = re.search(r"(?m)^\s*nIter0\s*=\s*(\d+)",
                           read_file(input_dir, "data") or "")
@@ -1060,8 +1377,7 @@ def write_input(case, input_dir, table, perturb=None):
                 iter0 = int(round(float(begin.group(1).replace("D", "E")
                                         .replace("d", "e")) / dt))
         with open(os.path.join(input_dir, "data.ptracers"), "w") as fh:
-            fh.write(DATA_PTRACERS.format(iter0=iter0, name=TRACER_NAME,
-                                          nr=nr))
+            fh.write(data_ptracers(case, iter0, nr))
         # lab_sea compiles pkg/longstep (its packages.conf), and that
         # package stops the run for a missing data.longstep as soon as
         # usePTRACERS is true (longstep_readparms.F:46-69) -- there is no
@@ -1074,7 +1390,7 @@ def write_input(case, input_dir, table, perturb=None):
         with open(os.path.join(input_dir, "data.longstep"), "w") as fh:
             fh.write("# Written by tests/rnf/budget_check.py: one passive\n"
                      "# tracer step per dynamics step, so no step is\n"
-                     "# skipped and RNFtr01 is filled on every one.\n"
+                     "# skipped and RNFtrNN is filled on every one.\n"
                      " &LONGSTEP_PARM01\n"
                      "  LS_nIter = 1,\n"
                      "  LS_whenToSample = 0,\n"
@@ -1100,7 +1416,7 @@ def write_input(case, input_dir, table, perturb=None):
                  | stat.S_IXOTH)
 
     info = write_sparse(os.path.join(input_dir, SPARSE_FILE), table, case,
-                        dt, perturb=perturb)
+                        dt, perturb=perturb, no_tracers=no_tracers)
     with open(os.path.join(input_dir, "data.rnf"), "w") as fh:
         fh.write("# Written by tests/rnf/budget_check.py.\n"
                  "# RNF_debugLev = 3 (debLevC) makes RNF_FIELDS_LOAD print,\n"
@@ -1114,10 +1430,14 @@ def write_input(case, input_dir, table, perturb=None):
     return dt, info
 
 
-def run_model(experiment, input_name, nproc, timeout):
-    """Run one scratch input; return ``(run dir, exit status, timed out)``."""
+def run_model(experiment, input_name, nproc, timeout, build=BUILD):
+    """Run one scratch input; return ``(run dir, exit status, timed out)``.
+
+    ``build`` is the serial build name; ``_mpiN`` is appended here for an
+    ``nproc``-process run, so callers pass the case's base build.
+    """
     output_name = "output_esx_" + input_name
-    build, mpi_args = BUILD, []
+    mpi_args = []
     if nproc:
         output_name += f"_mpi{nproc}"
         build += f"_mpi{nproc}"
@@ -1176,7 +1496,7 @@ def level1(field, sizes, ncells):
 
 
 def measure(case, run_dir, table, oracle_frac, iterations):
-    """Measure the four closures on every judged dump of one run.
+    """Measure every closure of the case on every judged dump of one run.
 
     Returns a dictionary with the run's parameters, the per-dump
     residuals and the worst of each closure. Everything the inversion
@@ -1189,8 +1509,11 @@ def measure(case, run_dir, table, oracle_frac, iterations):
                  "convertFW2Salt", "nonlinFreeSurf", "tracForcingOutAB",
                  "temp_EvPrRn"):
         out["params"][name] = param(text, name)
-    if case["tracer"]:
-        out["params"]["PTRACERS_EvPrRn"] = param(text, "PTRACERS_EvPrRn")
+    if case["ptracers"]:
+        # One value per ptracer, in PTRACERS_names order. An unset
+        # PTRACERS_EvPrRn is printed as UNSET_RL.
+        for name in ("PTRACERS_EvPrRn", "PTRACERS_ref"):
+            out["params"][name] = param_all(text, name)
     mu = out["params"]["mass2rUnit"]
     rho_fresh = out["params"]["rhoConstFresh"]
 
@@ -1222,6 +1545,8 @@ def measure(case, run_dir, table, oracle_frac, iterations):
     out["per_dump"] = []
     out["records_applied"] = []
     out["state_signature"] = []
+    tracers = tracer_closures(case)
+    streams = case_streams(case)
     for iteration in iterations:
         step = dump_iteration(iteration)
         if step not in trace:
@@ -1245,12 +1570,15 @@ def measure(case, run_dir, table, oracle_frac, iterations):
         applied, sizes = read_mds(run_dir, f"{STREAMS['vol']}.{iteration}")
         v_got = level1(applied, sizes, ncells)
         got = {"vflx": v_got}
-        for key_q, name in (("mXT", "heat"), ("mXS", "salt"),
-                            ("mXTr", "tracer")):
-            if name == "tracer" and not case["tracer"]:
-                continue
+        for key_q, name in (("mXT", "heat"), ("mXS", "salt")):
             raw, sizes = read_mds(run_dir, f"{STREAMS[name]}.{iteration}")
             got[key_q] = level1(raw, sizes, ncells) * inverse
+        # Each tracer closure inverts its own stream with the same factor:
+        # C_ref is 0 and the model adds nothing (data_ptracers), so the
+        # stream is (mC)*mass2rUnit*D whether it is RNFtrNN or ForcTrNN.
+        for name, _field, stream, _series in tracers:
+            raw, sizes = read_mds(run_dir, f"{stream}.{iteration}")
+            got[name] = level1(raw, sizes, ncells) * inverse
         # T_ref is the ambient theta of the iteration this dump belongs
         # to; (mT) = RNFgT/(mass2rUnit*D) + m_T*theta.
         #
@@ -1277,8 +1605,10 @@ def measure(case, run_dir, table, oracle_frac, iterations):
         # The reconstruction is in volume-flux units; the property sums
         # the model holds are rhoConstFresh times them.
         want_scaled = {"vflx": want["vflx"]}
-        for key_q in ("mflxT", "mXT", "mXS", "mXTr"):
+        for key_q in ("mflxT", "mXT", "mXS"):
             want_scaled[key_q] = rho_fresh * want[key_q]
+        for name, _field, _stream, series_name in tracers:
+            want_scaled[name] = rho_fresh * want["mXTr"][series_name]
 
         entry = {"iteration": iteration, "records": records,
                  "fac": records[4]}
@@ -1294,7 +1624,7 @@ def measure(case, run_dir, table, oracle_frac, iterations):
         # Over **every** cell of the layout, not only the file's target
         # cells, so that water or property delivered to a cell the file
         # does not name enters the sum rather than being left out of it.
-        # A cell with no runoff contributes exactly 0 to all four: EXFroff
+        # A cell with no runoff contributes exactly 0 to every closure: EXFroff
         # is 0 there, and the tendency diagnostics are 0 both because the
         # package writes nothing there and because `inverse` is 0 wherever
         # hFacC is (a dry cell), which is also why this cannot divide by a
@@ -1305,10 +1635,10 @@ def measure(case, run_dir, table, oracle_frac, iterations):
             "heat_naive": math.fsum((got["mXT_naive"] * rac).tolist()),
             "salt": math.fsum((got["mXS"] * rac).tolist()),
         }
-        if case["tracer"]:
-            rhs["tracer"] = rho_fresh * math.fsum(
-                (flux * source["trc"]).tolist())
-            lhs["tracer"] = math.fsum((got["mXTr"] * rac).tolist())
+        for name, _field, _stream, series_name in tracers:
+            rhs[name] = rho_fresh * math.fsum(
+                (flux * source["trc"][series_name]).tolist())
+            lhs[name] = math.fsum((got[name] * rac).tolist())
         entry["source_sum"] = rhs
         entry["target_sum"] = lhs
         entry["residual"] = {
@@ -1316,10 +1646,9 @@ def measure(case, run_dir, table, oracle_frac, iterations):
             for k in rhs}
         # --- the per-cell criterion, on the same dump
         cell = {}
-        for key_q, name in (("vflx", "volume"), ("mXT", "heat"),
-                            ("mXS", "salt"), ("mXTr", "tracer")):
-            if key_q not in got:
-                continue
+        for key_q, name in ((("vflx", "volume"), ("mXT", "heat"),
+                             ("mXS", "salt"))
+                            + tuple((c[0], c[0]) for c in tracers)):
             ref = want_scaled[key_q]
             with np.errstate(divide="ignore", invalid="ignore"):
                 rel = np.where(ref != 0.0,
@@ -1348,17 +1677,27 @@ def measure(case, run_dir, table, oracle_frac, iterations):
             if volume else None)
         entry["nonzero_expected"] = int(
             np.count_nonzero(want_scaled["vflx"]))
+        # What every unfed ptracer received on this dump: its whole
+        # forcing tendency, which must be exactly zero (judge_unfed).
+        entry["unfed"] = {}
+        for n, name, _stream in unfed_ptracers(case):
+            raw, sizes = read_mds(run_dir,
+                                  f"{streams[f'unfed{n}']}.{iteration}")
+            field = level1(raw, sizes, ncells)
+            entry["unfed"][name] = {
+                "nonzero": int(np.count_nonzero(field)),
+                "max_abs": float(np.abs(field).max())}
         out["per_dump"].append(entry)
 
     out["worst"] = {}
-    for name in CLOSURES + ("heat_naive",):
+    for name in closures_of(case) + ("heat_naive",):
         values = [(d["residual"][name], d["iteration"])
                   for d in out["per_dump"] if name in d["residual"]
                   and d["residual"][name] is not None]
         if values:
             out["worst"][name] = max(values)
     out["worst_cell"] = {}
-    for name in ("volume", "heat", "salt", "tracer"):
+    for name in closures_of(case):
         values = [(d["per_cell"][name]["max_rel"], d["iteration"])
                   for d in out["per_dump"] if name in d["per_cell"]]
         if values:
@@ -1405,10 +1744,27 @@ def judge(case, run_dir, result, control=None):
         problems.append(
             f"salt_EvPrRn = {params['salt_EvPrRn']}, not 0: S_ref is then "
             f"not 0 and RNFgS is not (mS)*mass2rUnit*D")
-    if case["tracer"] and params.get("PTRACERS_EvPrRn") != 0.0:
+    for n, name in enumerate(case["ptracers"], start=1):
+        ev = params["PTRACERS_EvPrRn"][n - 1]
+        ref = params["PTRACERS_ref"][n - 1]
+        if name in case["file_tracers"]:
+            if ev != 0.0 or ref != 0.0:
+                problems.append(
+                    f"PTRACERS_EvPrRn({n}) = {ev} and PTRACERS_ref({n}) = "
+                    f"{ref}, not both 0: C_ref is then not 0 or the model "
+                    f"adds a freshwater term of its own, and neither RNFtrNN "
+                    f"nor ForcTr{n:02d} is (mC)*mass2rUnit*D")
+        elif ev != UNSET_RL or ref != case.get("unfed_ref", 0.0):
+            problems.append(
+                f"the unfed ptracer {n} ({name}) to have PTRACERS_EvPrRn "
+                f"unset and PTRACERS_ref = {case.get('unfed_ref', 0.0)} "
+                f"(found {ev} and {ref}): otherwise a term wrongly applied "
+                f"to it need not be visible")
+    if case["ptracers"] and params["convertFW2Salt"] == -1.0:
         problems.append(
-            f"PTRACERS_EvPrRn(1) = {params.get('PTRACERS_EvPrRn')}, not 0: "
-            f"C_ref is then not 0 and RNFtr01 is not (mC_1)*mass2rUnit*D")
+            "convertFW2Salt = -1 (branch L): the model's own tracer term is "
+            "then EmPmR*(C_local - PTRACERS_EvPrRn), not zero, and ForcTrNN "
+            "is no longer the package term alone")
     want_ab = case.get("trac_forcing_out_ab", 1)
     if params["tracForcingOutAB"] != float(want_ab):
         problems.append(f"tracForcingOutAB = {params['tracForcingOutAB']}, "
@@ -1485,7 +1841,7 @@ def judge(case, run_dir, result, control=None):
     # rather than failed -- on the plain cases and on both controls
     # alike, and the fracsum must-fail would be satisfied by whatever
     # closures were left. Nothing is vacuous today, because
-    # :func:`series` hard-codes salt >= 0.1, tracer >= 1.0 and
+    # :func:`series` hard-codes salt >= 0.1, tracers >= 1.0 and
     # temperature >= 2.0, but a guard that is measured once and not
     # asserted does not stop a later edit from undoing it (LL-009).
     declared = declared_closures(case)
@@ -1498,10 +1854,11 @@ def judge(case, run_dir, result, control=None):
             f"its source sum was exactly zero on every dump and the closure "
             f"was silently not measured rather than failed")
 
-    # --- the four closures, and the per-cell criterion
+    # --- the closures, and the per-cell criterion
     result["budget_pass"] = True
     result["cell_pass"] = True
-    for name in CLOSURES:
+    closures = closures_of(case)
+    for name in closures:
         if name in data["worst"] and data["worst"][name][0] > RTOL:
             result["budget_pass"] = False
     for name, (value, iteration) in sorted(data["worst_cell"].items()):
@@ -1520,7 +1877,7 @@ def judge(case, run_dir, result, control=None):
             problems.append(
                 f"the budget to still close on a permuted file (worst "
                 f"residual "
-                f"{max(data['worst'][k][0] for k in CLOSURES if k in data['worst']):.3e}"
+                f"{max(data['worst'][k][0] for k in closures if k in data['worst']):.3e}"
                 f" > {RTOL:g}): a permutation of one source's fractions "
                 f"across its own cells leaves every sum over targets "
                 f"unchanged, so a budget that moves has moved for another "
@@ -1538,7 +1895,8 @@ def judge(case, run_dir, result, control=None):
         # all go blind with every enrolled command still passing. Each
         # one that is present has to see the perturbation on its own.
         # Measured today: volume 1.472e-07, heat 1.676e-07, salt
-        # 1.637e-07, tracer 1.414e-07, all five orders above RTOL.
+        # 1.637e-07, tracer and ptracer 1.661e-07, all five orders above
+        # RTOL.
         #
         # **What this guards against, and what it cannot.** It is a guard
         # against a later edit, not against a state a correct run can
@@ -1550,9 +1908,11 @@ def judge(case, run_dir, result, control=None):
         # perturbed source's share of that leg's own total**: not one
         # common factor, because the shares differ per property, but four
         # figures that move together. Measured against that prediction
-        # on the lab_sea case: volume 1.4719e-07, heat 1.6975e-07, salt
-        # 1.6584e-07, tracer 1.4202e-07, within 1.2x of each other and
-        # each matching the residual above. No real run can therefore
+        # on the lab_sea case (eps times the source's share at each
+        # judged dump's own interpolated series, worst dump): volume
+        # 1.4719e-07, heat 1.6761e-07, salt 1.6370e-07, tracer 1.6607e-07,
+        # within 1.2x of each other and each equal to the residual above
+        # to the four digits shown. No real run can therefore
         # leave one leg at round-off while the others discriminate; the
         # only way to reach that state is to break a leg, which is what
         # the must-fail demonstration substitutes.
@@ -1560,11 +1920,11 @@ def judge(case, run_dir, result, control=None):
         # The one precondition is that the perturbed source carries a
         # **non-zero value of every property**, or its share of that
         # leg's total is zero and the leg legitimately does not move.
-        # :func:`series` guarantees it today (salt >= 0.1, tracer >= 1.0,
+        # :func:`series` guarantees it today (salt >= 0.1, tracers >= 1.0,
         # temperature >= 2.0 on every source and record), and the
         # presence requirement above catches the related case where a
         # whole leg's source sum is zero.
-        blind = [c for c in CLOSURES
+        blind = [c for c in closures
                  if c in data["worst"] and data["worst"][c][0] <= RTOL]
         result["fracsum_blind"] = blind
         if blind:
@@ -1573,7 +1933,8 @@ def judge(case, run_dir, result, control=None):
             problems.append(
                 f"every closure to fail on a file whose fractions sum to "
                 f"{1.0 + FRAC_PERTURB!r}; {shown} closed to {RTOL:g} or "
-                f"better, so {len(blind)} of the four cannot see "
+                f"better, so {len(blind)} of the {len(closures)} cannot "
+                f"see "
                 f"{FRAC_PERTURB:g} of extra water and is not measuring its "
                 f"own closure")
         if not result["cell_pass"]:
@@ -1591,8 +1952,55 @@ def judge(case, run_dir, result, control=None):
                 "meant to be blind to it and the contrast would be weaker "
                 "if it were not")
         return result
+    if control == "swap":
+        # A swap of the two tracers' names is a swap of RNF_trPtr made by
+        # the input: runoff tracer k still carries the series the oracle
+        # expects for position k, so the RNFtrNN closures (blind to the
+        # mapping) must still close, while each ptracer now receives the
+        # other one's water, so every ForcTrNN closure must fail.
+        ptr = [c[0] for c in tracer_closures(case) if c[0].startswith("p")]
+        trc = [c[0] for c in tracer_closures(case) if c[0].startswith("t")]
+        result["swap"] = {c: data["worst"].get(c) for c in ptr + trc}
+        for name in CLOSURES + tuple(trc):
+            if name in data["worst"] and data["worst"][name][0] > RTOL:
+                problems.append(
+                    f"the {name} closure to still hold on the swapped file "
+                    f"(worst {data['worst'][name][0]:.3e}): the swap moves "
+                    f"only which ptracer each series reaches")
+        for name in ptr:
+            worst = data["worst"].get(name)
+            if worst is None or worst[0] <= RTOL * DISCRIMINATION:
+                problems.append(
+                    f"the {name} closure to fail by more than "
+                    f"{RTOL * DISCRIMINATION:g} on the swapped file (it is "
+                    f"{worst and worst[0]}): it cannot then see a swap of "
+                    f"RNF_trPtr")
+        judge_unfed(case, result, problems)
+        return result
+    if control == "feed_zero":
+        # The counterfactual of the unfed oracle: a zero-valued variable
+        # for the unfed ptracer makes the package apply -m*C_ref to it,
+        # which is the term it would apply if it fed a tracer the file
+        # does not carry. Both legs of judge_unfed must see that, while
+        # every closure still holds.
+        for name in closures:
+            if name in data["worst"] and data["worst"][name][0] > RTOL:
+                problems.append(
+                    f"the {name} closure to still hold on the feed_zero file "
+                    f"(worst {data['worst'][name][0]:.3e})")
+        seen = []
+        judge_unfed(case, result, seen)
+        result["feed_zero_seen"] = seen
+        legs = result.get("unfed_legs", {})
+        for leg in ("forcing", "state"):
+            if not legs.get(leg):
+                problems.append(
+                    f"the unfed oracle's {leg} leg to fail when the term is "
+                    f"applied to the unfed ptracer (it did not): it would "
+                    f"then pass a run that adds -m*C_ref to it")
+        return result
 
-    for name in CLOSURES:
+    for name in closures:
         if name not in data["worst"]:
             continue
         value, iteration = data["worst"][name]
@@ -1610,7 +2018,87 @@ def judge(case, run_dir, result, control=None):
     if total_extra or total_missing:
         problems.append(f"no cell to differ in placement (found "
                         f"{total_extra} extra and {total_missing} missing)")
+    judge_unfed(case, result, problems)
     return result
+
+
+def judge_unfed(case, result, problems):
+    """A ptracer the file does not feed gets nothing (RUNOFF-008).
+
+    Two legs, each decisive on its own, for every unfed ptracer:
+
+    * **forcing**: its ``ForcTrNN`` is exactly 0.0 at every cell of every
+      dump. With ``PTRACERS_EvPrRn`` unset the model's own surface term
+      for it is zero in every arm
+      (``pkg/longstep/longstep_forcing_surf.F:81``, ``:105``, ``:129``
+      test it before adding anything), so the package is the only thing
+      that could make it non-zero;
+    * **state**: its ``PTRACER0n`` state dump is bitwise identical, at
+      every dump, to a reference run with the same flux and **no**
+      ``runoff_ptracer_*`` variable at all (``check_case`` runs it). A
+      passive tracer feeds nothing back, so nothing else differs between
+      the two runs for it.
+
+    ``result["unfed_legs"]`` records, per leg, whether it *saw* a term
+    (True = the leg failed); ``feed_zero`` requires both to be True.
+    """
+    unfed = unfed_ptracers(case)
+    if not unfed:
+        return
+    data = result.get("measure") or {}
+    forcing = {}
+    for _n, name, _stream in unfed:
+        hits = [(d["iteration"], d["unfed"][name]["nonzero"],
+                 d["unfed"][name]["max_abs"]) for d in data.get("per_dump", [])
+                if d["unfed"][name]["nonzero"]]
+        forcing[name] = hits
+        if hits:
+            problems.append(
+                f"the unfed ptracer {name} to receive no forcing at all; "
+                f"ForcTr is non-zero on {len(hits)} dump(s), first "
+                f"{hits[0][1]} cell(s) at dump {hits[0][0]}, largest "
+                f"{max(h[2] for h in hits):.3e}")
+    state = result.get("unfed_state") or {}
+    for _n, name, _stream in unfed:
+        got = state.get(name)
+        if not got or not got["compared"]:
+            problems.append(f"the unfed ptracer {name}'s state to be "
+                            f"compared with the reference run on at least "
+                            f"one dump (none was)")
+        elif got["differing"]:
+            problems.append(
+                f"the unfed ptracer {name}'s state to be bitwise identical "
+                f"to the run with no runoff tracer variable; "
+                f"{got['differing']} values differ over {got['compared']} "
+                f"dump(s), largest {got['max_abs']:.3e}")
+    result["unfed_legs"] = {
+        "forcing": any(forcing.values()),
+        "state": any(v.get("differing") for v in state.values())}
+
+
+def compare_unfed_state(case, run_dir, ref_dir):
+    """Compare every unfed ptracer's state dumps between two runs, bitwise."""
+    import glob
+    import numpy as np
+    out = {}
+    for n, name, _stream in unfed_ptracers(case):
+        paths = sorted(glob.glob(os.path.join(run_dir,
+                                              f"PTRACER{n:02d}.*.data")))
+        compared, differing, worst = 0, 0, 0.0
+        for path in paths:
+            base = os.path.basename(path)[:-5]
+            mine, _ = read_mds(run_dir, base)
+            theirs, _ = read_mds(ref_dir, base)
+            compared += 1
+            diff = mine != theirs
+            differing += int(np.count_nonzero(diff))
+            if diff.any():
+                worst = max(worst, float(np.abs(mine - theirs).max()))
+        out[name] = {"compared": compared, "differing": differing,
+                     "max_abs": worst,
+                     "labels": [os.path.basename(p).split(".")[1]
+                                for p in paths]}
+    return out
 
 
 def check_case(case, nproc, args, control=None):
@@ -1620,15 +2108,18 @@ def check_case(case, nproc, args, control=None):
     input_name = PREFIX + name
     exp_dir = os.path.join(VERIF, case["experiment"])
     input_dir = os.path.join(exp_dir, input_name)
-    build = BUILD + (f"_mpi{nproc}" if nproc else "")
+    build = case.get("build", BUILD) + (f"_mpi{nproc}" if nproc else "")
     binary = os.path.join(exp_dir, build, "mitgcmuv")
     result = {"case": case["name"], "processes": nproc, "control": control,
-              "problems": []}
+              "closures": list(closures_of(case)), "problems": []}
     if not os.path.isfile(binary):
         print(f"MISSING {name}: no binary at {binary}")
-        print(f"     build it with tests/mitgcm_oracle.sh "
-              f"{case['experiment']} {case['input']}"
-              + (f" -mpi {nproc}" if nproc else ""))
+        if case.get("build") == PTR2_BUILD:
+            print("     rerun this check with --build, which compiles it")
+        else:
+            print(f"     build it with tests/mitgcm_oracle.sh "
+                  f"{case['experiment']} {case['input']}"
+                  + (f" -mpi {nproc}" if nproc else ""))
         return None
     shutil.rmtree(input_dir, ignore_errors=True)
     os.makedirs(input_dir)
@@ -1648,7 +2139,8 @@ def check_case(case, nproc, args, control=None):
             oracle_frac = table["target_fraction"].copy()
             oracle_frac[info["entries"]] = info["to"]
         run_dir, run_exit, timed_out = run_model(
-            case["experiment"], input_name, nproc, args.timeout)
+            case["experiment"], input_name, nproc, args.timeout,
+            build=case.get("build", BUILD))
         logs = "\n".join(filter(None, (
             read_file(run_dir, n) for n in ("output.txt", "mpirun.log"))))
         result["ended_normally"] = "Execution ended Normally" in logs
@@ -1662,9 +2154,7 @@ def check_case(case, nproc, args, control=None):
             result["log_tail"] = "\n".join(logs.splitlines()[-25:])
             return result
         iterations = None
-        for key, stream in STREAMS.items():
-            if key == "tracer" and not case["tracer"]:
-                continue
+        for key, stream in case_streams(case).items():
             found, strays = stream_dumps(run_dir, stream)
             if strays:
                 result["problems"].append(
@@ -1685,6 +2175,26 @@ def check_case(case, nproc, args, control=None):
             return result
         result["measure"] = measure(case, run_dir, table, oracle_frac,
                                     iterations)
+        if unfed_ptracers(case):
+            # The reference of the unfed oracle: the same input with no
+            # runoff_ptracer_* variable at all.
+            ref_input = input_name + "_ref"
+            ref_input_dir = os.path.join(exp_dir, ref_input)
+            shutil.rmtree(ref_input_dir, ignore_errors=True)
+            os.makedirs(ref_input_dir)
+            write_input(case, ref_input_dir, table, no_tracers=True)
+            ref_dir, ref_exit, ref_timed_out = run_model(
+                case["experiment"], ref_input, nproc, args.timeout,
+                build=case.get("build", BUILD))
+            ref_logs = read_file(ref_dir, "output.txt") or ""
+            if (ref_timed_out or ref_exit != 0
+                    or "Execution ended Normally" not in ref_logs):
+                result["problems"].append(
+                    f"the reference run with no tracer variable to end "
+                    f"normally (exit {ref_exit})")
+            else:
+                result["unfed_state"] = compare_unfed_state(case, run_dir,
+                                                            ref_dir)
         judge(case, run_dir, result, control=control)
         return result
     except ValueError as err:
@@ -1696,6 +2206,14 @@ def check_case(case, nproc, args, control=None):
             shutil.rmtree(input_dir, ignore_errors=True)
             if run_dir:
                 shutil.rmtree(run_dir, ignore_errors=True)
+            if unfed_ptracers(case):
+                ref_input = input_name + "_ref"
+                shutil.rmtree(os.path.join(exp_dir, ref_input),
+                              ignore_errors=True)
+                shutil.rmtree(os.path.join(exp_dir, "output_esx_" + ref_input
+                                           + (f"_mpi{nproc}" if nproc
+                                              else "")),
+                              ignore_errors=True)
 
 
 def report(result):
@@ -1706,7 +2224,7 @@ def report(result):
     ok = not result["problems"]
     data = result.get("measure") or {}
     parts = []
-    for key in CLOSURES:
+    for key in result.get("closures") or CLOSURES:
         if key in (data.get("worst") or {}):
             parts.append(f"{key} {data['worst'][key][0]:.3e}")
     naive = (data.get("worst") or {}).get("heat_naive")
@@ -1727,9 +2245,29 @@ def report(result):
           f"budget {', '.join(parts) or 'none'}")
     if cell:
         print(f"     per cell: {cell}")
+    for name, got in sorted((result.get("unfed_state") or {}).items()):
+        forcing = sum(1 for d in data.get("per_dump") or []
+                      if d["unfed"][name]["nonzero"])
+        print(f"     unfed {name}: ForcTr non-zero on {forcing} dump(s); "
+              f"state {got['differing']} value(s) differ from the "
+              f"no-variable run over {got['compared']} dump(s)")
     for problem in result["problems"]:
         print(f"     expected {problem}")
     return ok
+
+
+def control_applies(case, control):
+    """Return whether ``control`` can be run on ``case``.
+
+    ``permute`` and ``fracsum`` perturb the table and apply to every
+    case; ``swap`` needs exactly two tracer variables and ``feed_zero`` an
+    unfed ptracer. A selection that leaves no applicable pair exits 2.
+    """
+    if control == "swap":
+        return len(case["file_tracers"]) == 2
+    if control == "feed_zero":
+        return bool(unfed_ptracers(case))
+    return True
 
 
 def main(argv=None):
@@ -1741,7 +2279,8 @@ def main(argv=None):
     asked for; an empty list is exit 2 rather than a vacuous success.
 
     After the runs it makes the Adams-Bashforth comparison of every case
-    that names a ``same_as`` partner: the ``STATE_FREE`` residuals must
+    that names a ``same_as`` partner: the residuals of every closure not
+    in ``STATE_READING`` must
     be bitwise identical between the two, the heat residual must be
     within :data:`RTOL` in both, and their ``state_signature`` must
     differ so that the insensitivity is not the insensitivity of two
@@ -1749,20 +2288,32 @@ def main(argv=None):
     other fails rather than reporting the half it ran, because the pair
     *is* the measurement (LL-014).
 
+    With ``--build`` it first compiles the ``PTRACERS_num = 2`` binary
+    when a selected case needs it and it is missing or stale
+    (``tendency_term_check.build_if_stale``).
+
     Exit status: 0 if every run met its own expectations, 1 if one did
-    not or none ran, 2 if a binary is missing or a selection does not
-    exist.
+    not or none ran, 2 if a binary is missing or could not be built, or a
+    selection does not exist.
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--case", action="append", default=None,
                         help="run only this case (may be repeated)")
     parser.add_argument("--mpi", type=int, default=None,
                         help="run only this process count (0: serial)")
-    parser.add_argument("--control", choices=("permute", "fracsum"),
+    parser.add_argument("--control",
+                        choices=("permute", "fracsum", "swap", "feed_zero"),
                         action="append", default=None,
                         help="run the named control instead of the plain "
                              "case; the verdict is inverted as that "
-                             "control asks")
+                             "control asks. swap applies to the cases "
+                             "with two tracer variables, feed_zero to "
+                             "the cases with an unfed ptracer")
+    parser.add_argument("--build", action="store_true",
+                        help="compile the PTRACERS_num = 2 binary the "
+                             "selected cases need, when missing or older "
+                             "than its sources; without it a missing "
+                             "binary is reported and the run exits 2")
     parser.add_argument("--keep", action="store_true",
                         help="keep the scratch input and run directories")
     parser.add_argument("--timeout", type=int, default=1800)
@@ -1783,10 +2334,16 @@ def main(argv=None):
             (args.mpi,) if args.mpi in case["mpi"] else ())
         for nproc in counts:
             for control in (args.control or [None]):
-                runs.append((case, nproc, control))
+                if control_applies(case, control):
+                    runs.append((case, nproc, control))
     if not runs:
-        print(f"no case runs on {args.mpi} process(es)")
+        print(f"no selected case runs on {args.mpi} process(es) with "
+              f"control(s) {args.control}")
         return 2
+    if args.build and any(c.get("build") == PTR2_BUILD for c, _, _ in runs):
+        if not report_build(build_if_stale(PTR2_BUILD, write_ptr2_code,
+                                           timeout=args.timeout)):
+            return 2
 
     results, missing = [], False
     for case, nproc, control in runs:
@@ -1823,7 +2380,8 @@ def main(argv=None):
         one, two = mine[0].get("measure") or {}, theirs[0].get("measure") or {}
         a, b = one.get("worst") or {}, two.get("worst") or {}
         same = {k: (a[k][0], b[k][0])
-                for k in CLOSURES if k in a and k in b}
+                for k in closures_of(case) if k in a and k in b}
+        state_free = [k for k in same if k not in STATE_READING]
         comparison = {"against": case["same_as"], "residuals": same,
                       "state_signature": [one.get("state_signature"),
                                           two.get("state_signature")]}
@@ -1835,8 +2393,7 @@ def main(argv=None):
             continue
         # The three closures that read no model state have to be bitwise
         # identical; the heat one reads theta and need only close.
-        differ = [k for k in STATE_FREE
-                  if k in same and same[k][0] != same[k][1]]
+        differ = [k for k in state_free if same[k][0] != same[k][1]]
         if differ:
             mine[0]["problems"].append(
                 f"the {', '.join(differ)} residual(s) of {case['name']} "
@@ -1857,7 +2414,7 @@ def main(argv=None):
                 f"are identical): the tracForcingOutAB setting then had no "
                 f"effect and the comparison measures nothing")
         print(f"AB   {case['name']} against {case['same_as']}: "
-              + (f"{', '.join(STATE_FREE)} identical"
+              + (f"{', '.join(state_free)} identical"
                  if not differ else f"DIFFER on {differ}")
               + "; " + ", ".join(f"{k} {x:.3e}/{y:.3e}" for k, (x, y)
                                  in same.items())
