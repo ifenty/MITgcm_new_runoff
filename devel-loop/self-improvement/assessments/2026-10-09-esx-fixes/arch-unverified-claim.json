@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "status": "PASS",
+  "source_sha256": {
+    "tools/esx/brief.py": "7d63c72105a6e917d105eb2555e7d91025f408e01377d24fa0da56176078fe85"
+  },
+  "stable": true,
+  "checks": [
+    {
+      "command": [
+        "/home/ifenty/miniforge3/envs/ecco/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/esx/test_framework_fixes.py",
+        "-k",
+        "citation"
+      ],
+      "executed": true,
+      "exit": 0,
+      "output": {
+        "path": "devel-loop/self-improvement/assessments/2026-10-09-esx-fixes/arch-unverified-claim.txt",
+        "sha256": "475cd4e98cd104ddd67ad872c4fd25082ad0713bd1e566a1e979d924c5d1790f"
+      }
+    }
+  ]
+}

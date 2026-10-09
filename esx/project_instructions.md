@@ -32,6 +32,15 @@ commands, working directory, toolchain and logs. Label reused evidence. A succes
 smoke run supports only its exercised configurations. Scientific qualification
 requires the project's stated numerical, observational or statistical acceptance.
 
+Arch's claims become requirements, so check them before they enter a brief, an
+orientation `--use` or an acceptance paragraph. Relay an agent's measurement with
+its attribution; verify its inference first. Never state a command's result
+without having run it, and read the exit code directly, not through a pipe.
+Distrust an exhaustive claim ("only", "nothing else", "precisely because") and
+look for its refutation before repeating it. Launch a run that must outlive a turn
+with the Bash tool's `run_in_background`, which re-invokes the session on exit; a
+detached `Popen` is invisible to the session and stalls the loop.
+
 Preserve unrelated changes. Existing authorization remains applicable until
 revoked or superseded. Commit, publish, deploy, spend paid compute, access restricted
 data or send external messages only within the owner's applicable authorization.

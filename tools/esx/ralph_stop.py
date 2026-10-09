@@ -166,6 +166,14 @@ VERIFICATION_SCRIPTS = ('tools/esx/final_verification.py', 'tools/esx/verify.py'
 #: treated as abandoned so a wedged run cannot stall the loop forever; the
 #: per-command timeout is an hour and a full scientific pass is about two.
 VERIFICATION_STALE_SECONDS = 5 * 3600
+
+#: One foreground wait on an untracked verification run, kept under the Bash
+#: tool's 600 s ceiling so the wait command itself never times out the tool.
+VERIFY_WAIT_SECONDS = 590
+
+#: Enough waits to outlast VERIFICATION_STALE_SECONDS, after which the run is
+#: treated as abandoned anyway; the cap is what keeps the loop finite.
+MAX_VERIFY_WAITS = VERIFICATION_STALE_SECONDS // VERIFY_WAIT_SECONDS + 1
 # No real iteration of work ends in under about 20 s, so this many loop advances
 # inside the window means something other than the coordinator is driving the loop.
 MAX_ADVANCES = 6
@@ -384,8 +392,69 @@ def verification_running(root):
         except (OSError, ValueError, IndexError):
             continue
         if 0 <= age < VERIFICATION_STALE_SECONDS:
-            running.append({'script': script, 'minutes': int(age // 60)})
+            running.append({'script': script, 'minutes': int(age // 60), 'pid': int(entry.name)})
     return running
+
+
+def parent_pid(pid):
+    """The parent of ``pid`` from ``/proc``, or None once it is gone."""
+    try:
+        stat = Path(f'/proc/{pid}/stat').read_text()
+        # The command name is parenthesised and may itself contain spaces or
+        # parentheses, so split after the LAST ')'.
+        return int(stat[stat.rindex(')') + 2:].split()[1])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def session_process(start=None):
+    """The Claude CLI process this hook runs under, or None if none is found.
+
+    A hook is spawned by the CLI, so walking up from this process reaches it.
+    """
+    pid = start or os.getpid()
+    for _ in range(64):
+        try:
+            if Path(f'/proc/{pid}/comm').read_text().strip() == 'claude':
+                return pid
+        except OSError:
+            return None
+        pid = parent_pid(pid)
+        if pid is None or pid <= 1:
+            return None
+    return None
+
+
+def descends_from(pid, ancestor):
+    """Whether ``ancestor`` is ``pid`` or one of its ancestors."""
+    for _ in range(64):
+        if pid == ancestor:
+            return True
+        pid = parent_pid(pid)
+        if pid is None or pid <= 1:
+            return False
+    return False
+
+
+def untracked_runs(running, session=None):
+    """The verification runs this session will NOT be re-invoked for.
+
+    The harness re-invokes a session only for work it launched and tracks: a
+    native subagent, or a Bash-tool ``run_in_background`` command, whose process
+    is a child of the session's own ``claude`` process. A run launched with
+    ``subprocess.Popen(..., start_new_session=True)`` from a launcher that then
+    exits is reparented to PID 1, so it has no ``claude`` ancestor and its end
+    is an event nobody delivers. Measured on 2026-10-09: the detached form had
+    ``ppid=1`` (``systemd``); the ``run_in_background`` form had this session's
+    ``claude`` as its direct parent. Both were session leaders, so the session
+    id does not tell them apart -- only the ancestry does.
+
+    When the session process cannot be identified, every run counts as
+    untracked: a needless wait costs a status line, a wrong "tracked" costs
+    hours (TEAM-LOOPHOLD-NO-RELEASE-001).
+    """
+    session = session_process() if session is None else session
+    return [r for r in running if not session or not descends_from(r['pid'], session)]
 
 
 def native_running(root, session_id):
@@ -603,10 +672,50 @@ def _step_locked(root, hook_input):
         # waiting for it must cost nothing, or the mandatory final suite spends
         # the budget faster than the issues it qualifies
         # (TEAM-LOOPHOLD-ARCH-BACKGROUND-WORK-001).
+        #
+        # But "cost nothing" must not become "resume never". Allowing the stop is
+        # only safe when something will re-invoke this session when the run ends,
+        # and the harness does that only for a run it tracks. This branch used to
+        # allow the stop for every run and promise "the loop resumes when it
+        # finishes"; for a detached run nothing resumed it, and all three final
+        # verifications in the exit log were followed by a dead gap -- 21 h, 7 h 52
+        # and, on RUNOFF-042, about 8 h 44 min after the suite had already passed
+        # (TEAM-LOOPHOLD-NO-RELEASE-001). The fix that introduced this hold was
+        # validated twice, both times for holding and never for releasing.
         what = ', '.join(f"{r['script']} ({r['minutes']} min)" for r in verifying)
-        log(root, 'HOLD', n, f'verification running: {what}; stop allowed, iteration not advanced')
-        return {'systemMessage': f'ESX loop holding at iteration {n}/{limit}: {what} still running. '
-                                 'The loop resumes when it finishes; nothing is wrong.'}
+        untracked = untracked_runs(verifying)
+        if not untracked:
+            log(root, 'HOLD', n, f'verification running: {what}; tracked by this session; '
+                                 'stop allowed, iteration not advanced')
+            return {'systemMessage': f'ESX loop holding at iteration {n}/{limit}: {what} still running. '
+                                     'It was launched by this session, which is re-invoked when it finishes.'}
+        raw = parsed['header_fields'].get('verify_waits', '0')
+        waits = int(raw) if raw.isdigit() else MAX_VERIFY_WAITS
+        pid = untracked[0]['pid']
+        if waits < MAX_VERIFY_WAITS:
+            # Nothing will wake this session when the run ends, so it has to stay in
+            # its turn, exactly as for a retained CLI turn below. The block renders as
+            # a Stop hook error; that is the price of not stalling, and the reason
+            # says how to avoid paying it next time.
+            header = set_field(parsed['header'], 'verify_waits', waits + 1)
+            from project import atomic_bytes
+            atomic_bytes(state, ('---\n' + header + '\n---\n' + parsed['prompt']).encode())
+            log(root, 'WAIT', n, f'untracked verification running: {what}; iteration not advanced '
+                                 f'({waits + 1}/{MAX_VERIFY_WAITS})')
+            return {'decision': 'block', 'reason': (
+                'ESX status, not an error: a verification run is executing detached from this session '
+                f'(pid {pid}), so nothing will re-invoke the session when it finishes. Wait for it with '
+                f'`timeout {VERIFY_WAIT_SECONDS} tail --pid={pid} -f /dev/null` as a foreground command with a '
+                '600000 ms tool timeout, repeating while it runs, then continue with tools/esx/loop_gate.py '
+                '--next. Launch long runs with the Bash tool and run_in_background instead, which survives the '
+                'turn and re-invokes the session on exit, so no wait is needed.'),
+                'systemMessage': f'ESX iteration {n} held: detached verification running '
+                                 f'({waits + 1}/{MAX_VERIFY_WAITS}).'}
+        log(root, 'HOLD', n, f'untracked verification running: {what}; wait cap reached; stop allowed; '
+                             'the loop will NOT resume on its own')
+        return {'systemMessage': f'ESX loop holding at iteration {n}/{limit}: {what} is running detached from '
+                                 'this session, which cannot be notified when it ends. The loop will NOT resume on '
+                                 'its own; send any message to wake it.'}
     raw_waits = parsed['header_fields'].get('dispatch_waits', '0')
     waits = int(raw_waits) if raw_waits.isdigit() else MAX_DISPATCH_WAITS
     if waits < MAX_DISPATCH_WAITS and retained_in_flight(root):
@@ -641,6 +750,7 @@ def _step_locked(root, hook_input):
     header = re.sub(r'(?m)^[ \t]*iteration[ \t]*:[ \t]*[^\r\n]*$',
                     'iteration: ' + str(n + 1), parsed['header'])
     header = set_field(header, 'dispatch_waits', None)
+    header = set_field(header, 'verify_waits', None)
     for key in ('paused', 'pause_reason', 'paused_until', 'pause_source'):
         header = set_field(header, key, None)
     header = set_field(header, 'advance_times',

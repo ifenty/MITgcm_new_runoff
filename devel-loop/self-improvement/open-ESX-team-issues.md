@@ -930,15 +930,16 @@ externally terminated runs recorded as candidate failures go to zero. The
 qualitative invariant: a verification record distinguishes "the candidate
 failed" from "the run did not finish".
 
-## 🔴 PROPOSED: the coordinator's unverified claims enter the record as requirements
+## 🟡 IMPLEMENTED: the coordinator's unverified claims enter the record as requirements
 
 **Date Identified**: 2026-10-08  13:30
-**Status**: Proposed
+**Status**: Implemented — awaiting publication/effectiveness evidence
 **UUID**: TEAM-ARCH-UNVERIFIED-CLAIM-001
 **Category**: coordinator_unverified_claims
 **Severity**: High
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
 **Anchors**: tools/esx/brief.py:build; tools/esx/doc_contract.py:navigate
+**Implementation-Reference**: procedure in esx/project_instructions.md (relay measurements with attribution, verify inferences, never state an unrun result, distrust exhaustive claims); mechanical edge tools/esx/brief.py:citation_errors refuses a design `path:line` that does not resolve. Guard tests/esx/test_framework_fixes.py::test_design_citation_that_resolves_nowhere_is_refused. The mechanical part would have caught none of the twelve recorded instances, as this entry says; effectiveness is the next-three-issues count in its acceptance criteria
 
 ### Issue
 
@@ -1031,15 +1032,16 @@ qualitative invariant: everything in a brief is either measured by the
 coordinator, or attributed to the agent that measured it, and nothing is stated
 as exhaustive without a check.
 
-## 🔴 PROPOSED: a footer-less consultation turn is re-flagged forever, on every later iteration
+## 🟡 IMPLEMENTED: a footer-less consultation turn is re-flagged forever, on every later iteration
 
 **Date Identified**: 2026-10-08  14:05
-**Status**: Proposed
+**Status**: Implemented — awaiting publication/effectiveness evidence
 **UUID**: TEAM-GATE-CONSULTATION-NOTICE-PERMANENT-001
 **Category**: workflow_integrity
 **Severity**: Medium
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
 **Anchors**: tools/esx/loop_gate.py:defective_completions; tools/esx/agent_runtime.py:stop_record
+**Implementation-Reference**: tools/esx/loop_gate.py:defective_completions consults the agent's whole log for a footer-less record that carries no issue or iteration; guards ::test_issueless_consultation_turn_is_not_reflagged_forever and ::test_issueless_turn_whose_agent_never_reported_is_still_flagged. Live: the notice for a9005fb2 no longer appears on the real log
 
 ### Issue
 
@@ -1140,15 +1142,16 @@ An uncaptured-completion notice means something again: it appears only when an
 agent's work is genuinely unavailable to closeout, so reading it is worthwhile.
 Measured as zero standing notices across iterations with no defective turn.
 
-## 🔴 PROPOSED: the verification hold promises a resume that nothing delivers, so every final verification stalls the loop
+## 🟡 IMPLEMENTED: the verification hold promises a resume that nothing delivers, so every final verification stalls the loop
 
 **Date Identified**: 2026-10-09  02:10
-**Status**: Proposed
+**Status**: Implemented — awaiting publication/effectiveness evidence
 **UUID**: TEAM-LOOPHOLD-NO-RELEASE-001
 **Category**: loop_liveness
 **Severity**: High
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
 **Anchors**: tools/esx/ralph_stop.py:_step_locked; tools/esx/ralph_stop.py:verification_running
+**Implementation-Reference**: tools/esx/ralph_stop.py:untracked_runs classifies a run by whether this session's claude process is its ancestor (measured: detached Popen has ppid 1, run_in_background has claude as parent; both are session leaders, so the session id cannot tell them apart); an untracked run gets a bounded foreground `tail --pid` wait instead of a false "resumes when it finishes"; launch rule in esx/project_instructions.md. Guard ::test_verification_hold_releases_and_does_not_stall exercises _step_locked end to end, including the RELEASE, and a behavioural mutant of the old decision fails it. Effectiveness pending the next real final verification
 
 ### Issue
 
@@ -1236,15 +1239,16 @@ as the hold. And the hold message is shown to be true in the case it describes.
 Zero idle time between a final verification finishing and the loop resuming.
 Measured as the gap after the last verification HOLD in the exit log.
 
-## 🔴 PROPOSED: --prepare accepts a workflow kind its own oriented targets contradict, and the gate says so only at closeout
+## 🟡 IMPLEMENTED: --prepare accepts a workflow kind its own oriented targets contradict, and the gate says so only at closeout
 
 **Date Identified**: 2026-10-09  02:20
-**Status**: Proposed
+**Status**: Implemented — awaiting publication/effectiveness evidence
 **UUID**: TEAM-PREPARE-KIND-UNCHECKED-001
 **Category**: workflow_misclassification
 **Severity**: Medium
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
 **Anchors**: tools/esx/loop_gate.py:prepare; tools/esx/workflow_policy.py:default_workflow
+**Implementation-Reference**: tools/esx/loop_gate.py:kind_contradiction, called from Gate.prepare before navigate; guard ::test_prepare_refuses_a_kind_its_owning_target_contradicts, which refuses the RUNOFF-042 shape and accepts a documentation issue orienting on a test and ESX framework work
 
 ### Issue
 

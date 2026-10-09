@@ -921,9 +921,10 @@ def test_verification_run_holds_the_iteration(tmp_path):
                 break
             time.sleep(0.1)
         assert [r['script'] for r in found] == ['tools/esx/final_verification.py']
+        assert found[0]['pid'] == proc.pid
         # The same script running in another checkout is not this loop's work.
-        assert ralph_stop.verification_running(other) == [
-            {'script': 'tools/esx/final_verification.py', 'minutes': 0}]
+        assert [(r['script'], r['minutes'], r['pid']) for r in ralph_stop.verification_running(other)] == [
+            ('tools/esx/final_verification.py', 0, foreign.pid)]
         assert len(ralph_stop.verification_running(tmp_path)) == 1
     finally:
         proc.kill(); foreign.kill()
@@ -1064,3 +1065,192 @@ def test_stale_orientation_targets_are_named_not_swallowed(tmp_path):
     source = (ROOT / 'tools/esx/agent_runtime.py').read_text()
     assert 'stale_orientation_targets' in source, 'the record must carry the moved targets'
     assert source.index('stale_orientation = []') < source.index('stale_orientation = moved')
+
+
+def _loop_state(root, iteration=3):
+    state = root / '.claude/esx-loop.local.md'
+    state.parent.mkdir(parents=True, exist_ok=True)
+    state.write_text(f'---\nactive: true\niteration: {iteration}\nmax_iterations: 20\n'
+                     'completion_promise: null\n---\ncontinue the loop\n')
+    return state
+
+
+def _verification_script(root, seconds):
+    script = root / 'tools/esx/final_verification.py'
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text(f'import time\ntime.sleep({seconds})\n')
+    return script
+
+
+def _detached(root, script):
+    """Launch `script` exactly as RUNOFF-042's final verification was launched.
+
+    A launcher Popens it with start_new_session=True and exits at once, so the
+    run is reparented to PID 1 and has no ancestor in this process tree.
+    """
+    marker = root / 'detached.pid'
+    launcher = ('import subprocess, sys\n'
+                f'p = subprocess.Popen([sys.executable, {str(script)!r}], cwd={str(root)!r},\n'
+                '                     start_new_session=True, stdin=subprocess.DEVNULL,\n'
+                '                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n'
+                f'open({str(marker)!r}, "w").write(str(p.pid))\n')
+    subprocess.run([sys.executable, '-c', launcher], check=True)
+    return int(marker.read_text())
+
+
+def _wait_for(predicate, timeout=5.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        value = predicate()
+        if value:
+            return value
+        time.sleep(0.1)
+    return predicate()
+
+
+def test_verification_hold_releases_and_does_not_stall(tmp_path, monkeypatch):
+    """A detached verification must not let the loop stop on a promise nobody keeps.
+
+    TEAM-LOOPHOLD-NO-RELEASE-001. The hold allowed the stop and said "the loop
+    resumes when it finishes; nothing is wrong", but the harness re-invokes a
+    session only for work it tracks. RUNOFF-042's suite was a detached Popen:
+    it passed at 17:06:29Z and the loop then sat idle about 8 h 44 min until the
+    owner asked whether Arch was in the loop. All three verification holds in the
+    exit log were followed by a dead gap. The fix this replaces was validated
+    twice, both times for HOLDING and never for RELEASING -- so this test checks
+    the release as well.
+    """
+    import ralph_stop
+    # The pytest process stands in for the session's `claude` process, so the
+    # test does not depend on what it happens to be running under.
+    monkeypatch.setattr(ralph_stop, 'session_process', lambda start=None: os.getpid())
+    state = _loop_state(tmp_path)
+    script = _verification_script(tmp_path, 30)
+
+    # 1. Untracked: the loop must NOT be allowed to stop, and the wait it is told
+    #    to run must name the real process.
+    pid = _detached(tmp_path, script)
+    try:
+        assert _wait_for(lambda: ralph_stop.verification_running(tmp_path))
+        assert ralph_stop.parent_pid(pid) == 1, 'the launch must reproduce the detached form'
+        assert [r['pid'] for r in ralph_stop.untracked_runs(ralph_stop.verification_running(tmp_path))] == [pid]
+        result = ralph_stop._step_locked(tmp_path, {})
+        assert result.get('decision') == 'block', result
+        assert f'tail --pid={pid}' in result['reason']
+        assert 'run_in_background' in result['reason']
+        assert 'nothing is wrong' not in json.dumps(result), 'the false promise is back'
+        assert 'verify_waits: 1' in state.read_text()
+        assert 'iteration: 3' in state.read_text(), 'a wait must not spend the iteration'
+    finally:
+        try:
+            os.kill(pid, 9)
+        except ProcessLookupError:
+            pass
+
+    # 2. Released: once the run is gone the loop must ADVANCE and clear the
+    #    counter -- the half that was never tested.
+    assert _wait_for(lambda: not ralph_stop.verification_running(tmp_path))
+    ralph_stop._step_locked(tmp_path, {})
+    text = state.read_text()
+    assert 'iteration: 4' in text, text
+    assert 'verify_waits' not in text
+
+    # 3. Tracked: a run launched under the session is notified on exit, so the
+    #    quiet stop is correct and its message is true.
+    child = subprocess.Popen([sys.executable, str(script)], cwd=tmp_path)
+    try:
+        assert _wait_for(lambda: ralph_stop.verification_running(tmp_path))
+        assert ralph_stop.untracked_runs(ralph_stop.verification_running(tmp_path)) == []
+        result = ralph_stop._step_locked(tmp_path, {})
+        assert result.get('decision') != 'block', result
+        assert 're-invoked when it finishes' in result['systemMessage']
+        assert 'iteration: 4' in state.read_text()
+    finally:
+        child.kill(); child.wait()
+
+
+def test_unidentified_session_counts_as_untracked():
+    """Fail safe: a wrong 'tracked' costs hours, a needless wait a status line."""
+    import ralph_stop
+    run = [{'script': 'tools/esx/final_verification.py', 'minutes': 0, 'pid': os.getpid()}]
+    assert ralph_stop.untracked_runs(run, session=0) == run
+    assert ralph_stop.untracked_runs(run, session=os.getpid()) == []
+
+
+def test_issueless_consultation_turn_is_not_reflagged_forever(tmp_path):
+    """A footer-less turn belonging to no iteration clears once its agent reports again.
+
+    TEAM-GATE-CONSULTATION-NOTICE-PERMANENT-001. Such a record carries no issue,
+    so the filter admitted it to EVERY iteration, while its agent's superseding
+    completions named their own issue and were filtered out. A closed RUNOFF-030
+    reviewer's consultation turn (its report ends "no footer, per your
+    instruction") was therefore re-flagged on RUNOFF-040, RUNOFF-016 and
+    RUNOFF-042, with a remedy that would have attached it to an unrelated issue.
+    """
+    consultation = {'agent_type': 'richard', 'agent_id': 'old', 'status': 'incomplete',
+                    'issue_id': None, 'iteration_timestamp': None, 'correction_round': 0,
+                    'error': 'missing, malformed, or mismatched structured footer'}
+    closed = lambda rnd: {'agent_type': 'richard', 'agent_id': 'old', 'status': 'completed',
+                          'issue_id': 'CLOSED-1', 'correction_round': rnd,
+                          'footer': {'issue_id': 'CLOSED-1', 'correction_round': rnd}}
+    gate = _gate_with_log(tmp_path, [closed(1), consultation, closed(2)])
+    assert gate.defective_completions(START) == []
+
+
+def test_issueless_turn_whose_agent_never_reported_is_still_flagged(tmp_path):
+    """The alarm and the suppression are one predicate; a fix that silences one silences both."""
+    lost = {'agent_type': 'richard', 'agent_id': 'gone', 'status': 'incomplete',
+            'issue_id': None, 'iteration_timestamp': None, 'correction_round': 0,
+            'error': 'missing, malformed, or mismatched structured footer'}
+    earlier = {'agent_type': 'richard', 'agent_id': 'gone', 'status': 'completed',
+               'issue_id': 'CLOSED-1', 'correction_round': 1,
+               'footer': {'issue_id': 'CLOSED-1', 'correction_round': 1}}
+    # A completion BEFORE the lost turn proves nothing about the lost turn.
+    gate = _gate_with_log(tmp_path, [earlier, lost])
+    assert gate.defective_completions(START) == [
+        ('richard', 'gone', 0, 'missing, malformed, or mismatched structured footer')]
+
+
+def test_prepare_refuses_a_kind_its_owning_target_contradicts():
+    """The kind is checked when it is chosen, not at closeout.
+
+    TEAM-PREPARE-KIND-UNCHECKED-001. RUNOFF-042 was prepared as harness_change
+    with every target under tests/, which is in the scientific inventory, and
+    the gate said so only at --check-done, after two rounds and four reviews.
+    """
+    import loop_gate
+    from project import config
+    cfg = config(ROOT)
+    sweep = ['tests/footprint_claim_sweep.py::tracked', 'tests/footprint_claim_sweep.py::sweep']
+    assert loop_gate.kind_contradiction(ROOT, cfg, 'harness_change', sweep), 'the RUNOFF-042 shape'
+    assert loop_gate.kind_contradiction(ROOT, cfg, 'scientific_change', sweep) is None
+    # No false refusals: a document owner may orient on a test as its consumer,
+    # and framework work lives outside the scientific inventory.
+    assert loop_gate.kind_contradiction(
+        ROOT, cfg, 'documentation', ['docs/code_map.md::<module>', 'tests/rnf/refusal_check.py::cases']) is None
+    assert loop_gate.kind_contradiction(
+        ROOT, cfg, 'harness_change',
+        ['tools/esx/ralph_stop.py::_step_locked', 'tests/esx/test_framework_fixes.py::<module>']) is None
+
+
+def test_design_citation_that_resolves_nowhere_is_refused():
+    """A citation in the coordinator's design must point at something.
+
+    The mechanical edge of TEAM-ARCH-UNVERIFIED-CLAIM-001, which says plainly
+    that it would have caught none of that issue's twelve instances; it is the
+    one shape of an unchecked claim a program can see. Measured before it was
+    made a refusal: 43 citations across all 16 existing designs, 0 refused.
+    """
+    import brief
+    real = sum(1 for _ in (ROOT / 'tests/rnf/refusal_check.py').open('rb'))
+    assert brief.citation_errors(ROOT, f'see `tests/rnf/refusal_check.py:{real}`') == []
+    assert brief.citation_errors(ROOT, f'see tests/rnf/refusal_check.py:{real + 1}') == [
+        f'tests/rnf/refusal_check.py:{real + 1}: the file has {real} lines']
+    assert brief.citation_errors(ROOT, 'see tests/rnf/refusal_check.py:10-999999')
+    assert brief.citation_errors(ROOT, 'see tests/no_such/file.py:3') == ['tests/no_such/file.py:3: no such file']
+    # Model citations are written relative to MITgcm/, and a bare filename is
+    # ambiguous between trees, so neither may be refused.
+    assert brief.citation_errors(ROOT, 'pkg/rnf/RNF.h:1 and update_surf_dr.F:999999') == []
+    # And it is wired into build(), not merely defined.
+    import inspect
+    assert 'citation_errors(root, design)' in inspect.getsource(brief.build)

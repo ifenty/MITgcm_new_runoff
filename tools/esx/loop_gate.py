@@ -49,6 +49,31 @@ def announcement(record):
             require(communication.get('receipt'), 'successful communication needs its returned receipt/link')
 
 
+def kind_contradiction(root, cfg, kind, targets):
+    """Why `kind` cannot be right for work owned by ``targets[0]``, or None.
+
+    Closeout refuses a non-scientific kind once the scientific signature has
+    moved, and an owning target inside that inventory makes the move certain, so
+    the contradiction is knowable at --prepare. RUNOFF-042 was prepared as
+    harness_change with all three targets under tests/, and the gate said so only
+    at --check-done, after two implementation rounds and four reviews
+    (TEAM-PREPARE-KIND-UNCHECKED-001).
+
+    Only the OWNING target -- the first, by the convention --prepare already
+    states -- is held to this: a documentation issue may orient on a test as its
+    consumer without editing it, and refusing that would be a false refusal.
+    """
+    if kind == 'scientific_change' or not targets:
+        return None
+    from project import inventory_paths
+    owning = targets[0].split('::', 1)[0]
+    if owning not in set(inventory_paths(Path(root), cfg, True)):
+        return None
+    return (f'the owning target {owning} is in the scientific inventory, so changing it requires --kind '
+            f'scientific_change, not {kind}; closeout would refuse {kind} once the scientific signature moves. '
+            'Name the owning symbol first if it is a different file')
+
+
 class Gate:
     def __init__(self, root, ledger_overrides=None):
         self.ledger_overrides = ledger_overrides
@@ -65,6 +90,8 @@ class Gate:
         opened, _, _ = validate_records(self.root, self.ledger_overrides)
         require(issue in opened and opened[issue]['state'] != 'blocked', 'select an actionable open issue')
         require(opened[issue]['anchors'], 'file source/test anchors in the issue before preparing work')
+        contradiction = kind_contradiction(self.root, self.cfg, kind, targets)
+        require(contradiction is None, contradiction or '')
         hist = json_lines(local(self.root, f'{STATE}/loop_history.jsonl'))
         state = local(self.root, f'{STATE}/issue-start.json')
         if state.exists():
@@ -432,9 +459,29 @@ class Gate:
           the agent demonstrably reported, so nothing is uncaptured. A turn that
           never reported again is still flagged, which is the case the notice
           exists for.
+
+        * **A footer-less turn that belongs to no iteration.** Such a record
+          carries neither an issue nor an iteration, so the filter below admits
+          it to EVERY iteration -- while its agent's superseding completions
+          name their own issue and are filtered out of every iteration but that
+          one. The suppression above therefore held for exactly one iteration
+          and then inverted: a closed RUNOFF-030 reviewer's consultation turn
+          (whose report ends "no footer, per your instruction") was re-flagged
+          on RUNOFF-040, RUNOFF-016 and RUNOFF-042, with a remedy that would
+          have attached that reviewer to an issue it never reviewed
+          (TEAM-GATE-CONSULTATION-NOTICE-PERMANENT-001). For such a record the
+          agent's whole log is consulted instead: a LATER completion on any
+          issue proves it reported again. One that never did is still flagged.
         """
+        dispatches = json_lines(local(self.root, f'{STATE}/dispatch_log.jsonl'))
+        later_completion = set()
+        for position in range(len(dispatches) - 1, -1, -1):
+            record = dispatches[position]
+            record['_reported_later'] = (record.get('agent_type'), record.get('agent_id')) in later_completion
+            if record.get('status') == 'completed':
+                later_completion.add((record.get('agent_type'), record.get('agent_id')))
         records = []
-        for record in json_lines(local(self.root, f'{STATE}/dispatch_log.jsonl')):
+        for record in dispatches:
             if record.get('agent_type') not in ROLES or not record.get('agent_id'):
                 continue
             footer = record.get('footer') if isinstance(record.get('footer'), dict) else {}
@@ -464,6 +511,9 @@ class Gate:
             if agent + (round_number,) in repaired:
                 continue
             if not isinstance(record.get('footer'), dict) and agent in reported:
+                continue
+            if (not isinstance(record.get('footer'), dict) and record.get('issue_id') is None
+                    and record.get('iteration_timestamp') is None and record['_reported_later']):
                 continue
             broken[agent + (round_number,)] = (record['agent_type'], record['agent_id'], round_number,
                                                record.get('error') or record['status'])

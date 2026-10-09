@@ -254,6 +254,44 @@ def interface_errors(root, text):
     return sorted(set(errors))
 
 
+# A `dir/file.ext:LINE` or `dir/file.ext:LINE-LINE` citation. A directory part is
+# required: a bare `file.F:57` is ambiguous between trees, and a false refusal is
+# worse than a miss.
+CITATION_PATTERN = re.compile(r'((?:[\w.-]+/)+[\w.-]+\.(?:py|F|h|md|rst|json|tsv|sh|txt)):(\d+)(?:-(\d+))?\b')
+
+
+def citation_errors(root, design):
+    """Every `path:line` in the coordinator's design that does not resolve.
+
+    Checked in the DESIGN only, which is the text Arch writes and the one place
+    a citation becomes a requirement; the packet quotes agent footers whose
+    references are historical by nature. A path is tried at the project root and
+    under ``MITgcm/``, since model citations are written relative to that tree.
+
+    This is the mechanical edge of TEAM-ARCH-UNVERIFIED-CLAIM-001, and it is
+    narrow on purpose: of the twelve instances that issue records, none was a
+    citation that failed to resolve -- they were inferences relayed as
+    measurements, results asserted without being run, and exhaustive claims. A
+    citation that points nowhere is the one shape of an unchecked claim a
+    program can see, so it is refused here; the rest is procedure.
+    """
+    errors = []
+    for path, first, last in CITATION_PATTERN.findall(design or ''):
+        candidates = [Path(root) / path, Path(root) / 'MITgcm' / path]
+        target = next((c for c in candidates if c.is_file()), None)
+        if target is None:
+            errors.append(f'{path}:{first}: no such file')
+            continue
+        try:
+            length = sum(1 for _ in target.open('rb'))
+        except OSError:
+            continue
+        line = int(last or first)
+        if line > length:
+            errors.append(f'{path}:{first}{"-" + last if last else ""}: the file has {length} lines')
+    return sorted(set(errors))
+
+
 def build(root, role, issue, design, question=None, packet=None, correction_round=0, sweep_symbols=(),
           sweep_figures=()):
     start = json_file(root, STATE + '/issue-start.json')
@@ -320,6 +358,10 @@ def build(root, role, issue, design, question=None, packet=None, correction_roun
     # (TEAM-BRIEF-UNVALIDATED-INTERFACE-001).
     problems = interface_errors(root, text)
     require(not problems, 'brief names ESX commands that do not exist: ' + '; '.join(problems))
+    # A design citation that resolves nowhere becomes a requirement pointing at
+    # nothing (TEAM-ARCH-UNVERIFIED-CLAIM-001).
+    dead = citation_errors(root, design)
+    require(not dead, 'the design cites locations that do not exist: ' + '; '.join(dead))
     return text
 
 
