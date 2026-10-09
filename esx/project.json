@@ -21,6 +21,10 @@
   "test_paths": [
     "tests"
   ],
+  "framework_test_paths": [
+    "tests/esx",
+    "tests/footprint_claim_sweep.py"
+  ],
   "configuration_paths": [
     "MITgcm/pkg/rnf",
     "MITgcm/verification/global_ocean.cs32x15/code",

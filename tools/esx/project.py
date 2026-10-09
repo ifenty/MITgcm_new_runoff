@@ -86,6 +86,28 @@ def config(root, ready=True):
             'archive_paths must be a list of project paths')
     for name in cfg.get('archive_paths', []):
         local(root, name)
+    # Tests of the framework and of the project's records rather than of the
+    # science (esx-fix.md F1). They stay in the acceptance inventory and run in
+    # `structural`, but leave the scientific execution identity, so an ESX-only
+    # regression edit no longer stales numerical evidence or forces a full
+    # scientific qualification. Absent means the conservative legacy contract:
+    # every test path is scientific.
+    require(isinstance(cfg.get('framework_test_paths', []), list)
+            and all(isinstance(x, str) and x for x in cfg.get('framework_test_paths', [])),
+            'framework_test_paths must be a list of project paths')
+    for name in cfg.get('framework_test_paths', []):
+        local(root, name)
+        require(any(name == t or name.startswith(t.rstrip('/') + '/') for t in cfg['test_paths']),
+                f'framework_test_paths entry {name} must lie inside a configured test_paths root')
+        # Every suite but `structural` fingerprints the scientific inventory, so a
+        # framework test that such a suite executes would drop out of that suite's
+        # own fingerprint. Refuse it rather than silently lose a scientific witness.
+        for suite, commands in cfg['verification'].items():
+            if suite == 'structural':
+                continue
+            require(not any(any(a == name or a.startswith(name.rstrip('/') + '/') for a in argv) for argv in commands),
+                    f'framework_test_paths entry {name} is executed by the {suite} suite, so it is a scientific '
+                    'witness; a test that affects both categories belongs in both')
     if ready:
         for key in ('project_id', 'project_name', 'mission'):
             require(isinstance(cfg.get(key), str) and cfg[key].strip(), f'complete esx/project.json: {key}')
@@ -211,6 +233,9 @@ def selected(name, cfg, scientific=False):
     if name == '.claude/worktrees' or name.startswith('.claude/worktrees/'):
         return False
     if any(name == p or name.startswith(p.rstrip('/') + '/') for p in cfg['output_paths']):
+        return False
+    if scientific and any(name == p or name.startswith(p.rstrip('/') + '/')
+                          for p in cfg.get('framework_test_paths', [])):
         return False
     roots = cfg['source_paths'] + cfg['test_paths'] + cfg['configuration_paths']
     roots += ['esx/project.json'] if scientific else FRAMEWORK_PATHS

@@ -1332,22 +1332,71 @@ def test_prepare_refuses_a_kind_its_owning_target_contradicts():
     """The kind is checked when it is chosen, not at closeout.
 
     TEAM-PREPARE-KIND-UNCHECKED-001. RUNOFF-042 was prepared as harness_change
-    with every target under tests/, which is in the scientific inventory, and
-    the gate said so only at --check-done, after two rounds and four reviews.
+    and the gate said so only at --check-done, after two rounds and four reviews.
+    Since esx-fix.md F1 the boundary it enforces is the right one: a scientific
+    owner still requires scientific_change, and an ESX-test-only issue no longer
+    does -- the coupling this check briefly hardened.
     """
     import loop_gate
     from project import config
     cfg = config(ROOT)
-    sweep = ['tests/footprint_claim_sweep.py::tracked', 'tests/footprint_claim_sweep.py::sweep']
-    assert loop_gate.kind_contradiction(ROOT, cfg, 'harness_change', sweep), 'the RUNOFF-042 shape'
-    assert loop_gate.kind_contradiction(ROOT, cfg, 'scientific_change', sweep) is None
-    # No false refusals: a document owner may orient on a test as its consumer,
-    # and framework work lives outside the scientific inventory.
+    oracle = ['tests/rnf/refusal_check.py::cases', 'tests/rnf/refusal_check.py::main']
+    assert loop_gate.kind_contradiction(ROOT, cfg, 'harness_change', oracle), 'a scientific oracle owner'
     assert loop_gate.kind_contradiction(
-        ROOT, cfg, 'documentation', ['docs/code_map.md::<module>', 'tests/rnf/refusal_check.py::cases']) is None
+        ROOT, cfg, 'harness_change', ['MITgcm/pkg/rnf/rnf_summary.F::<module>', 'tests/rnf/refusal_check.py::cases'])
+    assert loop_gate.kind_contradiction(ROOT, cfg, 'scientific_change', oracle) is None
+    # No false refusals: ESX tests and framework code are outside the scientific
+    # identity, and a document owner may orient on a test as its consumer.
     assert loop_gate.kind_contradiction(
         ROOT, cfg, 'harness_change',
-        ['tools/esx/ralph_stop.py::_step_locked', 'tests/esx/test_framework_fixes.py::<module>']) is None
+        ['tests/esx/test_framework_fixes.py::<module>', 'tools/esx/ralph_stop.py::_step_locked']) is None
+    assert loop_gate.kind_contradiction(
+        ROOT, cfg, 'harness_change', ['tests/footprint_claim_sweep.py::tracked', 'docs/code_map.md::<module>']) is None
+    assert loop_gate.kind_contradiction(
+        ROOT, cfg, 'documentation', ['docs/code_map.md::<module>', 'tests/rnf/refusal_check.py::cases']) is None
+
+
+def test_framework_tests_leave_the_scientific_identity_only():
+    """esx-fix.md F1: framework tests are structural, never scientific witnesses.
+
+    The project's tests tree was wholly in scientific scope, ESX regression tests
+    included, so editing one changed the numerical execution identity and forced
+    a full scientific qualification -- RUNOFF-042 paid 6467 s for exactly that.
+    The acceptance side must not move: framework tests are still reviewed and
+    still run in `structural`.
+    """
+    import project
+    cfg = project.config(ROOT)
+    sci = set(project.inventory_paths(ROOT, cfg, True))
+    every = set(project.inventory_paths(ROOT, cfg, False))
+    for path in ('tests/esx/test_framework_fixes.py', 'tests/footprint_claim_sweep.py'):
+        assert path not in sci and path in every, path
+    for path in ('tests/rnf/refusal_check.py', 'tests/mitgcm_oracle.sh', 'tests/runoff/test_convert.py'):
+        assert path in sci and path in every, path
+
+    # Legacy configuration stays conservative until explicitly migrated.
+    legacy = {k: v for k, v in cfg.items() if k != 'framework_test_paths'}
+    assert project.selected('tests/esx/test_framework_fixes.py', legacy, scientific=True)
+    assert not project.selected('tests/esx/test_framework_fixes.py', cfg, scientific=True)
+    assert project.selected('tests/esx/test_framework_fixes.py', cfg, scientific=False)
+
+
+def test_a_scientific_witness_cannot_be_declared_a_framework_test(tmp_path):
+    """A test executed by a scientific-inventory suite must not be moved out of it."""
+    import project
+    shutil.copytree(ROOT / 'esx', tmp_path / 'esx')
+    (tmp_path / 'tests/rnf').mkdir(parents=True)
+    (tmp_path / 'tests/rnf/budget_check.py').write_text('')
+    cfg = json.loads((ROOT / 'esx/project.json').read_text())
+    cfg.update(source_paths=[], configuration_paths=[], mirrored_paths=[], archive_paths=[],
+               test_paths=['tests'], framework_test_paths=['tests/rnf/budget_check.py'])
+    (tmp_path / 'esx/project.json').write_text(json.dumps(cfg))
+    with pytest.raises(ValueError, match='executed by the focused suite'):
+        project.config(tmp_path, ready=False)
+    cfg['framework_test_paths'] = ['docs']
+    (tmp_path / 'esx/project.json').write_text(json.dumps(cfg))
+    with pytest.raises(ValueError, match='inside a configured test_paths root'):
+        project.config(tmp_path, ready=False)
 
 
 def test_design_citation_that_resolves_nowhere_is_refused():

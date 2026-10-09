@@ -59,6 +59,12 @@ def kind_contradiction(root, cfg, kind, targets):
     at --check-done, after two implementation rounds and four reviews
     (TEAM-PREPARE-KIND-UNCHECKED-001).
 
+    The boundary is the scientific inventory, which since esx-fix.md F1 excludes
+    `framework_test_paths`: an ESX-test-only issue is a harness change. (Under F1
+    RUNOFF-042's own owning target, the footprint sweep, is such a test; the
+    issue still had to be scientific because it also edited a scientific oracle
+    and `esx/project.json`, which closeout measures from the changed files.)
+
     Only the OWNING target -- the first, by the convention --prepare already
     states -- is held to this: a documentation issue may orient on a test as its
     consumer without editing it, and refusing that would be a false refusal.
