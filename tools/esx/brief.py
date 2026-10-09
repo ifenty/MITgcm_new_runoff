@@ -254,6 +254,10 @@ def interface_errors(root, text):
     return sorted(set(errors))
 
 
+#: Placeholder for the quoted review packet while the instructions are checked.
+PACKET_SLOT = '\x00ESX-PACKET\x00'
+
+
 # A `dir/file.ext:LINE` or `dir/file.ext:LINE-LINE` citation. A directory part is
 # required: a bare `file.F:57` is ambiguous between trees, and a false refusal is
 # worse than a miss.
@@ -273,7 +277,9 @@ def citation_errors(root, design):
     citation that failed to resolve -- they were inferences relayed as
     measurements, results asserted without being run, and exhaustive claims. A
     citation that points nowhere is the one shape of an unchecked claim a
-    program can see, so it is refused here; the rest is procedure.
+    program can see. It is reported to Arch as a WARNING, never a refusal:
+    esx-fix.md E -- unknown free-text claims need review, not a machine refusal
+    that could be false.
     """
     errors = []
     for path, first, last in CITATION_PATTERN.findall(design or ''):
@@ -343,7 +349,7 @@ def build(root, role, issue, design, question=None, packet=None, correction_roun
         'Your runtime agent id is the agent_id in your dispatcher assignment (retained session) or the id stated '
         'in your session-start context (native subagent); `' + shlex.join([sys.executable, 'tools/esx/hooks.py',
         'whoami', '--role', role]) + '` prints it. Evidence sealed under any other owner is refused at closeout. '
-        'Richard confirms the exact sealed documentation reference in this packet: ' + json.dumps(packet),
+        'Richard confirms the exact sealed documentation reference in this packet: ' + PACKET_SLOT,
         *([current_seal(packet)] if role == 'richard' else []),
         '# Report\nKeep actual identity, evidence and limitations. Required values cannot be invented.\n'
         'The "agent" field must be exactly ' + json.dumps(role) + ': it is compared against your registered '
@@ -355,14 +361,18 @@ def build(root, role, issue, design, question=None, packet=None, correction_roun
         + json.dumps(footer, indent=2) + '\n```']) + '\n'
     # A brief that names a flag the tool does not accept is a defect in the
     # brief, not in the agent that receives it
-    # (TEAM-BRIEF-UNVALIDATED-INTERFACE-001).
-    problems = interface_errors(root, text)
+    # (TEAM-BRIEF-UNVALIDATED-INTERFACE-001). Only the INSTRUCTIONS are checked:
+    # the embedded packet and the current-seal section quote earlier agents'
+    # footers, whose commands and prose are history, not orders. Checking them
+    # is what produced the false refusals the quote terminator in
+    # COMMAND_PATTERN was added to suppress; esx-fix.md E asks for the
+    # separation instead of a longer regex.
+    instructions = text.replace(PACKET_SLOT, '')
+    if role == 'richard':
+        instructions = instructions.replace(current_seal(packet), '')
+    problems = interface_errors(root, instructions)
     require(not problems, 'brief names ESX commands that do not exist: ' + '; '.join(problems))
-    # A design citation that resolves nowhere becomes a requirement pointing at
-    # nothing (TEAM-ARCH-UNVERIFIED-CLAIM-001).
-    dead = citation_errors(root, design)
-    require(not dead, 'the design cites locations that do not exist: ' + '; '.join(dead))
-    return text
+    return text.replace(PACKET_SLOT, json.dumps(packet))
 
 
 def main():
@@ -383,9 +393,13 @@ def main():
                         'inventoried line that still contains it. The issue table '
                         'devel-loop/loop_state/figures-ISSUE.tsv is always included when present.')
     a = p.parse_args()
-    value = build(a.root.resolve(), a.role, a.issue, (a.root / a.design).read_text(), a.question,
+    design = (a.root / a.design).read_text()
+    value = build(a.root.resolve(), a.role, a.issue, design, a.question,
                   json.loads((a.root / a.packet).read_text()) if a.packet else None, a.round,
                   a.sweep_symbol, a.sweep_figure)
+    # To Arch, on stderr, so it never enters the brief an agent receives.
+    for problem in citation_errors(a.root.resolve(), design):
+        print('brief warning: the design cites a location that does not exist: ' + problem, file=sys.stderr)
     if a.output:
         (a.root / a.output).write_text(value)
     else:

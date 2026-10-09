@@ -777,6 +777,24 @@ def main():
         return 0
     except (ValueError, OSError, KeyError, TypeError, SyntaxError, subprocess.SubprocessError) as exc:
         print(f'ESX gate: BLOCKED: {exc}', file=sys.stderr)
+        if not any((args.next, args.draft_retro, args.check_retro, args.timings, args.closeout_doctor,
+                    args.doctor, args.code_sig, args.prepare, args.check_start)):
+            # --check-done stops at its first unmet condition. The read-only
+            # closeout doctor already evaluates them all independently, but
+            # nothing pointed to it, so RUNOFF-042's closeout was discovered
+            # one refusal at a time -- six in a row (esx-fix.md E). Show them
+            # all now; a doctor failure must never mask the original refusal.
+            try:
+                import closeout_doctor
+                diagnosis = closeout_doctor.diagnose(gate)
+                blocked = [row for row in diagnosis['findings'] if row['status'] == 'blocked']
+                if blocked:
+                    print(f'ESX gate: all {len(blocked)} unmet closeout requirement(s), from the closeout doctor:',
+                          file=sys.stderr)
+                    for row in blocked:
+                        print(f"  {row['code']} {row['field']}: {row['recovery']}", file=sys.stderr)
+            except Exception as doctor_error:   # noqa: BLE001 -- diagnostic only
+                print(f'ESX gate: (closeout doctor unavailable: {doctor_error})', file=sys.stderr)
         return 1
 
 

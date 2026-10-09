@@ -9,6 +9,7 @@ rebind-receipt re-points a prepared closeout at a later matching final receipt.
 """
 import argparse
 import json
+import re
 from pathlib import Path
 import sys
 import ledger_transaction
@@ -22,13 +23,57 @@ def prepare_done(root, packet, verification, metadata):
         return _prepare_done(root, start, packet, verification, metadata)
 
 
+METADATA_FIELDS = ('summary', 'tests_status', 'milestone', 'lessons', 'lessons_na', 'rules_updated',
+                   'rules_updated_na', 'git', 'communication')
+TESTS_STATUS = ('passing', 'failing', 'not_run')
+
+
+def metadata_problems(metadata):
+    """Every shape problem in closeout metadata, in one pass.
+
+    These checks used to run one `require` at a time, and several shapes were
+    enforced only later by --check-done, so a closer learned them one refusal at
+    a time. On RUNOFF-042: unsupported fields, then `tests_status` (an enum the
+    message did not name), then -- at --check-done -- `lessons` (a list of
+    lesson ids: a string is iterated as characters), `git.committed` (a
+    boolean) and `milestone.logged` (esx-fix.md E). Each message states the
+    shape required, so the next attempt can be right.
+    """
+    if not isinstance(metadata, dict):
+        return ['metadata must be a JSON object']
+    problems = []
+    unknown = sorted(set(metadata) - set(METADATA_FIELDS))
+    if unknown:
+        problems.append(f'unsupported field(s) {unknown}; allowed: {list(METADATA_FIELDS)}')
+    if len(str(metadata.get('summary', ''))) < 40:
+        problems.append('summary must be a substantive explanation of at least 40 characters')
+    if metadata.get('tests_status') not in TESTS_STATUS:
+        problems.append(f'tests_status must be one of {list(TESTS_STATUS)}, not {metadata.get("tests_status")!r}')
+    lessons = metadata.get('lessons', [])
+    if not (isinstance(lessons, list) and all(isinstance(x, str) and re.fullmatch(r'LL-\d+', x) for x in lessons)):
+        problems.append('lessons must be a list of registered lesson ids such as ["LL-019"]; put prose in summary')
+    git = metadata.get('git')
+    if not isinstance(git, dict) or type(git.get('committed')) is not bool:
+        problems.append('git must be an object with a boolean "committed", plus "sha" when committed or a "reason" '
+                        'of at least 20 characters when not')
+    elif git['committed'] and not re.fullmatch(r'[0-9a-fA-F]{7,40}', str(git.get('sha', ''))):
+        problems.append('git.sha must be the 7-40 hex digit commit when git.committed is true')
+    elif not git['committed'] and len(str(git.get('reason', '')).strip()) < 20:
+        problems.append('git.reason must explain the uncommitted disposition in at least 20 characters')
+    if not isinstance(metadata.get('communication'), dict):
+        problems.append('communication must be an object recording the delivery result or non-delivery reason')
+    if 'milestone' in metadata:
+        milestone = metadata['milestone']
+        if not isinstance(milestone, dict) or type(milestone.get('logged')) is not bool:
+            problems.append('milestone must be an object with a boolean "logged", and when logged a "reference" '
+                            'of {path, heading, sha256} from workflow_records.milestone_reference')
+    return problems
+
+
 def _prepare_done(root, start, packet, verification, metadata):
     require(packet.get('id') == start['id'] and packet.get('timestamp') == start['timestamp'], 'packet must match the active iteration')
-    allowed = {'summary', 'tests_status', 'milestone', 'lessons', 'lessons_na', 'rules_updated', 'rules_updated_na', 'git', 'communication'}
-    require(isinstance(metadata, dict) and set(metadata) <= allowed, 'metadata has unsupported fields')
-    require(len(str(metadata.get('summary', ''))) >= 40 and metadata.get('tests_status') in ('passing','failing','not_run'),
-            'metadata needs a substantive summary and tests_status')
-    require(isinstance(metadata.get('git'), dict) and isinstance(metadata.get('communication'), dict), 'record explicit Git and communication dispositions')
+    problems = metadata_problems(metadata)
+    require(not problems, f'closeout metadata has {len(problems)} problem(s): ' + '; '.join(problems))
     done = dict(packet, **metadata, outcome='completed', state_version=start.get('state_version',1),
                 iteration=start['iteration'], start_timestamp=start['timestamp'], open_issues_md_updated=False)
     done['verification'] = dict(packet.get('verification') or {}, final_owner=start['workflow']['final_verify_owner'])

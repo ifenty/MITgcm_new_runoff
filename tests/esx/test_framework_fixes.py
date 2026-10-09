@@ -1417,6 +1417,75 @@ def test_design_citation_that_resolves_nowhere_is_refused():
     # Model citations are written relative to MITgcm/, and a bare filename is
     # ambiguous between trees, so neither may be refused.
     assert brief.citation_errors(ROOT, 'pkg/rnf/RNF.h:1 and update_surf_dr.F:999999') == []
-    # And it is wired into build(), not merely defined.
+    # Reported to Arch as a warning, never a refusal (esx-fix.md E): unknown
+    # free-text claims need review rather than a machine refusal that could be
+    # false. It is wired into main(), not build().
     import inspect
-    assert 'citation_errors(root, design)' in inspect.getsource(brief.build)
+    assert 'citation_errors' not in inspect.getsource(brief.build)
+    assert 'citation_errors' in inspect.getsource(brief.main)
+
+
+def test_brief_checks_instructions_not_the_quoted_packet():
+    """Quoted history is not an order; an order naming a bad flag still is refused.
+
+    esx-fix.md E: validate the executable instructions separately from quoted
+    prior packets, rather than keep extending a prose regex. The embedded packet
+    carries earlier footers whose commands are history; checking them produced
+    the false refusals that the quote terminator in COMMAND_PATTERN was added to
+    suppress (TEAM-BRIEF-COMMAND-SPAN-QUOTES-001).
+    """
+    import brief
+    start_path = ROOT / 'devel-loop/loop_state/issue-start.json'
+    if not start_path.exists():
+        pytest.skip('needs an issue-start record to build a brief against')
+    start = json.loads(start_path.read_text())
+    bad = 'tools/esx/verify.py --suite focused --mpi 2'
+    packet = dict(start, subagents={'bob': [{'agent': 'bob', 'evidence': ['ran ' + bad + ' earlier']}]})
+    text = brief.build(ROOT, 'bob', start['id'], 'Implement the bounded change.', packet=packet)
+    assert bad in text, 'the packet must still be embedded verbatim for the agent to read'
+    with pytest.raises(ValueError, match='does not accept --mpi'):
+        brief.build(ROOT, 'bob', start['id'], 'Run ' + bad + ' afterwards.', packet=packet)
+
+
+def test_closeout_metadata_problems_are_reported_in_one_pass():
+    """esx-fix.md E: every metadata shape problem at once, each stating the shape required.
+
+    RUNOFF-042's closeout learned these one refusal at a time: unsupported
+    fields, then a tests_status enum the message never named, then -- at
+    --check-done -- lessons as a list of ids, git.committed as a boolean, and
+    milestone.logged.
+    """
+    import loop_lifecycle
+    first = {'communication': {'status': 'unauthorized', 'detail': 'x'}, 'git': {'sha': 'caa6c92'},
+             'scientific_outcome': 'x' * 50}
+    problems = loop_lifecycle.metadata_problems(first)
+    assert len(problems) == 4, problems
+    assert any("['passing', 'failing', 'not_run']" in p for p in problems), 'the enum must be named'
+    later = {'summary': 's' * 60, 'tests_status': 'passing', 'lessons': 'prose, not ids',
+             'milestone': 'one line', 'git': {'sha': 'caa6c92'}, 'communication': {}}
+    problems = loop_lifecycle.metadata_problems(later)
+    assert {p.split()[0] for p in problems} == {'lessons', 'git', 'milestone'}, problems
+    valid = dict(later, lessons=['LL-019'], milestone={'logged': False}, git={'committed': True, 'sha': 'caa6c92'})
+    assert loop_lifecycle.metadata_problems(valid) == []
+
+
+def test_check_done_refusal_shows_every_unmet_requirement(monkeypatch, capsys):
+    """The closeout doctor already found everything at once; nothing pointed to it."""
+    import loop_gate
+    import closeout_doctor
+    monkeypatch.setattr(loop_gate.Gate, 'check_done', lambda self: (_ for _ in ()).throw(ValueError('first one')))
+    findings = [{'code': c, 'field': f, 'recovery': r, 'status': 'blocked'} for c, f, r in
+                (('GIT_DISPOSITION', 'git', 'record git.committed'), ('LESSON_UNKNOWN', 'lessons', 'use LL ids'),
+                 ('MILESTONE_INVALID', 'milestone', 'record milestone.logged'))]
+    monkeypatch.setattr(closeout_doctor, 'diagnose', lambda gate, done=None: {'findings': findings})
+    monkeypatch.setattr(sys, 'argv', ['loop_gate.py', '--root', str(ROOT), '--check-done'])
+    assert loop_gate.main() == 1
+    err = capsys.readouterr().err
+    assert 'BLOCKED: first one' in err and 'all 3 unmet closeout requirement(s)' in err
+    for code in ('GIT_DISPOSITION', 'LESSON_UNKNOWN', 'MILESTONE_INVALID'):
+        assert code in err
+    # A doctor failure must never mask the original refusal.
+    monkeypatch.setattr(closeout_doctor, 'diagnose', lambda gate, done=None: 1 / 0)
+    assert loop_gate.main() == 1
+    err = capsys.readouterr().err
+    assert 'BLOCKED: first one' in err and 'closeout doctor unavailable' in err
