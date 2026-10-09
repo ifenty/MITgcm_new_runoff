@@ -237,6 +237,7 @@ No iterations are lost to the grace-allowance summary turn.
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-02-runoff-010/assessment.md
 **Anchors**: tools/esx/team_budget.py
 **Blocked-By**: OWNER-DECISION — whether provider-limit pause time counts against an issue's nominal wall-clock minutes. esx-fix.md D says waiting does not extend owner-authorized limits, which makes the clamp correct and budget.extend the remedy; the local fix contradicted that and was reverted.
+**Owner decision (2026-10-09)**: time spent paused for a provider usage limit does **not** count against an issue's nominal minutes. Next step: a fix that shifts the scope deadline by the measured `provider_limit` pause intervals, rather than by a fraction of the horizon as the reverted clamp change did. Once it lands, set Status to Implementing and remove the Blocked-By line.
 
 ### Issue
 `team_budget.reserve` clamps each turn to the issue scope's nominal deadline (`started + minutes`) while that deadline is still in the future. The scope clock keeps running through a provider-limit pause. After the 07:37–09:10Z outage, the first resumed Bob turn (`--timeout 5400`) was killed at 09:46Z. That was the original issue deadline (09:36Z) plus grace, after 33 minutes of work. Bob also reported that the resumed brief carried the old deadline, so the turn before it stopped at once.

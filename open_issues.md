@@ -479,7 +479,7 @@ Either split the volume and no-cal half into its own issue so it can be done now
 
 **Date Identified**: 2026-09-29T21:30:00Z
 **Status**: Blocked
-**Blocked-By**: OWNER-DECISION — choose the phase 1 vs production I/O design
+**Blocked-By**: RUNOFF-028 — owner decision 2026-10-09: phase 1 (every process reads the full record) ships in the upstream PR; the single-reader scatter is a to-do after it
 **UUID**: RUNOFF-007
 **Anchors**: docs/model_contract.md#scale-requirement; MITgcm/pkg/exf/exf_getffields.F::<module>
 
@@ -494,6 +494,13 @@ Sets production feasibility. Phase 1 correctness doesn't depend on it.
 
 ### Proposed action and acceptance
 Phase 1 default: every process reads the full record. Owner to decide whether a scatter design is needed before the upstream PR.
+
+**Owner decision, 2026-10-09:** keep phase 1 as it is for the upstream PR, and add the single-reader scatter to the to-do list afterwards, following MITgcm's `useSingleCpuIO` convention (the owner's stated preference).
+- **Design:** a `data.rnf` switch, e.g. `RNF_singleCpuIO`, default `.FALSE.`. At init each process sends the global source indices its tiles need (`RNF_srcGlob`) to the reader process in one collective call. When a record is needed, only the reader opens the file and reads it, then sends each process its own values in one `MPI_Scatterv`.
+- **Per-record traffic:** about the number of sources (~8 MB for one float64 series of 10⁶ sources), against processes × that figure today.
+- **Scope:** confined to the record read (`RNF_NC_READ_FLUX` / `RNF_LOAD_REC`), with MPI under `ALLOW_USE_MPI`. Placement, the time handling and the tendency terms are unchanged.
+- **Acceptance:** results bitwise identical to the phase 1 path on lab_sea `-mpi 2` and cs32 `-mpi 4`, including the budget and applied-field oracles; only the reader opens the file (counted); a single-process run is unchanged.
+- **Optional:** the measured chunking read benchmark below, to size the benefit.
 
 From RUNOFF-002 (review A): this issue owns the measured chunking read benchmark (docs/runoff_schema.md §8, docs/model_contract.md scale requirement). The converter writes the §8 default layout: one record per chunk, deflate, about 4 MB pieces along `source`.
 
@@ -736,4 +743,49 @@ Silent tracer-budget error, up to a factor `LS_nIter` at a step where runoff swi
 ### Proposed action and acceptance
 Decide between (a) averaging the package's tracer inputs over the long step the way `LONGSTEP_AVERAGE` averages `EmPmR`, so the term is exact for any `LS_nIter`, and (b) refusing `useRNF` tracer variables with `LS_nIter > 1` in `RNF_CHECK` and documenting it. Either way document the limit in `docs/package_design.md` decision 4 and the verification matrix. Acceptance: Richard's witness reproduces at ratio 1 to 1e-12 under (a), or is refused with a named message under (b); an enrolled case with `LS_nIter = 2` that fails on the current code; no-change runs unchanged. Kind: scientific_change (risk supported_semantics under (a)).
 
+**Owner decision, 2026-10-09: (b).** "pkg/rnf does not need to support pkg/longstep at this time. If the model is configured with both, throw an error and stop (similar to other occasions when the model encounters incompatible package combinations) — refuse and document the limit." One point is waiting on the owner. pkg/longstep has no run-time switch: it is active whenever it is compiled and `usePTRACERS` is set (`longstep_readparms.F:47`), and `LS_nIter` defaults to 1. lab_sea compiles it, and every RUNOFF-008 tracer oracle runs on lab_sea with `LS_nIter = 1`, which is exact. Arch proposed refusing in `RNF_CHECK` when longstep actually long-steps, i.e. `ALLOW_LONGSTEP`, `usePTRACERS` and `LS_nIter ≠ 1`, rather than whenever both packages are compiled, which would stop every lab_sea tracer run.
+
+**Owner decision, 2026-10-09 (final): option C.** Refuse only the broken configuration.
+- **Condition:** in `RNF_CHECK` under `#ifdef ALLOW_LONGSTEP`, stop when `usePTRACERS`, `LS_nIter ≠ 1` and `RNF_nTrUse > 0`, i.e. the file feeds at least one ptracer. `RNF_nTrUse` is set by `RNF_NC_SERIES` in `RNF_INIT_FIXED`, which runs before `RNF_CHECK`.
+- **Message:** names pkg/longstep, `LS_nIter` and the runoff tracer variables. It suggests `LS_nIter = 1` or `RNF_usePtracers = .FALSE.`.
+- **Not refused:** `LS_nIter ≠ 1` with no runoff tracer variables. There the volume reaches `EmPmR` and `LS_fwFlux` by exf's own path (`RNF_EXF_RUNOFF` fills exf `runoff`), which is time-consistent under longstep.
+- **Documentation:** the limit goes in package design decision 4, the verification matrix and the code map.
+- **Acceptance:** an enrolled refusal case with `LS_nIter = 2` and a runoff tracer, shown failing on a mutant with the guard removed. A companion case with `LS_nIter = 2` and no tracer variables must run normally. A third case at `LS_nIter = 1` with tracers must run (the RUNOFF-008 oracles already do). No-change runs unchanged. One Richard.
+- **Option D (support by averaging) is deferred to RUNOFF-044.** Once it lands, this refusal is removed.
+
 Also carried here from the same review (coverage, not a defect): in RUNOFF-008's enrolled local-arm tendency rows the cell's tracer still equals its initial value at the measured step, so a stale-time-level reference would pass them; review A's witness with a wet first record (local 1.50318 vs initial 1.5) shows the code uses the current tracer. Enrolling a wet-first-record case closes that gap.
+
+## BLOCKED: support pkg/longstep with LS_nIter > 1 for runoff tracers (average the tracer input over the long step)
+
+**Date Identified**: 2026-10-09T09:30:00Z
+**Status**: Blocked
+**Blocked-By**: RUNOFF-028 — owner decision 2026-10-09: on the to-do list after the upstream PR, next to the single-reader scatter (RUNOFF-007); phase 1 refuses this configuration instead (RUNOFF-043, option C)
+**UUID**: RUNOFF-044
+**Anchors**: MITgcm/pkg/rnf/rnf_tendency_apply.F::<module>; MITgcm/pkg/longstep/longstep_average.F::<module>
+
+### Issue or research question
+Make `RNF_TENDENCY_APPLY_PTR` exact for any `LS_nIter` by feeding its tracer input through pkg/longstep's averaging, the way `EmPmR` becomes `LS_fwFlux`, instead of refusing `LS_nIter ≠ 1` (RUNOFF-043).
+
+### Evidence
+RUNOFF-043, review A of RUNOFF-008: ratio 2.0 of delivered to source-carried tracer at a dry-to-wet step with `LS_nIter = 2`. pkg/longstep already has the averaging machinery (`LONGSTEP_RESET_3D`, `LONGSTEP_FILL_3D`, `LONGSTEP_AVERAGE_3D`, used for `EmPmR`, `Qsw` and the velocities in `longstep_average.F:56-164`). It forbids restarts in the middle of a long step (`longstep_check_iters.F:33-40`), so new accumulators need no pickup, and it has no autodiff code.
+
+### Scientific or engineering impact
+Needed only for runs that combine per-river tracers (nutrients, dye) with long-stepped biogeochemistry. Phase 1 refuses that combination.
+
+### Proposed action and acceptance
+Design (Arch estimate, 2026-10-09):
+- 2D accumulators of the runoff mass flux `m` and of `(mC_n)` per runoff tracer, in `RNF.h` under `#ifdef ALLOW_LONGSTEP`.
+- One `#ifdef ALLOW_RNF` hook inside `LONGSTEP_AVERAGE`, beside the `EmPmR` sample, to an `RNF_LONGSTEP_ACCUM` that resets, fills and averages them with longstep's own routines, so the samples are co-located with `EmPmR`'s for every `LS_whenToSample`.
+- `RNF_TENDENCY_APPLY_PTR` uses the averages when longstep is active. `C_ref` stays the current tracer, as `LONGSTEP_FORCING_SURF` does.
+- Remove the RUNOFF-043 refusal.
+
+The main risk is timing: proving that the averaged runoff and the averaged `EmPmR` come from the same steps for `LS_whenToSample` = 0, 1 and 2, with `RNF_lagFlds`.
+
+Acceptance:
+- Review A's witness reproduces at ratio 1 to 1e-12 for `LS_nIter = 2`.
+- Analytic tendency rows and a budget closure over long steps with time-varying runoff, under each `LS_whenToSample`.
+- Mutant failures show the averaging is used.
+- The RUNOFF-043 refusal case becomes a normal-end case.
+- No-change runs unchanged.
+
+Kind: scientific_change, risk supported_semantics (two Richards). Size: comparable to RUNOFF-008.
