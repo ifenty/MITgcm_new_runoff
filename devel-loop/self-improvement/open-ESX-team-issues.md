@@ -1073,6 +1073,15 @@ qualitative invariant: everything in a brief is either measured by the
 coordinator, or attributed to the agent that measured it, and nothing is stated
 as exhaustive without a check.
 
+
+### Revised 2026-10-09: the citation check warns instead of refusing
+
+esx-fix.md E: unknown free-text claims need review, not a machine refusal that
+could be false. By this entry's own count the check would have caught none of the
+twelve instances, so it now prints a warning to Arch on stderr and never refuses
+a brief (f049458). The procedure in esx/project_instructions.md is unchanged and
+is the substance of the fix; its effectiveness is still the next-three-issues
+count.
 ## 🟡 IMPLEMENTED: a footer-less consultation turn is re-flagged forever, on every later iteration
 
 **Date Identified**: 2026-10-08  14:05
@@ -1183,6 +1192,15 @@ An uncaptured-completion notice means something again: it appears only when an
 agent's work is genuinely unavailable to closeout, so reading it is worthwhile.
 Measured as zero standing notices across iterations with no defective turn.
 
+
+### Extended 2026-10-09: consultation is an explicit disposition
+
+esx-fix.md E asks that intentional consultation and checkpoint turns get an
+explicit non-approval disposition. A footer of identity fields plus
+`"consultation": true` (footer_contract.consultation) is now recorded with status
+`consultation` on both capture paths: never `completed`, so it cannot count as
+review, and never `incomplete`, so it raises no defect notice. The earlier
+whole-log suppression stays for legacy footer-less turns.
 ## 🟡 IMPLEMENTED: the verification hold promises a resume that nothing delivers, so every final verification stalls the loop
 
 **Date Identified**: 2026-10-09  02:10
@@ -1332,3 +1350,16 @@ scientific inventory still prepares as before.
 ### Expected Effect
 
 No workflow amendments at closeout for a kind the targets already contradicted.
+
+
+### Revised 2026-10-09: a notice, not a refusal
+
+Run against ESX-Team 1.6.3's own regression suite, this check as a refusal
+caused 44 of the 51 failures: every upstream fixture that prepares an
+`investigation` over a source file it only reads. Its docstring said an owning
+target in the scientific inventory makes the signature move "certain"; that was
+false, because an investigation or documentation issue reads its owner without
+changing it. It is now a `KIND NOTICE` printed at --prepare, and closeout -- which
+measures the files that actually changed -- stays the authoritative refusal
+(871d8b3). Separately, esx-fix.md F1 (9da9318) moved ESX regression tests out of
+the scientific inventory, so an ESX-test-only issue no longer triggers it at all.

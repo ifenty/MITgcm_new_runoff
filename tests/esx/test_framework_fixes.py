@@ -1652,3 +1652,25 @@ def test_self_assessment_is_advisory_and_demands_nothing_invented(tmp_path):
     assert text and 'advisory, does not block' in text
     assert 'before continuing' not in text and 'nothing new this window' not in text
     assert 'nothing is required' in text
+
+
+def test_a_consultation_turn_is_an_explicit_non_approval(tmp_path, monkeypatch):
+    """esx-fix.md E: a consultation gets its own disposition, never review, never a defect."""
+    import agent_runtime
+    import footer_contract
+    import workflow_policy
+    import loop_gate
+    footer = footer_contract.consultation('richard', 'X-1', START['timestamp'], 0)
+    assert footer == {'agent': 'richard', 'issue_id': 'X-1', 'iteration_timestamp': START['timestamp'],
+                      'correction_round': 0, 'consultation': True}
+    monkeypatch.setattr(agent_runtime, 'transcript_report', lambda path: None)
+    (tmp_path / 'devel-loop/loop_state').mkdir(parents=True)
+    event = {'agent_type': 'richard', 'agent_id': 'r1', 'stop_reason': 'end_turn', 'session_id': 's',
+             'last_assistant_message': 'Prose answer.\n```json\n' + json.dumps(footer) + '\n```'}
+    agent_runtime.stop_record(tmp_path, event)
+    record = json.loads((tmp_path / 'devel-loop/loop_state/dispatch_log.jsonl').read_text().splitlines()[-1])
+    assert (record['status'], record['error']) == ('consultation', None)
+    assert not workflow_policy.completed(record), 'a consultation must never count as review'
+    gate = loop_gate.Gate.__new__(loop_gate.Gate)
+    gate.root = tmp_path
+    assert gate.defective_completions(START) == [], 'nor raise an uncaptured-completion notice'

@@ -175,8 +175,10 @@ its routines and its hooks are specified in
     snapshots of the ESX kit that this project may not edit (measured: 0
     candidates, so the exclusion moved the swept figure from 293 to **214**
     and changed no candidate, keep or guard). `tools/esx/` is kept in scope
-    because this project edits it. **214 files swept, 95 candidates, 57 to
-    triage, 38 keeps** on the current bytes. All five are module-level
+    because this project edits it. The live counts are what the default run
+    and `--guards` print; RUNOFF-042's close records them in
+    `closed_issues.md`, and they are not repeated here, because a count in a
+    map goes stale on the next tracked file (esx-fix.md E). All five are module-level
     constants of `tests/footprint_claim_sweep.py::<module>`.
   - **Owning operations:** `tests/footprint_claim_sweep.py::candidate` (the
     predicate), `::tracked` (the swept set), `::sweep` (the three-line
@@ -185,7 +187,7 @@ its routines and its hooks are specified in
     `::guard_status` (the three guards) and `::self_test` (measured recall,
     8 of 8 with 0 of 3 benign lines matched).
   - **Exit codes:** 0 clean; 1 a candidate needs triage (the default
-    invocation's normal state — 57 lines today); 2 a `KEEP` needle is dead or
+    invocation's normal state); 2 a `KEEP` needle is dead or
     multi-line, i.e. a rotted allowlist; 3 a `KEEP` path is not in the swept
     set, the scope guard that makes scope and recall one check; 4
     `--self-test` failed.

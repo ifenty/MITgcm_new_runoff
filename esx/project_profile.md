@@ -591,10 +591,10 @@ This is the scientific contract agents read. Executable paths and commands are i
   three guards alone (3 scope shrank, 2 rotted needle, 0 otherwise), treating
   untriaged candidates as information. The **default** invocation is not
   enrolled and cannot be: it returns 1 whenever a candidate is untriaged,
-  which is the normal state of a live triage queue (57 lines), so it would
+  which is the normal state of a live triage queue, so it would
   fail for ever. A nonzero exit from the enrolled pair therefore means "this
-  instrument has rotted", not "triage these candidates". Measured exposure,
-  per path with `project.py acceptance-scope`: 38 `KEEP` needles over 13
+  instrument has rotted", not "triage these candidates". Measured exposure at
+  RUNOFF-042's close, per path with `project.py acceptance-scope`: 38 `KEEP` needles over 13
   files, **none of them a record** (0 of 13), and **37 of the 38 needles over
   12 of the 13 paths in the acceptance set** — so a records-only correction
   round cannot turn the suite red. The exception is

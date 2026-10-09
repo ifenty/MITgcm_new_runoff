@@ -152,7 +152,10 @@ findings and preserve review-supersession evidence where required.
 After two unsuccessful corrections, stop dependent edits for a diagnosis checkpoint:
 reproduce the dispute, identify the mistaken/unproven premise and agree on the next
 bounded change and acceptance. Keep the same agents. Retain actual timings and
-repeated-run reasons so workflow cost can be evaluated empirically.
+repeated-run reasons so workflow cost can be evaluated empirically. A checkpoint or
+other consultation turn answers in prose and ends with the consultation footer from
+`footer_contract.consultation(...)` (identity fields plus `"consultation": true`):
+capture records it as an explicit non-approval, never as review or as a defect.
 
 ## Closure and communication
 

@@ -19,6 +19,18 @@ def example(root, role):
     return value
 
 
+def consultation(role, issue, iteration_timestamp, correction_round):
+    """The footer that ends a consultation or checkpoint turn.
+
+    Identity fields only, plus `"consultation": true`. Capture records it with
+    status `consultation`: an explicit non-approval disposition that never
+    counts as review and raises no defect notice (esx-fix.md E). Use it when a
+    brief asks for an answer in prose rather than a reviewed report.
+    """
+    return {'agent': role, 'issue_id': issue, 'iteration_timestamp': iteration_timestamp,
+            'correction_round': correction_round, 'consultation': True}
+
+
 def stale_citation(cited, expected):
     """Name both hashes when a reviewer cites a seal other than the current one.
 

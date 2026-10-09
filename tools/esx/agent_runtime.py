@@ -234,6 +234,14 @@ def stop_record(root, event, *, transport="native_subagent"):
         status, error = "incomplete", "missing runtime identity"
     elif not footer or footer.get("agent", footer.get("agent_name")) != event.get("agent_type"):
         status, error = "incomplete", "missing, malformed, or mismatched structured footer"
+    elif footer.get("consultation") is True:
+        # An intentional consultation or checkpoint turn: an explicit
+        # NON-APPROVAL disposition. It is not `completed`, so it can never count
+        # as independent review, and it is not `incomplete`, so it raises no
+        # uncaptured-completion notice. Footer-less consultations were recorded
+        # as malformed and re-flagged on every later iteration
+        # (TEAM-GATE-CONSULTATION-NOTICE-PERMANENT-001; esx-fix.md E).
+        status, error = "consultation", None
     stale_orientation = []
     if status == "completed" and event.get("agent_type") in ("bob", "richard"):
         # The same capture-time contract a retained turn gets: a missing, mismatched or
@@ -997,6 +1005,8 @@ def _run_turn(root, *, role=None, issue=None, prompt, session=None, correction_r
               or footer.get("correction_round") != correction_round
               or (iteration_timestamp and footer.get("iteration_timestamp") != iteration_timestamp)):
             status, error = "incomplete", "missing, malformed, or mismatched report footer"
+        elif footer.get("consultation") is True:
+            status = "consultation"     # explicit non-approval disposition; see stop_record
         if status == 'completed' and not probe:
             errors = footer_contract.validate(root, role, footer, issue, correction_round, active, session,
                                              ((review or {}).get('maintenance') or {}).get('documentation'))
