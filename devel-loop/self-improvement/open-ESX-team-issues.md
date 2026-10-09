@@ -1430,7 +1430,7 @@ Owner request (2026-10-09): "I'd like bob and richard to run as [a different mod
 - `.claude/ESX-team/manifest.md`: "No model is pinned: the runtime inherits the configured model until the owner chooses per-role models."
 - The native Agent tool already accepts a per-call `model` (sonnet | opus | haiku | fable).
 - `team_accounting.stream_usage` already keeps `modelUsage` for retained CLI turns. Nothing records the model of a native subagent.
-- Open owner question: the model named was "Opus 5.5", which does not exist. The available models are Fable 5, Opus 5 (the current session's), Sonnet 5 and Haiku 4.5.
+- Owner clarification (2026-10-09): the model meant is **Opus 5** (Agent-tool value `opus`). Bob and Richard already run on it when the main session does, by inheritance, so the override matters when the main session runs a different model: the allowed list must include `opus`, and Arch may then dispatch either role on Opus 5 regardless of the main session's model.
 
 ### Potential Impact
 Without it the owner cannot use a stronger or cheaper model for chosen dispatches, and cannot compare models on measured cost and review quality.
