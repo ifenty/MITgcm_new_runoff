@@ -662,3 +662,235 @@ New residual gaps this leaves:
 ### Gate acceptance
 
 Accepted by `loop_gate.py --check-done` at 2026-10-08T13:19:08.884967+00:00 for iteration 2026-10-08T00:58:40.965069+00:00. Built tests/rnf/budget_check.py, the budget-closure oracle for volume, heat, salt and tracer, and gave the tracer term its first numerical oracle of any kind. TEST-ONLY: zero diffs under MITgcm/pkg, model and utils across all three rounds. It observes RNF_vflx through EXFroff and recovers the applied property sums from the package's own RNFgT/RNFgS/RNFtr01 diagnostics by undoing the single factor RNF_TENDENCY_APPLY_* applies, with mass2rUnit, delR(1), hFacC and rA all read from the run itself, then sums over every cell of the global layout against the file's source series at the record the run reported. Worst residuals against a 1e-12 acceptance: volume 0.000e+00 on both grids at every process count, heat 3.353e-16 on lab_sea and 1.444e-16 on cs32, salt 2.107e-16, tracer 2.079e-16. No tolerance was widened anywhere. The control that justifies the instrument is a fraction SUM error deliberately inside RNF_fracTol = 1e-6, so RNF_INIT_FIXED accepts the file and RNF_INIT_VARIA does not even warn; the four closures then miss by about 1.5e-07 while every per-cell criterion stays at round-off. Three premises of Arch's brief were refuted by measurement rather than followed: a fraction PERMUTATION is budget-invariant by construction and so cannot be the justifying control, which is the opposite of what the brief said; the volume closure was already asserted per dump by applied_field_check since RUNOFF-005, so the volume leg is a second path rather than new coverage; and Adams-Bashforth needed none of the three options the issue named, because the closure reads the diagnostics upstream of the extrapolation, proven with an ab_out/ab_in pair giving bitwise identical residuals with the two runs' states asserted to differ. Both reviewers approved candidate 8fe7a943 with empty must_fix lists after two correction rounds, every item of which was a statement rather than a design defect.
+
+## 🟢 RESOLVED: the footprint sweep cannot see claims in .py, and that gap has now cost a stale figure
+
+**Date Identified**: 2026-10-07T02:15:00Z
+**Status**: Resolved
+**UUID**: RUNOFF-042
+**Anchors**: tests/footprint_claim_sweep.py::tracked; tests/footprint_claim_sweep.py::<module>
+
+### Issue or research question
+`tests/footprint_claim_sweep.py` sets `SUFFIXES = (".md", ".rst", ".F", ".h")`,
+so it never scans `.py`. It therefore cannot see a footprint or figure claim in
+a test, a tool or a docstring — including its own fixtures, which is part of why
+the gap was left open.
+
+RUNOFF-030 carried this as a note on the explicit ground that it hid **no live
+false claim**. That ground no longer holds.
+
+### Evidence
+RUNOFF-040 review B, round 1, measured it: `tests/rnf/refusal_check.py:1530`
+still read "The four \"which bounds applied\" lines of `RNF_SUMMARY`, asserted
+on every normal-end case" after RUNOFF-040 added a fifth — contradicted by the
+file's own comment three lines below. Its twins in `docs/code_map.md:50` and
+`MITgcm/pkg/rnf/README.md:136` **were** caught and corrected by the sweep; this
+one survived precisely because the sweep does not scan `.py`. So the gap has
+produced a live stale figure, not a hypothetical one.
+
+Review B also measured in RUNOFF-030 that 41 footprint candidates sit in `.py`
+prose, **23 of them the sweep's own `MUST_MATCH`/`KEEP` fixtures**. (Both are
+RUNOFF-030 figures, kept here as filed. On today's tree it is 52 and 25,
+re-measured in RUNOFF-042 round 0; `tests/rnf/budget_check.py`, added after
+RUNOFF-030, is 7 of the 11 difference.)
+
+### Scientific or engineering impact
+Bounded but real: a false claim in a test or tool is invisible to the mechanism
+built to catch exactly that class, and the project now has one measured instance
+of the class escaping. The direct risk is a stale assertion count or a wrong
+validity condition in a helper — RUNOFF-040 produced one of each.
+
+### Proposed action and acceptance
+Add `.py` to `SUFFIXES` and **exclude the sweep's own file**, without which
+triage floods with its 23 fixture lines (measured by review B on RUNOFF-030's
+tree; 25 on today's, and see the implementation note below — the volume is not
+in the end the reason the file is excluded). Expect the
+candidate count to rise; the figure is bound to a candidate signature in the
+records, so a changed count is a recorded measurement rather than drift.
+
+Acceptance: the `refusal_check.py:1530`-shaped claim is returned as a candidate
+by the sweep when reintroduced (demonstrate it failing, LL-009, since the whole
+point is that the current sweep cannot see it); `--self-test` still reports its
+full recall with `0` benign false positives; the sweep's own fixtures do not
+appear in triage; and the recorded figures are re-measured and re-bound to the
+new candidate.
+
+Note the standing decision this interacts with: the sweep is enrolled in **no**
+configured suite, so all its guards run only when someone invokes the procedure.
+Both RUNOFF-030 reviewers raised that and deferred to Arch; enrolling
+`--self-test` alone (exit 4, no triage noise) is one line in `esx/project.json`
+and would wire the alarm. **Decide it with this issue rather than carrying it a
+third time.**
+
+### Measured during implementation (bob, round 0, 2026-10-08)
+
+Three statements above are corrected by measurement; they are left standing as
+the issue as filed, with the corrections here.
+
+1. **The Evidence section attributes the escape to the wrong mechanism.** The
+   claim at `refusal_check.py:1530` was a *figure* claim ("The four "which
+   bounds applied" lines"), and `footprint_claim_sweep.py` cannot see it with
+   `.py` in `SUFFIXES` or without: the line carries **no exclusivity marker**,
+   so the predicate returns 0 candidates for it either way (measured, both
+   scopes, on the exact bytes of commit `4a4add7`). The mechanism a figure
+   claim belongs to is `doc_contract.py stale`, which reads the documentation
+   inventory — and that inventory **does** cover `.py`: `test_paths` has been
+   `["tests"]` since before RUNOFF-040, and the inventory lists this file among
+   66 `.py` entries. What missed was the figure *token*: the rows RUNOFF-040
+   recorded were `four lines`, `four RNF_SUMMARY lines` and ``four
+   `RNF_SUMMARY` ``, and this wording puts the quoted phrase between the number
+   and its noun, so none of them matches the `.py` line, while both `.md` twins
+   said "four lines" contiguously and were listed and fixed. A row of plain
+   `four` matches the line (measured). The same wrong attribution is in
+   `devel-loop/loop_state/figures-RUNOFF-040.tsv` and was in the comment at
+   `refusal_check.py` itself, which this issue corrected in place.
+2. **So the LL-009 demonstration here is a different, real one.** Adding `.py`
+   returned 27 candidates outside the sweep's own file, and one was a live
+   stale claim of the swept class: `refusal_check.py`'s "A refusal detected on
+   one tile only (land, cell area, array bound)" had named three of the
+   **five** tile-local checks — RUNOFF-033 added the cell-centre check and
+   RUNOFF-040 the per-cell aggregate, and neither was added to the list.
+   Corrected, and tied to a mechanical antecedent: the cases carrying a
+   `stderr_any` message, which is **seven cases over five checks**, measured
+   by *calling* `cases()` with the real lab_sea namelists and `sparse_info()`.
+   The planted-mutant demonstration used a footprint-class claim in the same
+   file: 0 candidates before the change, 1 after, restored.
+
+   **Corrected in round 1, and the correction is the lesson of this issue.**
+   Round 0 wrote "six cases" over four checks, because it enumerated the AST
+   for `file_case(...)` calls, and `cell_above_vol_max` is a dict literal at
+   `refusal_check.py:1304-1314` that such a walk cannot see. Both reviewers
+   found that independently. So the prose "mechanical antecedent" chosen to
+   make the list unrottable rotted in the same round, and it had already been
+   pinned behind its own `KEEP` entry — `kept()` returned a reason, so the
+   default run printed the false line as a keep and `--guards` reported `0 of
+   38 needle(s) dead` at exit 0, where neither the triage queue nor guard (2)
+   could ever raise it. Round 1 therefore made the tie **executable** rather
+   than better worded: `tests/esx/test_instrument_claims.py` asserts the seven
+   names and both counts against a real `cases()` call, in `structural`.
+3. **The fixture count is 25, not 23** (review B's 41/23 were RUNOFF-030
+   figures): 52 new candidates, 25 in the sweep's own file — 8 in `KEEP`, 7 in
+   `MUST_MATCH`, 3 in `MUST_MATCH_PATHED` and 7 in prose that quotes an example
+   claim to explain the predicate. The volume is not why the file is excluded;
+   being quotations rather than claims this project makes is.
+
+Enrolment as settled (Arch's decision, this issue): `--self-test` **and** a new
+`--guards` mode, both in `structural`. `--self-test` alone would wire the wrong
+alarm, since it never calls `tracked()` or `sweep()` and so cannot see exit 3
+or exit 2.
+
+### Measured during implementation (bob, round 1, 2026-10-08)
+
+4. **Scan scope narrowed, measured:** `ESX-team-local/backups/` is excluded
+   (`EXCLUDED_PREFIXES`). It held **79** of the swept files — 61 of the 126
+   `.py` this issue added, plus 18 `.md` swept since RUNOFF-030 — all vendored
+   pre-upgrade snapshots of the ESX kit, which this project may not edit, so a
+   candidate there would be unactionable and a kit upgrade could turn
+   `structural` red over a file we do not own. The 79 produce **0** candidates
+   today, so the swept figure went 293 → **214** with candidates, keeps and
+   all three guards unchanged (95 / 38 / exit 0). `tools/esx/` (35 files) is
+   kept in scope, because this project edits it constantly; the asymmetry with
+   `doc_contract.stale_lines`, which skips `tools/esx/`, is deliberate and
+   recorded in the constant's own documentation.
+5. **Arch's round-1 figure of "61 of 126" is right about the `.py` share but
+   understates the exclusion:** dropping the prefix removes **79** files,
+   because 18 non-`.py` files under it were already swept before this issue.
+   Recorded rather than quietly adjusted.
+6. **The exposure claim was overstated and is now named:** `KEEP` is 38
+   needles over 13 paths, of which **12 paths / 37 needles** are in the
+   acceptance set (`project.py acceptance-scope`, per path) and **0 of 13** are
+   records. The exception is `MITgcm/doc/phys_pkgs/exf.rst`, the one path where
+   the reason the exposure is acceptable — an edit obliges a re-seal anyway —
+   does not hold.
+7. **`docs/verification_matrix.md`'s twin of the corrected claim** ("Land, cell
+   area and array bounds are seen by the process that owns the tile only") was
+   the same stale three-item list and is corrected in the same round;
+   `candidate()` returns `False` on that line, so the sweep would never have
+   watched it.
+8. **Carried fix, discharged:** the *Target cell centres* row said two
+   distinct centres are "at least" `0.5*(s_from + s_to)` apart where
+   `MITgcm/pkg/rnf/RNF.h::<module>` says "about" with the reason — and the row
+   refuted its own claim later in the same line. Corrected, and the forward
+   note in `lessons_learned_evidence.md` (LL-015) is marked discharged.
+
+### Resolution 2026-10-08 (RUNOFF-042)
+
+Delivered in `caa6c92`, both reviewers approving on candidate `31442c39` after
+one correction round; final scientific qualification `EXECUTED PASS`, receipt
+`74616934`, 62 commands, exit 0, stable, 6467 s.
+
+**The filing premise above is false, and it was Arch's.** The Evidence section
+says the RUNOFF-040 claim survived "precisely because the sweep does not scan
+`.py`". Measured three ways and confirmed by review A on the bytes at
+`dbc50fd^`: that line carries no exclusivity marker, so `candidate()` returns
+`False` for it with `.py` and without, and `candidate()` takes no suffix
+argument at all. The footprint sweep could never have caught it. The
+stale-figure mechanism had covered `.py` all along —
+`tests/rnf/refusal_check.py` is one of 66 inventoried `.py` files and
+`test_paths` has been `["tests"]` since before RUNOFF-040. The real escape was
+the figure **token**: the rows recorded were `four lines` and kin, while the
+`.py` line reads `four "which bounds applied" lines`, so none matched
+contiguously, while both `.md` twins did say `four lines` and were caught.
+RUNOFF-040's review B measured something true and attached an inference; Arch
+relayed the inference into this Evidence, the design and the brief, where it
+became a requirement. `TEAM-ARCH-UNVERIFIED-CLAIM-001`, instance twelve.
+`figures-RUNOFF-040.tsv` is corrected.
+
+**So acceptance item 1 was void and the change had to earn its keep on what it
+caught.** It did: the paragraph at `tests/rnf/refusal_check.py` had named three
+of four tile-local checks since RUNOFF-033, and review A confirmed it genuinely
+stale, genuinely of the swept class, and watched by nothing else.
+
+**Then the correction repeated the error class it was correcting**, which is
+LL-019. `cases()` returns seven cases over five checks, not six over four;
+`cell_above_vol_max` is a dict literal at `refusal_check.py:1304-1314` that the
+AST walk producing the figure could not see. Worse, the correction was
+registered as a `KEEP` entry, so the sweep printed it as a keep and `--guards`
+reported `0 of 38 needle(s) dead` at exit 0 — the instrument built to find
+stale claims had put one beyond its own triage queue and guard. Both reviewers
+found it independently; nothing mechanical would have.
+
+**Delivered.** `.py` in `SUFFIXES`; the sweep's own file excluded whole (all 25
+of its hits are quotations of example claims); `ESX-team-local/backups/`
+excluded; `KEEP` 11 → 38 entries over 13 paths; `--self-test` and a new
+`--guards` mode enrolled in `structural`; a route in `docs/code_map.md`, which
+had none; and the claim made executable in
+`tests/esx/test_instrument_claims.py`, which fails in both directions. 214
+files swept at the reviewed candidate, 95 candidates, 57 to triage,
+`--self-test` unmoved at 8 of 8 / 0 of 3, `refusal_check.py` 69 of 69 in the
+final run.
+
+**Two further Arch figures corrected by the people doing the work.** The
+backups exclusion drops 79 swept files, not the 61 claimed — 61 `.py` plus 18
+`.md` swept since RUNOFF-030 — so as stated it shrank coverage by more than was
+justified; verified to lose zero candidates (95 before and after), with no
+`KEEP` path or needle under the prefix and a planted one failing loudly at exit
+3. Review B judged the whole-prefix exclusion right anyway, since "vendored,
+frozen, not ours to edit" is a property of the directory, not the suffix. And
+four of the `six cases` lines Arch flagged were unrelated figures.
+
+**Workflow amended at closeout.** Arch prepared this as `harness_change`; the
+gate refused, because `source_signature(scientific=True)` moved and four
+committed paths are in the 272-path scientific inventory. Anything under
+`tests/` or in `esx/project.json` lands there, so the brief's "test/tooling
+change only" could never have been `harness_change`. The amendment is recorded
+with its measurement, and the qualification it forced earned its cost: nobody
+ran the focused suite this iteration, so `refusal_check.py` passing had rested
+on an AST-identity measurement until this run executed it.
+
+**Residual, all measured.** The guard fires on the next added *case*, not the
+next added *check*: `pkg/rnf` has seven tile-local refusal paths, and
+`refuse = 2` (`maskInC == 0`) and `refuse = 3` (`kTopC /= 0`) have no case at
+all — zero of the 69 mention them — which belongs to RUNOFF-019 and RUNOFF-020
+rather than to a new issue. `CHECK_CASES` compares only the union and the group
+count, so swapping its label-to-case mapping keeps the test green (one
+per-group assertion closes it). `stderr_any` is an optional kwarg, so a case
+writing its owner-only message in `stderr` is invisible to `measured()`, and
+only `refusal_check.py --mpi 2` would catch that — a `scientific`-only command.
+Guard (1) makes a scope shrink loud only where a needle lies under the excluded
+path, and `report()` names neither the exclusions nor their size, so what makes
+the backups exclusion safe is the 0-candidate measurement, not the guard.
+`EXCLUDED_PREFIXES` is applied only to the project-repo leg of `tracked()`. The
+swept figure is 214 for the reviewed candidate and 215 once this round's new
+test file is tracked, recorded in `figures-RUNOFF-042.tsv` rather than
+corrected in the acceptance set, which would have stranded both approvals.

@@ -352,3 +352,51 @@ RUNOFF-013, 2026-10-05/06. Loop iterations 13–85 produced no scientific work. 
 
 ### Correction
 The loop was paused at iteration 85, preserving the remaining budget for the closeout; the pause was verified to hold across hook cycles without advancing the iteration, which also bounds `TEAM-PAUSE-EARLY-LIFT-001` to `provider_limit` pauses carrying a `paused_until`. The owner then revoked Slack authorization and all 102 undelivered events were recorded `unauthorized`. The cost figures are attached to the outage evidence so the framework finding carries its own measurement.
+
+## LESSON: A prose mechanical antecedent rots exactly like the list it replaces [LL-019]
+
+The seductive repair for a stale enumeration is to stop listing and start
+*deriving*: replace "land, cell area, array bound" with "exactly the checks
+behind the cases that carry a `stderr_any` message". It reads unfalsifiable. It
+is not, because the derivation is still prose — nothing executes it, so it goes
+stale on precisely the event it was written to survive.
+
+**Measured twice in the same sentence, on the same issue.**
+`tests/rnf/refusal_check.py`'s tile-local refusal paragraph was authored at
+`f3e5d62` naming three checks over four cases, which was true then. RUNOFF-033
+added the cell-centre check and it became three of four. RUNOFF-042's `.py`
+scan found it — the one live defect that justified that issue after its filing
+premise was refuted — and the correction rewrote it as four checks over six
+cases, **tied to the mechanical antecedent above**. That correction was *also*
+wrong: calling `cases()` returns **seven** cases over **five** checks, because
+`cell_above_vol_max` is a dict literal at `refusal_check.py:1304-1314` and the
+AST walk over `file_case(...)` calls that produced the figure could not see it.
+The method artifact had stood in for the set. RUNOFF-040 had added that case
+five days earlier.
+
+**The second instance was worse than the first**, and this is the part worth
+remembering. The correction was registered as a `KEEP` entry in
+`tests/footprint_claim_sweep.py`, so `kept()` returned a reason for the line:
+the default sweep printed it as a keep, `--guards` reported `0 of 38 needle(s)
+dead` at exit 0, and neither the triage queue nor guard (2) could ever raise it
+again. The instrument built to find stale claims had installed one behind its
+own guard. Both reviewers found it independently, by different methods; nothing
+mechanical would have.
+
+**So: a claim that has rotted twice should become a test, not better wording.**
+The fix was `tests/esx/test_instrument_claims.py`, one assertion comparing the
+paragraph against what `cases()` actually returns, failing in both directions —
+the old paragraph against today's cases, and a planted eighth case against
+today's paragraph. Enrolled through `pytest -q tests/esx`, already in
+`structural`.
+
+Two bounds on the fix, both measured by the reviewers and both worth carrying:
+the guard fires on the next added **case**, not the next added **check** (`pkg/rnf`
+has seven tile-local refusal paths; `refuse = 2` and `refuse = 3` have no case
+at all, which belongs to RUNOFF-019 and RUNOFF-020), and `CHECK_CASES` compares
+only the union and the group count, so swapping the label-to-case mapping keeps
+it green.
+
+Corollary for deriving a claim rather than listing it: derive it **by calling
+the function**, not by reading the source that defines it. The whole defect is
+the distance between those two.
