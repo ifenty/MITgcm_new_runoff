@@ -836,7 +836,7 @@ from this check go to zero while its true positives are unchanged.
 **Category**: evidence_integrity
 **Severity**: High
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-05-runoff-013/assessment.md
-**Anchors**: tools/esx/verify.py:interruption; tools/esx/verify.py:run
+**Anchors**: tools/esx/verify.py:classify; tools/esx/verify.py:run
 **Implementation-Reference**: this change; guards in tests/esx/test_framework_fixes.py
 
 ### Issue
@@ -930,6 +930,29 @@ externally terminated runs recorded as candidate failures go to zero. The
 qualitative invariant: a verification record distinguishes "the candidate
 failed" from "the run did not finish".
 
+
+### Correction 2026-10-09: the first fix was itself defective
+
+The fix recorded above searched the WHOLE log for `verification received signal
+N`, and the log carries the commands' own output. After the arm reordering the
+genuine signal path raised before that search ran, so the search could only ever
+match text a command printed. Demonstrated: a real failed assertion whose pytest
+output echoed this project's own test-file literal of the string was classified
+`run received signal 15` and reported as an interruption with no verdict -- a
+real failure hidden. The code comment claimed `execute` "writes that marker
+itself and nothing else can", which was false. Two adjacent defects were found
+in the same pass: a launch failure (missing executable) shared the timeout arm
+and read as a hung candidate, and a child that crashed with SIGSEGV was called an
+interruption.
+
+Replaced per esx-fix.md work package B: `verify.classify` decides the outcome
+from the RUNNER's own state (its signal handler, `wait` timing out, launch
+failure, return code) and never from log text. Each record now states
+`outcome`, `termination`, `reason`, `completed_commands`, `planned_commands`,
+`ended_at` and `failure_lines`, classified before sealing; `stable` keeps its
+meaning; `load_evidence` requires a complete pass when `outcome` is present.
+Guards drive the real runner in child processes:
+tests/esx/test_framework_fixes.py::test_verification_outcome_is_decided_by_the_runner_not_the_log.
 ## 🟡 IMPLEMENTED: the coordinator's unverified claims enter the record as requirements
 
 **Date Identified**: 2026-10-08  13:30

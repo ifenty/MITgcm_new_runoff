@@ -148,12 +148,21 @@ def no_current_receipt(root, done):
         head += ' and belongs to another iteration'
     if status == 'INTERRUPTED':
         failures = record.get('failure_lines')
-        verdict = ('no test failed before the interruption' if failures == 0 else
+        # Zero failure-marked lines establishes only that none was OBSERVED; it
+        # used to be reported as "no test failed before the interruption"
+        # (esx-fix.md B.8).
+        verdict = ('no failure-marked line was observed before the interruption, which does not establish that '
+                   'the started tests passed' if failures == 0 else
                    f'{failures} failure lines were logged before the interruption' if failures else
                    'the suite reached no verdict')
         return f"{head}; the run was interrupted ({record.get('error')}), {verdict}; re-run final_verification.py run"
     if status == 'SOURCE_CHANGED':
         return f"{head}; source or review changed during the run, so it reached no verdict on the candidate; re-run after edits finish"
+    if status == 'INFRASTRUCTURE':
+        return (f"{head}; a command could not run or ended for a cause the runner did not observe "
+                f"({record.get('error')}), so there is no verdict on the candidate; fix the cause and re-run")
+    if status == 'TIMED_OUT':
+        return f"{head}; a command exceeded the configured timeout ({record.get('error')}); inspect the log"
     if status == 'FAILED':
         return f"{head}; the scientific suite reported a failure ({record.get('error')}); inspect the log"
     return f'{head}; a later attempt cleared the current receipt; re-run final_verification.py run'
@@ -164,6 +173,10 @@ def attempt_status(exc):
         return 'INTERRUPTED'
     if isinstance(exc, verify.SourceChanged):
         return 'SOURCE_CHANGED'
+    if isinstance(exc, verify.RunInfrastructure):
+        return 'INFRASTRUCTURE'
+    if isinstance(exc, verify.RunTimedOut):
+        return 'TIMED_OUT'
     return 'FAILED'
 
 

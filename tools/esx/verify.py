@@ -34,44 +34,74 @@ class SourceChanged(ValueError):
         self.log = log
 
 
-# pytest ends every completed session with e.g. "==== 3 passed in 0.12s ====".
-PYTEST_SUMMARY = re.compile(r'^=+ .+ in [0-9.]+s\b.*=+\s*$', re.M)
+class RunTimedOut(ValueError):
+    """A command exceeded the configured per-command timeout: a verdict on a hung candidate."""
+    def __init__(self, message, log):
+        super().__init__(message)
+        self.log = log
+
+
+class RunInfrastructure(ValueError):
+    """A command could not run, or ended for a cause not established: no verdict on the candidate."""
+    def __init__(self, message, log):
+        super().__init__(message)
+        self.log = log
+
+
 FAILURE_LINE = re.compile(r'\b(FAILED|ERROR)\b')
 
 
 def failure_lines(text):
-    """Count failure-marked output lines, excluding the verifier's COMMAND echoes."""
+    """Count failure-marked output lines, excluding the verifier's COMMAND echoes.
+
+    Zero establishes only that no such line was observed, never that every
+    started test passed.
+    """
     return sum(1 for line in text.splitlines() if not line.startswith('COMMAND ') and FAILURE_LINE.search(line))
 
 
-#: `execute`'s own signal handler writes this, so it is the authoritative
-#: witness that a run was signalled rather than that a candidate failed -- and
-#: it survives in the log whatever return code the intervening layers report.
-SIGNAL_MARKER = re.compile(r'verification received signal (\d+)')
+#: A command killed by one of these crashed on its own; that is a failure of
+#: the candidate, not an interruption of the run.
+CRASH_SIGNALS = frozenset(s for s in (getattr(signal, n, None) for n in
+                          ('SIGSEGV', 'SIGBUS', 'SIGFPE', 'SIGILL', 'SIGABRT', 'SIGTRAP', 'SIGSYS')) if s)
 
 
-def interruption(rc, text):
-    """Name why a non-zero run never reached a verdict, or return None.
+def classify(index, argv, rc, error):
+    """The outcome of the command that ended a run, from the RUNNER's own state.
 
-    The signal test does not rely on the sign of ``rc``. A signal delivered to
-    the process group reaches this code as a POSITIVE status from an
-    intervening shell, so a `rc < 0` test alone misses it and the run falls
-    through to the scientific-verdict branch. The marker in the text is
-    written by `execute`'s own handler and is therefore the reliable witness
-    (TEAM-VERIFY-SIGNAL-MISCLASSIFIED-001). Kept as defence in depth beside the
-    exception-arm ordering in `run`, which is where that defect actually lived:
-    either alone would have caught the RUNOFF-040 case.
+    Decided from what the runner observed -- whether its own signal handler
+    fired, whether ``wait`` timed out, whether the command could be launched,
+    and the command's return code -- and never from the log text. The log
+    carries the commands' own output, so any test could print a signal-looking
+    line; the earlier version searched that text for
+    ``verification received signal N`` and so would report a REAL failed
+    assertion as an interruption with no verdict whenever the failing output
+    echoed the string -- which this project's own test file contains as a
+    literal. After the arm reordering the genuine signal path raised before
+    that search, so the search could only ever match command output
+    (TEAM-VERIFY-SIGNAL-MISCLASSIFIED-001, corrected per esx-fix.md B.4).
+
+    Returns ``(outcome, termination, reason)``.
     """
-    if rc == 0:
-        return None
-    signalled = SIGNAL_MARKER.search(text)
-    if signalled:
-        return f'run received signal {signalled[1]}'
+    where = f'command {index + 1} ({" ".join(argv)})'
+    if isinstance(error, (KeyboardInterrupt, InterruptedError)):
+        signum = getattr(error, 'signum', None)
+        return 'interrupted', signum, f'the verification runner received signal {signum} during {where}'
+    if isinstance(error, subprocess.TimeoutExpired):
+        return 'timeout', None, f'{where} timed out after {error.timeout} s'
+    if isinstance(error, OSError):
+        return 'infrastructure', None, f'{where} could not run: {error}'
     if rc < 0:
-        return f'child terminated by signal {-rc}'
-    if 'test session starts' in text and not PYTEST_SUMMARY.search(text):
-        return f'exit {rc} before the pytest summary line'
-    return None
+        if -rc in CRASH_SIGNALS:
+            return 'failed', -rc, f'{where} crashed with signal {-rc}'
+        return 'infrastructure', -rc, (f'{where} was terminated by signal {-rc}, a cause the runner did not '
+                                       'observe and cannot attribute to the candidate')
+    # A positive status is the command's own report. 124 is NOT read as a
+    # timeout and 128+N is NOT read as an interruption: the runner records its
+    # own timeouts and signals separately, so a command returning either has
+    # simply failed (esx-fix.md B.5).
+    hint = f' (128+{rc - 128} suggests the command itself was signalled)' if 128 < rc < 160 else ''
+    return 'failed', None, f'{where} exited {rc}{hint}'
 
 
 def fingerprint(root, suite, commands):
@@ -107,6 +137,14 @@ def load_evidence(root, ref):
     require(record.get('exit') == 0 and type(record.get('exit')) is int and record.get('stable') is True,
             'verification did not finish successfully on a stable candidate')
     require(record.get('commands'), 'verification ran no commands')
+    # A record that states how it ended must say it passed AND ran everything;
+    # `stable` alone only means the fingerprint did not move (esx-fix.md B.6).
+    # A legacy record without `outcome` was written to the evidence index only
+    # on a PASS, so its exit-0-and-stable test above remains its contract.
+    if 'outcome' in record:
+        require(record['outcome'] == 'pass', f"verification outcome is {record['outcome']}, not pass")
+        require(record.get('completed_commands') == record.get('planned_commands') == len(record['commands']),
+                'verification did not complete every configured command')
     require(record['signature'] == fingerprint(root, record['suite'], record['commands']), 'verification evidence is stale')
     require(file_hash(local(root, record['log'])) == record['log_sha256'], 'verification log is missing or modified')
     return record
@@ -159,68 +197,77 @@ def _run(root, suite, owner, fresh, override):
     path = local(root, log)
     path.parent.mkdir(parents=True, exist_ok=True)
     started_at, start, rc = now(), time.monotonic(), 0
-    interrupted = timed_out = None
+    outcome, termination, reason, completed, ended_at = 'pass', None, None, 0, None
     with path.open('w') as stream:
-        for argv in commands:
+        for index_, argv in enumerate(commands):
             stream.write('COMMAND ' + json.dumps(command(argv, cfg)) + '\n')
             stream.flush()
+            error = None
             try:
                 rc = execute(command(argv, cfg), root, stream, cfg.get('command_timeout_seconds', 3600))
             # THE SIGNAL ARM MUST COME FIRST. `InterruptedError` is a subclass
             # of `OSError`, so while the OSError arm was above it every signal
-            # was caught there, written without the `INTERRUPTED ` prefix and
-            # recorded as `rc, timed_out = 124, True` -- a timeout. `timed_out`
-            # then short-circuits `interruption()` below, so an externally
-            # killed run was reported as "verification failed (exit 124)", a
-            # scientific verdict on the candidate
+            # was caught there and recorded as a timeout -- how RUNOFF-040's
+            # externally killed final verification (process-group SIGTERM after
+            # 3542.95 s, 35 of 36 started commands passing) came to be recorded
+            # as "verification failed (exit 124)" against an approved candidate
             # (TEAM-VERIFY-SIGNAL-MISCLASSIFIED-001).
-            #
-            # Measured on RUNOFF-040: the final scientific verification was
-            # killed by a process-group SIGTERM after 3542.95 s over 36 of 59
-            # commands, and its permanent record reads suite scientific, exit
-            # 124, stable TRUE against a candidate two reviewers had approved,
-            # with zero FAIL tokens in the log and 35 of 36 started commands
-            # passing. Which arm ran is provable from that log: its last line is
-            # `verification received signal 15` with no `INTERRUPTED ` prefix,
-            # and only this arm adds one.
             except (KeyboardInterrupt, InterruptedError) as exc:
                 stream.write('INTERRUPTED ' + repr(exc) + '\n')
-                rc, interrupted = 130, exc
-            except (OSError, subprocess.TimeoutExpired) as exc:
-                stream.write(str(exc) + '\n')
-                rc, timed_out = 124, True
-            if rc != 0:
-                break
+                rc, error = 130, exc
+            except subprocess.TimeoutExpired as exc:
+                stream.write(f'TIMED OUT after {exc.timeout} s\n')
+                rc, error = 124, exc
+            except OSError as exc:
+                # Launch failure (missing executable, permissions): the runner
+                # could not run the command, so nothing about the candidate is
+                # known. It used to share the timeout arm and read as a hung
+                # candidate (esx-fix.md B).
+                stream.write(f'COULD NOT RUN {exc!r}\n')
+                rc, error = 127, exc
+            if error is None and rc == 0:
+                completed += 1
+                continue
+            outcome, termination, reason = classify(index_, argv, rc, error)
+            if error is None:
+                completed += 1          # it ran to its own exit, with a failure status
+            ended_at = {'index': index_, 'argv': argv, 'exit': rc}
+            break
     try:
         stable = signature == fingerprint(root, suite, commands)
     except (ValueError, OSError, subprocess.SubprocessError):
         stable = False
+    if outcome == 'pass' and not stable:
+        outcome, reason = 'source_changed', 'the source changed while the suite ran'
+    text = path.read_text(errors='replace')
+    # Classified BEFORE sealing, so the stored record, the raised exception and
+    # every later explanation say the same thing (esx-fix.md B.3). `stable`
+    # keeps its meaning -- the fingerprint did not move -- and `outcome` is the
+    # separate statement of whether the run completed and passed (B.6).
     record = {'version': 1, 'suite': suite, 'owner': owner, 'commands': commands,
               'signature': signature, 'started_at': started_at, 'finished_at': now(),
               'elapsed_seconds': time.monotonic() - start, 'exit': rc, 'stable': stable,
+              'outcome': outcome, 'termination': termination, 'reason': reason,
+              'completed_commands': completed, 'planned_commands': len(commands),
+              'ended_at': ended_at, 'failure_lines': failure_lines(text),
               'log': log, 'log_sha256': file_hash(path)}
     sha = digest(record)
     ref = {'path': f'{STATE}/verification/{sha}.json', 'sha256': sha}
     atomic_json(local(root, ref['path']), record)
-    if interrupted is not None:
-        interrupted.log = log
-        raise interrupted
-    text = path.read_text(errors='replace')
-    # A timeout is the configured verdict on a hung candidate, not an
-    # interruption -- but a signal marker outranks `timed_out`, because
-    # `execute` writes that marker itself and nothing else can. Without this,
-    # any future path that classifies a signal as a timeout would again bury it
-    # in the scientific-verdict branch, which is exactly how RUNOFF-040's
-    # killed run came to be recorded as a candidate failure
-    # (TEAM-VERIFY-SIGNAL-MISCLASSIFIED-001).
-    reason = interruption(rc, text) if (not timed_out or SIGNAL_MARKER.search(text)) else None
-    if reason:
-        raise RunInterrupted(f'verification interrupted ({reason}); {failure_lines(text)} failure lines '
-                             f'were logged and the suite reached no verdict; inspect {log}', log, reason)
-    if not stable:
-        raise SourceChanged(f'source changed during verification (exit {rc}); inspect {log}', log)
-    if rc != 0:
-        failure = ValueError(f'verification failed (exit {rc}); inspect {log}')
+    progress = (f'{completed} of {len(commands)} commands completed; {record["failure_lines"]} failure-marked '
+                f'lines were observed (which does not establish that the rest passed); inspect {log}')
+    if outcome == 'interrupted':
+        raise RunInterrupted(f'verification interrupted ({reason}); the suite reached no verdict; {progress}',
+                             log, reason)
+    if outcome == 'infrastructure':
+        raise RunInfrastructure(f'verification could not complete ({reason}); no verdict on the candidate; '
+                                f'{progress}', log)
+    if outcome == 'source_changed':
+        raise SourceChanged(f'source changed during verification; {progress}', log)
+    if outcome == 'timeout':
+        raise RunTimedOut(f'verification timed out ({reason}); {progress}', log)
+    if outcome == 'failed':
+        failure = ValueError(f'verification failed ({reason}); {progress}')
         failure.log = log
         raise failure
     atomic_json(index, ref)
@@ -232,7 +279,11 @@ def execute(argv, root, stream, timeout):
     process = subprocess.Popen(argv, cwd=root, stdout=stream, stderr=subprocess.STDOUT, start_new_session=True)
     previous = {}
     def interrupt(signum, frame):
-        raise InterruptedError(f'verification received signal {signum}')
+        # The signal number travels on the exception, so the outcome is decided
+        # from the runner's own observation rather than from a log line.
+        error = InterruptedError(f'verification received signal {signum}')
+        error.signum = signum
+        raise error
     if threading.current_thread() is threading.main_thread():
         for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
             previous[sig] = signal.signal(sig, interrupt)

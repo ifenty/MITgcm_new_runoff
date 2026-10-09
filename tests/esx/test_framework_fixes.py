@@ -20,6 +20,7 @@ import ast
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -958,37 +959,153 @@ def test_command_span_stops_at_a_quote():
         'loop_gate.py does not accept --issue']
 
 
-def test_signal_is_not_classified_as_a_timeout():
-    """A signalled run must not be filed as a verdict on the candidate.
+ATTEMPT = r"""
+import json, os, sys
+sys.path.insert(0, %(tools)r)
+import verify
+from pathlib import Path
+real_config, real_fingerprint = verify.config, verify.fingerprint
+timeout = %(timeout)r
+if timeout is not None:
+    verify.config = lambda root: dict(real_config(root), command_timeout_seconds=timeout)
+if %(drift)r:
+    calls = []
+    def drifting(*a):
+        calls.append(1)
+        return real_fingerprint(*a) if len(calls) == 1 else 'moved'
+    verify.fingerprint = drifting
+try:
+    result = verify._run(Path(%(root)r), 'focused', 'esx-test', True, %(argv)r)
+    print(json.dumps({'type': 'PASS', 'evidence': result['evidence']}))
+except BaseException as exc:
+    print(json.dumps({'type': type(exc).__name__, 'message': str(exc), 'log': getattr(exc, 'log', None)}))
+"""
 
-    TEAM-VERIFY-SIGNAL-MISCLASSIFIED-001. The filed root cause was wrong and
-    this records the real one: `InterruptedError` is a subclass of `OSError`,
-    so while the `except (OSError, TimeoutExpired)` arm sat above the signal
-    arm, every signal was caught there and recorded as `rc, timed_out = 124,
-    True`. `timed_out` then short-circuits `interruption()`, so RUNOFF-040's
-    killed final verification was recorded as "verification failed (exit 124)"
-    -- suite scientific, stable TRUE -- against a candidate two reviewers had
-    approved, with zero FAIL tokens in its log.
+
+def _attempt(argv, *, timeout=None, drift=False, signal_runner=None):
+    """Run one real verification attempt in a child runner and return (result, record).
+
+    Drives `verify._run` itself -- the runner, its signal handler, its process
+    group handling and its record -- rather than a text-matching helper, which is
+    what esx-fix.md B.5 asks for. `signal_runner` sends that signal to the
+    runner's whole process group once the command is running, the RUNOFF-040
+    shape.
+    """
+    script = ATTEMPT % {'tools': str(TOOLS), 'root': str(ROOT), 'argv': argv,
+                        'timeout': timeout, 'drift': drift}
+    runner = subprocess.Popen([sys.executable, '-c', script], stdout=subprocess.PIPE, text=True,
+                              start_new_session=True)
+    if signal_runner:
+        time.sleep(3.0)
+        os.killpg(runner.pid, signal_runner)
+    out, _ = runner.communicate(timeout=300)
+    result = json.loads(out.strip().splitlines()[-1])
+    log = result.get('log') or (result.get('evidence') and json.loads(
+        (ROOT / result['evidence']['path']).read_text())['log'])
+    record = next((json.loads(f.read_text()) for f in (ROOT / 'devel-loop/loop_state/verification').glob('*.json')
+                   if not f.name.startswith(('cache-', 'lock-'))
+                   and json.loads(f.read_text()).get('log') == log), None)
+    return result, record
+
+
+SLEEP = "import time; time.sleep(30)"
+
+
+def test_verification_outcome_is_decided_by_the_runner_not_the_log():
+    """Each outcome is classified from the runner's own state, before sealing.
+
+    TEAM-VERIFY-SIGNAL-MISCLASSIFIED-001, corrected per esx-fix.md work package
+    B. The first fix searched the WHOLE log -- the commands' own output included
+    -- for `verification received signal N`, and after the arm reordering that
+    search could only ever match command output. Demonstrated on 2026-10-09: a
+    real failed assertion whose pytest output echoed this file's own literal of
+    that string was reported as an interruption with no verdict. A launch
+    failure shared the timeout arm, and a child that crashed with SIGSEGV was
+    called an interruption.
     """
     import verify
-    assert issubclass(InterruptedError, OSError), 'the whole defect rests on this'
+    py = sys.executable
+    marker = 'verification received signal 15'
 
-    source = (ROOT / 'tools/esx/verify.py').read_text()
-    signal_arm = source.index('except (KeyboardInterrupt, InterruptedError)')
-    oserror_arm = source.index('except (OSError, subprocess.TimeoutExpired)')
-    assert signal_arm < oserror_arm, 'the signal arm must precede the OSError arm'
+    # Normal success: a complete, reusable PASS.
+    result, record = _attempt([py, '-c', 'pass'])
+    assert result['type'] == 'PASS'
+    assert (record['outcome'], record['completed_commands'], record['planned_commands']) == ('pass', 1, 1)
+    verify.load_evidence(ROOT, result['evidence'])
 
-    # The marker test does not depend on the sign of rc, which is the second
-    # half: a process-group signal arrives as a POSITIVE status.
-    killed = 'COMMAND x\nverification received signal 15'
-    assert verify.interruption(124, killed) == 'run received signal 15'
-    assert verify.interruption(-15, 'no marker') == 'child terminated by signal 15'
+    # THE demonstrated defect: a real failure that prints the marker stays a failure.
+    result, record = _attempt([py, '-c', f'print({marker!r}); raise SystemExit(1)'])
+    assert result['type'] == 'ValueError' and 'verification failed' in result['message'], result
+    assert record['outcome'] == 'failed' and record['termination'] is None
+    # ...and a passing command that prints it is still a pass.
+    assert _attempt([py, '-c', f'print({marker!r})'])[0]['type'] == 'PASS'
 
-    # A genuine per-command timeout must STILL be a verdict on a hung
-    # candidate, which is what verify.py:173 intends; over-reaching here would
-    # convert real hangs into interruptions.
-    assert verify.interruption(124, 'Command timed out after 3600 seconds') is None
-    assert verify.interruption(0, killed) is None
+    # A command returning 124 has failed; 124 is not read as our timeout.
+    result, record = _attempt([py, '-c', 'raise SystemExit(124)'])
+    assert result['type'] == 'ValueError' and record['outcome'] == 'failed'
+
+    # A real per-command timeout says which command timed out.
+    result, record = _attempt([py, '-c', SLEEP], timeout=1)
+    assert result['type'] == 'RunTimedOut' and record['outcome'] == 'timeout'
+    assert 'command 1' in record['reason'] and 'timed out after 1 s' in record['reason']
+
+    # A launch failure is infrastructure, with no verdict on the candidate.
+    result, record = _attempt(['/nonexistent/esx-no-such-executable'])
+    assert result['type'] == 'RunInfrastructure' and record['outcome'] == 'infrastructure'
+
+    # A crash is a failure of the candidate, not an interruption...
+    result, record = _attempt([py, '-c', 'import os, signal; os.kill(os.getpid(), signal.SIGSEGV)'])
+    assert result['type'] == 'ValueError' and record['outcome'] == 'failed' and 'crashed' in record['reason']
+    # ...while a kill the runner did not observe has no established cause.
+    result, record = _attempt([py, '-c', 'import os, signal; os.kill(os.getpid(), signal.SIGKILL)'])
+    assert result['type'] == 'RunInfrastructure' and record['termination'] == 9
+
+    # Process-group SIGTERM to the runner, the RUNOFF-040 shape: interrupted,
+    # with the signal recorded from the handler rather than parsed from text.
+    result, record = _attempt([py, '-c', SLEEP], signal_runner=signal.SIGTERM)
+    assert result['type'] == 'RunInterrupted', result
+    assert (record['outcome'], record['termination'], record['completed_commands']) == ('interrupted', 15, 0)
+
+    # Source drift during the run prevents acceptance.
+    result, record = _attempt([py, '-c', 'pass'], drift=True)
+    assert result['type'] == 'SourceChanged' and record['outcome'] == 'source_changed'
+
+
+def test_failed_fresh_attempt_cannot_expose_an_earlier_pass(tmp_path):
+    """esx-fix.md B.7: already implemented in verify._run, so it gets coverage, not a rewrite."""
+    flag = tmp_path / 'exit'
+    argv = [sys.executable, '-c', f'raise SystemExit(int(open({str(flag)!r}).read()))']
+    import verify
+    from project import digest
+    index = ROOT / f"devel-loop/loop_state/verification/cache-{digest(['focused', [argv]])}.json"
+    flag.write_text('0')
+    assert _attempt(argv)[0]['type'] == 'PASS' and index.exists()
+    flag.write_text('1')
+    assert _attempt(argv)[0]['type'] == 'ValueError'
+    assert not index.exists(), 'a failed fresh attempt left the earlier PASS reachable'
+
+
+def test_evidence_consumers_require_a_complete_pass(tmp_path):
+    """`stable` means only that the fingerprint did not move (esx-fix.md B.6)."""
+    import verify
+    result, record = _attempt([sys.executable, '-c', 'pass'])
+    forged = dict(record, outcome='interrupted')
+    from project import digest, atomic_json
+    sha = digest(forged)
+    path = f'devel-loop/loop_state/verification/{sha}.json'
+    atomic_json(ROOT / path, forged)
+    try:
+        with pytest.raises(ValueError, match='outcome is interrupted'):
+            verify.load_evidence(ROOT, {'path': path, 'sha256': sha})
+    finally:
+        (ROOT / path).unlink()
+
+
+def test_zero_failure_lines_is_not_reported_as_no_failure():
+    """esx-fix.md B.8: missing failure tokens establish only that none was observed."""
+    source = (TOOLS / 'final_verification.py').read_text()
+    assert "'no test failed before the interruption' if" not in source
+    assert 'does not establish that' in source
 
 
 def test_implementer_footer_citing_a_superseded_seal_is_caught(tmp_path):
