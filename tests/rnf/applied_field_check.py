@@ -110,8 +110,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from refusal_check import (CELLS, ROOT, ULP_SHARE, VERIF,  # noqa: E402
-                           add_to_namelist, kill_run, read_file,
-                           replace_line, split_file)
+                           add_to_namelist, check_build_fresh, kill_run,
+                           read_file, replace_line, split_file)
 
 PREFIX = "input.rnfapply_"
 BUILD = "build_esx"
@@ -944,6 +944,14 @@ def main(argv=None):
             print(f"missing {binary}: run tests/mitgcm_oracle.sh "
                   f"{case['experiment']} {case['input']}{mpi}",
                   file=sys.stderr)
+            return 2
+        # RUNOFF-038: this binary is never recompiled here (the module
+        # docstring's "nothing is compiled here"); a stale one is
+        # refused before any case runs rather than silently read.
+        stale = check_build_fresh(
+            binary, os.path.join(VERIF, case["experiment"], "code"))
+        if stale:
+            print(stale, file=sys.stderr)
             return 2
 
     results = []

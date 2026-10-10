@@ -102,8 +102,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "runoff"))
-from refusal_check import (ROOT, VERIF, kill_run, read_file,  # noqa: E402
-                           replace_line)
+from refusal_check import (ROOT, VERIF, check_build_fresh,  # noqa: E402
+                           kill_run, read_file, replace_line)
 from applied_field_check import dumps, read_mds, set_namelist  # noqa: E402
 
 EXPERIMENT = "lab_sea"
@@ -662,6 +662,13 @@ def main(argv=None):
         mpi = " -mpi %d" % args.mpi if args.mpi else ""
         print("missing %s: run tests/mitgcm_oracle.sh lab_sea input%s"
               % (binary, mpi), file=sys.stderr)
+        return 2
+    # RUNOFF-038: this binary is never recompiled here (the module
+    # docstring's "nothing is compiled here"); a stale one is refused
+    # before any case runs rather than silently read.
+    stale = check_build_fresh(binary, os.path.join(LAB, "code"))
+    if stale:
+        print(stale, file=sys.stderr)
         return 2
 
     results = []

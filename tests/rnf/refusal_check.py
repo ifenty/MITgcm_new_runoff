@@ -197,6 +197,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 VERIF = os.path.join(ROOT, "MITgcm", "verification")
@@ -2138,6 +2139,58 @@ def build_name(nproc):
     return f"{BUILD}_mpi{nproc}" if nproc else BUILD
 
 
+def check_build_fresh(binary, code_dir):
+    """Return ``None`` if ``binary`` postdates its sources, else a message.
+
+    RUNOFF-038: this script (and ``applied_field_check.py``,
+    ``timing_field_check.py``, which import this function) read an
+    existing ``build_esx[_mpiN]`` binary and never checked that it
+    postdates its sources. That was correct only because the configured
+    suites happen to run ``tests/mitgcm_oracle.sh lab_sea input``
+    immediately before it; a command that rebuilds a *different* target
+    directory first (``-mpi 2``, ``--build-noatm-only``, a mutant
+    ``build_esx_mut_*``) can leave this one stale, and a single-process
+    run afterward would silently read it -- the dangerous direction,
+    because a stale binary can report a broken refusal guard as still
+    working.
+
+    The staleness reference is exactly
+    ``tests/rnf/tendency_term_check.py``'s own ``BUILD_SOURCES`` (the
+    package, pkg/exf, model/src, model/inc, pkg/ptracers, pkg/longstep
+    and the plain file pkg/pkg_depend) plus ``code_dir``, the
+    experiment's own ``code/`` directory the binary was compiled from --
+    the same comparison :func:`tendency_term_check.build_if_stale` makes
+    before deciding whether to recompile, called through
+    :func:`tendency_term_check.newest_source_time` rather than
+    re-derived here. Unlike that function, this one never compiles: the
+    scripts that call it (this one, ``applied_field_check.py``,
+    ``timing_field_check.py``) all document that nothing is compiled
+    here, so a stale binary is refused -- the caller prints the message
+    this returns and exits 2 before running any case -- rather than
+    silently rebuilt out from under that contract.
+
+    The import of ``tendency_term_check`` is local to this function, not
+    at module level: that script imports from this module (and from
+    ``applied_field_check``) at its own top level, so an eager import
+    here would be circular. Called only from inside a script's own
+    ``main()`` -- never while any of these modules is itself being
+    imported -- it cannot complete the cycle in practice: by the time
+    ``main()`` runs, every module ``tendency_term_check`` needs from
+    this one has already finished importing.
+    """
+    from tendency_term_check import newest_source_time
+    newest = newest_source_time((code_dir,))
+    have = os.path.getmtime(binary)
+    if have > newest:
+        return None
+    return (f"stale binary {binary}: last built {time.ctime(have)} "
+            f"({have!r}), not newer than the newest build source "
+            f"{time.ctime(newest)} ({newest!r}) of "
+            f"tests/rnf/tendency_term_check.py's BUILD_SOURCES plus "
+            f"{code_dir}: rebuild it (tests/mitgcm_oracle.sh) before "
+            f"running any case")
+
+
 def matching_digits(output_name, reference):
     """Return the digits of agreement of a run with ``results/<reference>``.
 
@@ -2340,6 +2393,15 @@ def main(argv=None):
         print(f"missing {binary}: run tests/mitgcm_oracle.sh lab_sea input{mpi}",
               file=sys.stderr)
         return 2
+    if not args.use_build:
+        # A --use-build binary is a deliberate mutant or alternate build
+        # (e.g. build_esx_noatm): it is not expected to postdate the
+        # ordinary BUILD_SOURCES/code comparison and must not be refused
+        # for that.
+        stale = check_build_fresh(binary, os.path.join(VERIF, EXPERIMENT, "code"))
+        if stale:
+            print(stale, file=sys.stderr)
+            return 2
     base = os.path.join(VERIF, EXPERIMENT, "input")
     with open(os.path.join(base, "data.pkg")) as fh:
         data_pkg = fh.read()
