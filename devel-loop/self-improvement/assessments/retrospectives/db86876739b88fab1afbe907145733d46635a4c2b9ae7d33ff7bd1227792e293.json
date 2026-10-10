@@ -1,0 +1,387 @@
+{
+  "retrospective": {
+    "accounting": {
+      "path": "devel-loop/loop_state/accounting/8f1995b784009c5849c49d6a8feb6d5cc3f265b7948fdde638b731d768c7191a.json",
+      "sha256": "8f1995b784009c5849c49d6a8feb6d5cc3f265b7948fdde638b731d768c7191a"
+    },
+    "carry_forward": [
+      "Any change to how runoff heat, salt or tracers reach the ocean must include a pkg/seaice (and, where available, pkg/thsice) case in the implementer's battery, not only in review.",
+      "Owner decisions still pending: RUNOFF-045 (keep, refuse or fix the T3/T6 heat; Arch recommends refuse) and acceptance of the under-ice runoff heat loss for now (RUNOFF-024).",
+      "Between issues: TEAM-ROLE-MODEL-OVERRIDE-001 and TEAM-SETTINGS-LOCAL-IN-ACCEPTANCE-001 are queued kit changes; the loop cannot select team issues, so they need an explicit slot.",
+      "Review A's optional items not yet taken: a RUNOFF-024 pointer at package_design.md:1870, and naming cs32 icedyn beside the lab_sea sea-ice cases in the verification matrix budget row."
+    ],
+    "closes_timestamp": "2026-10-09T19:14:29.456954+00:00",
+    "confirmations": [
+      {
+        "category": "unverified_reading_labelled",
+        "summary": "Labelling the coordinator's source readings in the design as starting points to confirm let Bob overturn two of them (saltFlux overwritten by seaice/thsice; longstep rebuilding surfaceForcingPTr) before they became requirements",
+        "evidence": "design-RUNOFF-031.md 'Arch's source readings ... not requirements'; Bob's round-0 report; review A confirmed both corrections from seaice_growth.F:2007/2066/2096, thsice_step_fwd.F:276 and longstep_forcing_surf.F"
+      },
+      {
+        "category": "independent_check",
+        "summary": "Richard's self-chosen sea-ice run was the only measurement of the new route with pkg/seaice on, and it found the real gap the implementer's battery could not see",
+        "evidence": "ice_heat_witness_labels.json: ice-free dTFLUX equals analytic at relative 0.0; ice-covered (1-A)Q closes over ocean plus reduced freezing to 1.07e-12"
+      },
+      {
+        "category": "decision_split",
+        "summary": "Moving the owner-pending T3/T6 choice into its own blocked issue (RUNOFF-045) let the approved candidate run final verification without waiting on the owner",
+        "evidence": "RUNOFF-045 Blocked-By OWNER-DECISION; final verification 17:07-19:08 EXECUTED PASS, receipt 4ffaa5a9"
+      }
+    ],
+    "id": "RUNOFF-031",
+    "iteration": 1,
+    "measured": {
+      "billing_status": "provider_reported_not_invoice_reconciled",
+      "coordinator": {
+        "provider_reported_usd": null,
+        "self_reported_minutes": null,
+        "self_reported_usd": null,
+        "tool_measured_minutes": 121.9
+      },
+      "coordinator_coverage": "missing",
+      "cost_scope": "cost_usd and span-based figures describe dispatched agents only; coordinator (Arch) cost is NOT included: no Arch accounting record exists for this iteration (record one with team_accounting.py record-arch)",
+      "cost_usd": {
+        "bob": 0.0,
+        "richard": 0.0
+      },
+      "dispatches": {
+        "bob": 2,
+        "richard": 2
+      },
+      "rounds": {
+        "bob": 2,
+        "richard": 2
+      },
+      "span_minutes": 418,
+      "unknown_cost_event_ids": [
+        "a3e3c4af97de407bbf91edb415c092c6",
+        "077af3c005d0460699fa2fad4c3e6d0f",
+        "726142debd4746dab6a2f9e547dd2cb8",
+        "b4481d71804046e2b2668301b0defc01"
+      ]
+    },
+    "no_problem_reason": "",
+    "problems": [
+      {
+        "category": "battery_input_class_gap",
+        "summary": "The implementer's heat battery ran every new heat check ice-free, so the records stated an unqualified heat invariant that fails under pkg/seaice; review A rejected on it and a records-only correction round followed",
+        "evidence": "Review A witness devel-loop/loop_state/scratch/ad7dd3fab4c8e2736/ice_heat_witness_labels.json (259.44 of 262.30 W/m^2 undelivered at A=0.989); correction round 1 events 726142de and b4481d71",
+        "minutes_lost": 75
+      },
+      {
+        "category": "provider_interruption",
+        "summary": "Bob's round-0 turn was cut off by a provider API error ('the response stopped arriving') mid-oracle and had to be resumed",
+        "evidence": "task notification for a232664afab96d7a8 status failed, then a SendMessage resume in the same identity",
+        "minutes_lost": 3
+      },
+      {
+        "category": "orientation_deleted_target",
+        "summary": "Arch's prepare-time orientation named rnf_tendency_apply.F, which the change deleted, so the review packet refused the stale orientation and Bob's brief command could not resolve it",
+        "evidence": "review-packet finding 'stale arch orientation' with error No such file for rnf_tendency_apply.F; fresh navigate eb6937b8",
+        "minutes_lost": 6
+      }
+    ],
+    "schema_version": 3,
+    "solutions": [
+      {
+        "problem": 0,
+        "action": "fixed",
+        "reference": "c8cae1a2f39841d30ed717a1ff675f80a0693560",
+        "reason": "Every heat-invariant statement now carries the pkg/seaice open-water exception with review A's measurement, and RUNOFF-024 owns the under-ice loss; the carry-forward rule below puts a sea-ice case into future heat batteries."
+      },
+      {
+        "problem": 1,
+        "action": "fixed",
+        "reference": "devel-loop/loop_state/dispatch_log.jsonl",
+        "reason": "Resumed in the same runtime identity with all committed and uncommitted work intact; no replacement and no correction round were needed."
+      },
+      {
+        "problem": 2,
+        "action": "fixed",
+        "reference": "devel-loop/loop_state/maintenance/eb6937b846ef6b5cda1e987408bccb2cadf276e88ce2c9e87ddf8174ba5d9d36.json",
+        "reason": "Arch re-navigated with the successor rnf_forcing_surf.F before building the packet; Bob substituted the same successor in his own orientation."
+      }
+    ],
+    "timestamp": "2026-10-10T02:14:58Z"
+  },
+  "accounting": {
+    "billing_status": "provider_reported_not_invoice_reconciled",
+    "by_phase": {
+      "orientation": {
+        "effort_seconds": 2.7422690391540527,
+        "elapsed_seconds": 2.7422690391540527,
+        "events": 10
+      },
+      "verification": {
+        "effort_seconds": 11671.47198009491,
+        "elapsed_seconds": 11671.47198009491,
+        "events": 7
+      }
+    },
+    "by_role": {
+      "bob": {
+        "dispatches": 2,
+        "reported_usd": 0.0,
+        "rounds": 2,
+        "seconds": 0.0,
+        "tool_calls": 0,
+        "unknown_cost_events": 2,
+        "unknown_tool_call_events": 2,
+        "usage": {}
+      },
+      "richard": {
+        "dispatches": 2,
+        "reported_usd": 0.0,
+        "rounds": 2,
+        "seconds": 0.0,
+        "tool_calls": 0,
+        "unknown_cost_events": 2,
+        "unknown_tool_call_events": 2,
+        "usage": {}
+      }
+    },
+    "child_elapsed_seconds": 0,
+    "components": [
+      {
+        "event_id": "a3e3c4af97de407bbf91edb415c092c6",
+        "kind": "unmetered_native",
+        "parent_event_id": "a3e3c4af97de407bbf91edb415c092c6",
+        "reported_usd": null,
+        "role": "bob",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "077af3c005d0460699fa2fad4c3e6d0f",
+        "kind": "unmetered_native",
+        "parent_event_id": "077af3c005d0460699fa2fad4c3e6d0f",
+        "reported_usd": null,
+        "role": "richard",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "726142debd4746dab6a2f9e547dd2cb8",
+        "kind": "unmetered_native",
+        "parent_event_id": "726142debd4746dab6a2f9e547dd2cb8",
+        "reported_usd": null,
+        "role": "bob",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "b4481d71804046e2b2668301b0defc01",
+        "kind": "unmetered_native",
+        "parent_event_id": "b4481d71804046e2b2668301b0defc01",
+        "reported_usd": null,
+        "role": "richard",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      }
+    ],
+    "coordinator": {
+      "coverage": "missing",
+      "included_in_reported_usd": "no",
+      "provider_reported_usd": null,
+      "self_reported": {
+        "minutes": null,
+        "records": [],
+        "records_without_usd": 0,
+        "usd": null
+      },
+      "tool_measured": {
+        "basis": "wall time of gate commands run as arch; excludes interactive session time",
+        "effort_seconds": 7312.31911611557,
+        "elapsed_seconds": 7312.31911611557,
+        "events": 5
+      }
+    },
+    "coordinator_coverage": "missing",
+    "end": "2026-10-10T02:12:32.581668+00:00",
+    "issue_id": "RUNOFF-031",
+    "missing_timing_event_ids": [
+      "a3e3c4af97de407bbf91edb415c092c6",
+      "077af3c005d0460699fa2fad4c3e6d0f",
+      "726142debd4746dab6a2f9e547dd2cb8",
+      "b4481d71804046e2b2668301b0defc01"
+    ],
+    "outside_child_intervals_seconds": 25083.124713897705,
+    "phase_events": [
+      {
+        "event_id": "c41c4291db5d49e18a099232b65cb7e2",
+        "finished_at": "2026-10-09T19:14:40.421109+00:00",
+        "issue_id": "RUNOFF-031",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.4701101556420326,
+        "started_at": "2026-10-09T19:14:39.950985+00:00"
+      },
+      {
+        "event_id": "0e407011c85c48b793b9162f10846b09",
+        "finished_at": "2026-10-09T19:16:59.698185+00:00",
+        "issue_id": "RUNOFF-031",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.28679976798594,
+        "started_at": "2026-10-09T19:16:59.411375+00:00"
+      },
+      {
+        "event_id": "09d6f9cb20064123ad3e3ba585ade2f1",
+        "finished_at": "2026-10-09T22:03:05.092253+00:00",
+        "issue_id": "RUNOFF-031",
+        "phase": "verification",
+        "reason": null,
+        "role": "a232664afab96d7a8",
+        "seconds": 1103.2792675206438,
+        "started_at": "2026-10-09T21:44:41.812990+00:00"
+      },
+      {
+        "event_id": "1aac3c75fb564ca5b1ae256ee930ce5a",
+        "finished_at": "2026-10-09T22:06:40.651161+00:00",
+        "issue_id": "RUNOFF-031",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.17333562299609184,
+        "started_at": "2026-10-09T22:06:40.477818+00:00"
+      },
+      {
+        "event_id": "60c685d1ccff4e729eefa5219134b3bf",
+        "finished_at": "2026-10-09T22:06:56.812393+00:00",
+        "issue_id": "RUNOFF-031",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.22832394391298294,
+        "started_at": "2026-10-09T22:06:56.584065+00:00"
+      },
+      {
+        "event_id": "f5edb1ab0b2041969e93c4fa90234b1f",
+        "finished_at": "2026-10-09T22:10:23.441746+00:00",
+        "issue_id": "RUNOFF-031",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.22769551631063223,
+        "started_at": "2026-10-09T22:10:23.214048+00:00"
+      },
+      {
+        "event_id": "7f1b005f99e3406f9b8c7af246b8ebde",
+        "finished_at": "2026-10-09T22:12:56.617341+00:00",
+        "issue_id": "RUNOFF-031",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 78.8050549402833,
+        "started_at": "2026-10-09T22:11:37.812296+00:00"
+      },
+      {
+        "event_id": "4ff02ef28c2145e691a784c341bfdd40",
+        "finished_at": "2026-10-09T22:16:01.803595+00:00",
+        "issue_id": "RUNOFF-031",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.23300140537321568,
+        "started_at": "2026-10-09T22:16:01.570585+00:00"
+      },
+      {
+        "event_id": "2716f9b30b83456daee12b284cce8486",
+        "finished_at": "2026-10-09T22:58:03.207890+00:00",
+        "issue_id": "RUNOFF-031",
+        "phase": "verification",
+        "reason": null,
+        "role": "ad7dd3fab4c8e2736",
+        "seconds": 1095.81788551528,
+        "started_at": "2026-10-09T22:39:47.390005+00:00"
+      },
+      {
+        "event_id": "5a3b20171a0c4f2aa6e8fecb8f9add4c",
+        "finished_at": "2026-10-09T22:59:55.283196+00:00",
+        "issue_id": "RUNOFF-031",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.2257056338712573,
+        "started_at": "2026-10-09T22:59:55.057482+00:00"
+      },
+      {
+        "event_id": "7faf4ab6fdef4436a2125c799841b567",
+        "finished_at": "2026-10-09T23:28:25.514316+00:00",
+        "issue_id": "RUNOFF-031",
+        "phase": "verification",
+        "reason": null,
+        "role": "a232664afab96d7a8",
+        "seconds": 1107.8272418091074,
+        "started_at": "2026-10-09T23:09:57.687083+00:00"
+      },
+      {
+        "event_id": "cd584aca35914b77be4ab920e2b5b144",
+        "finished_at": "2026-10-09T23:32:24.944370+00:00",
+        "issue_id": "RUNOFF-031",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.22570413257926702,
+        "started_at": "2026-10-09T23:32:24.718655+00:00"
+      },
+      {
+        "event_id": "fb980f6126c1414e9259ee38044e871d",
+        "finished_at": "2026-10-09T23:34:23.010441+00:00",
+        "issue_id": "RUNOFF-031",
+        "phase": "orientation",
+        "reason": null,
+        "seconds": 0.35272338055074215,
+        "started_at": "2026-10-09T23:34:22.657716+00:00"
+      },
+      {
+        "event_id": "c0ed700314cb413c9b73845e779aa6f8",
+        "finished_at": "2026-10-09T23:35:38.770881+00:00",
+        "issue_id": "RUNOFF-031",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 74.65666275564581,
+        "started_at": "2026-10-09T23:34:24.114225+00:00"
+      },
+      {
+        "event_id": "f638980c30a74acf8f12e05bdec33912",
+        "finished_at": "2026-10-09T23:59:03.585715+00:00",
+        "issue_id": "RUNOFF-031",
+        "phase": "verification",
+        "reason": null,
+        "role": "ad7dd3fab4c8e2736",
+        "seconds": 1052.9263125173748,
+        "started_at": "2026-10-09T23:41:30.659410+00:00"
+      },
+      {
+        "event_id": "a6bc481f16054cda8effc4937c171710",
+        "finished_at": "2026-10-10T00:01:13.162460+00:00",
+        "issue_id": "RUNOFF-031",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.3188021183013916,
+        "started_at": "2026-10-10T00:01:12.843658+00:00"
+      },
+      {
+        "event_id": "553afc8924e248ad9dcdebb40504ffce",
+        "finished_at": "2026-10-10T02:07:55.529039+00:00",
+        "issue_id": "RUNOFF-031",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 7158.15954506211,
+        "started_at": "2026-10-10T00:08:37.369446+00:00"
+      }
+    ],
+    "reported_usd": 0,
+    "schema_version": 2,
+    "span_seconds": 25083.124713897705,
+    "start": "2026-10-09T19:14:29.456954+00:00",
+    "unknown_cost_event_ids": [
+      "a3e3c4af97de407bbf91edb415c092c6",
+      "077af3c005d0460699fa2fad4c3e6d0f",
+      "726142debd4746dab6a2f9e547dd2cb8",
+      "b4481d71804046e2b2668301b0defc01"
+    ]
+  }
+}

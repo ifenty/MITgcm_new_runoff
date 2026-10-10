@@ -946,3 +946,40 @@ Carry forward from RUNOFF-013 (review B, correction round 1, 2026-10-05): **a nu
 ### Gate acceptance
 
 Accepted by `loop_gate.py --check-done` at 2026-10-09T19:03:30.131124+00:00 for iteration 2026-10-09T15:32:16.031263+00:00. Test/oracle change, no Fortran (8c9837f), now final-verified. RUNOFF-008 acceptance delivered: analytic tracer rows C1-C4 in tendency_term_check (PTRACERS_EvPrRn set/unset x branch L/U; Package RNFtr01 0.00e+00, Total two-run Tp_gTr01 <=1.68e-15); two-tracer budget on a PTRACERS_num=2 lab_sea build (per-ptracer ForcTrNN closures 1.962e-16..2.170e-16, swap control fails at 5.002e-01/3.334e-01); non-degenerate tracer series; missing-tracer oracle lab_sea_unfed with feed_zero control; unknown name refused (RUNOFF-013). Correction round 1 resealed the documentation after the interpreter repoint c68788d (seal 0c8886e4, candidate signature c8e6be78); replacement Richard confirmed (APPROVE_WITH_FIXES, empty must-fix; focused 13/13; 2004 floats bitwise identical across Python stacks). Final verification EXECUTED PASS (receipt 4a411df2), 09:40-11:53 -0700.
+
+## 🟢 RESOLVED: KPP and surface diagnostics do not see tendency-based runoff heat and salt
+
+**Date Identified**: 2026-10-03T04:30:00Z
+**Date Resolved**: 2026-10-10T02:12:32.581668+00:00
+**Status**: Resolved
+**UUID**: RUNOFF-031
+**Anchors**: MITgcm/pkg/kpp/kpp_calc.F::<module>; MITgcm/model/src/diags_oceanic_surf_flux.F::<module>
+
+### Issue or research question
+The package T/S terms go to `gT`/`gS`, not `surfaceForcingT/S`, so the KPP surface buoyancy flux and non-local transport and the `TFLUX`/`SFLUX` diagnostics omit them (the freshwater buoyancy of the volume still reaches KPP through `EmPmR`). Quantify the effect and decide whether surface targets should also feed `surfaceForcingT/S` (an `EXTERNAL_FORCING_SURF`-end hook, as `SHELFICE_FORCING_SURF` does) instead of, or as well as, the tendency term.
+
+### Evidence
+RUNOFF-010 design, decision 3, comparison point 2-3: `kpp_calc.F:419-421`, `kpp_transport_t.F:79`, `diags_oceanic_surf_flux.F:116-152`.
+
+### Scientific or engineering impact
+Mixed-layer response to warm or cold river water could differ from the dense exf path; users comparing TFLUX budgets would see unexplained residuals.
+
+### Proposed action and acceptance
+Run a KPP configuration (e.g. lab_sea or cs32 with KPP) with a strongly warm/cold source both ways; report the difference in mixed-layer depth and surface T. Acceptance: a documented decision with the measured effect, reviewed by Richard; the package design updated.
+
+**Owner decision, 2026-10-09 (decides this issue's question; the measurement is no longer needed to choose):** "we want to slot this runoff package in as cleanly as possible, and that means following existing conventions for adding volume, heat, salt, and other tracers. In the case of fluxes entering the surface grid cell, we should use the surface flux fields that mitgcm's other surface forcing uses. However, just like our shelfice package, we need to explicitly track all subsurface fluxes where the fluxes are applied to tendencies. we need all the diagnostics for that so we can close the budgets"
+
+What this means for the package (Arch's reading; the mechanism is for the implementing issue to establish from source, not from this note):
+- **Surface targets** (the model's surface cell in open water): heat, salt and passive tracers go through the surface flux fields the rest of the surface forcing uses (`surfaceForcingT`, `surfaceForcingS`, and for passive tracers `surfaceForcingPTr` in `pkg/ptracers/PTRACERS_FIELDS.h`), so KPP, the `TFLUX`/`SFLUX` diagnostics and the ptracers surface path see them. Volume already uses the exf `runoff` field (decision 2). This **supersedes decisions 3 and 4 of `docs/package_design.md` for surface targets**, and the 2026-10-02 direction "T/S fluxes follow the shelfice/icefront tendency pattern" with them. Whether the cleanest route is to fill an existing exf field (for example `runoftemp` for heat) or a hook at the end of `EXTERNAL_FORCING_SURF` like `SHELFICE_FORCING_SURF`'s is a design question for the implementing issue: prefer whatever the existing convention already does.
+- **Subsurface targets** (`target_level > 1`, RUNOFF-025, and the top wet cell under an ice shelf, RUNOFF-020): fluxes applied as tendencies, as pkg/shelfice and icefront do, and **explicitly tracked**: every subsurface volume, heat, salt and tracer flux gets diagnostics sufficient to close the budgets (RUNOFF-015, RUNOFF-016).
+- **Records to change** once RUNOFF-008 closes (both are inside its acceptance scope, so editing them now would stale its seal): `docs/package_design.md` decisions 3, 4 and 8, and `esx/project_profile.md` (the two "shelfice/icefront tendency pattern" lines).
+- **Landed work affected:** the T/S tendency terms (RUNOFF-013) and the tracer term (RUNOFF-008) currently apply to surface targets as tendencies and move to the surface fields. RUNOFF-008 is closed on its current mechanism: its analytic rows and its two-tracer budget closures measure the applied totals, so they become the regression witnesses the reroute must still pass; the Package-column rows read `RNFgT`/`RNFgS`/`RNFtrNN`, which will need re-deriving. RUNOFF-043/RUNOFF-044 (pkg/longstep) must be re-evaluated, because `LONGSTEP_FORCING_SURF` builds the long-step surface forcing itself. RUNOFF-037 (the exf runoff-temperature range check) matters more if heat goes through `runoftemp`. [**2026-10-09, RUNOFF-031 round 0 (bob):** implemented. Heat through exf `runoftemp`/`Qnet` (`ALLOW_RUNOFTEMP` required), salt into `surfaceForcingS`, tracers into `surfaceForcingPTr` (after `PTRACERS_FORCING_SURF` and again in `LONGSTEP_FORCING_SURF`); `RNF_TENDENCY_APPLY_*` deleted; diagnostics `RNFqnet`, `RNFsflx`, `RNFtfNN`; fork `46684c3af`. The oracles are re-derived at unchanged tolerances (package design decisions 3, 4, 8; verification matrix).]
+- Next: this issue becomes the implementing issue for the surface route, selected after RUNOFF-008 closes.
+
+**Moved to RUNOFF-045, 2026-10-09:** the T3/T6 runoff-heat inconsistency without `ALLOW_ATM_TEMP` (dense and sparse), with its owner decision and options. RUNOFF-031 closes on the dense convention.
+
+**For owner awareness, review A, 2026-10-09:** under `pkg/seaice` (`SEAICE_EXTERNAL_FLUXES`), exf `Qnet` keeps only the open-water share `(1 − A)` (`seaice_growth.F:956-957`). So on the surface route the runoff heat over the ice-covered fraction reaches neither ocean nor ice. Measured on lab_sea at `A = 0.989`: 259.44 of 262.30 W/m² is undelivered. Witness: `devel-loop/loop_state/scratch/ad7dd3fab4c8e2736/ice_heat_witness_labels.json`. The dense `runoftempfile` path behaves the same way, because the code is shared; the deleted tendency route conserved this heat. This follows from the convention the owner chose, so it is RUNOFF-024's to resolve.
+
+### Gate acceptance
+
+Accepted by `loop_gate.py --check-done` at 2026-10-10T02:12:32.581668+00:00 for iteration 2026-10-09T19:14:29.456954+00:00. Owner decision 2026-10-09 implemented for surface targets: runoff heat through the exf runoftemp/Qnet convention (RNF_EXF_RUNOFF fills runoftemp, exf_mapfields applies it), salt into surfaceForcingS and tracers into surfaceForcingPTr via new RNF_FORCING_SURF (plus a pkg/longstep re-add), RNF_TENDENCY_APPLY_* deleted, diagnostics RNFqnet/RNFsflx/RNFtfNN, refusals for runoff temperature without ALLOW_RUNOFTEMP and RUNOFF-043 option C. Fork 46684c3af, cf583d6b7, 37e77601f; project c8cae1a2. Oracles at unchanged tolerances: sparse vs dense heat 5.834e-16 (TFLUX bitwise 320/320); tendency_term_check 14/14 rows; budget_check 10/10 runs <=2.170e-16; kpp_heat_check dTFLUX = analytic; no-property runs byte-identical; mutants caught. Review A (Richard ad7dd3fab4c8e2736) REJECT on records in round 0, APPROVE_WITH_FIXES with empty must-fix in round 1 after the sea-ice exception was recorded. Final verification EXECUTED PASS (receipt 4ffaa5a9).
