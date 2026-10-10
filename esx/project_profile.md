@@ -25,6 +25,12 @@ This is the scientific contract agents read. Executable paths and commands are i
   - Test it in many verification configurations: regional and global; lat-lon, cubed sphere and LLC; with and without sea ice, ice shelves and open boundaries.
   - Cover all time modes (constant, daily, monthly, monthly climatology, yearly files), each with and without temperature, salinity and tracer contributions.
   - T, S and tracer input uses the shelfice/icefront tendency-term pattern.
+    **Superseded for surface targets by the owner's decision of 2026-10-09
+    (RUNOFF-031):** fluxes into the surface cell use the surface flux fields
+    the rest of MITgcm's surface forcing uses (heat through exf `runoftemp`
+    and `Qnet`, salt in `surfaceForcingS`, tracers in `surfaceForcingPTr`);
+    subsurface fluxes (RUNOFF-025, RUNOFF-020) are applied as tendencies, as
+    in pkg/shelfice, with full budget diagnostics.
   - Plan the work as RUNOFF-010 to RUNOFF-029 and file new issues as needed.
   - Subsurface discharge (RUNOFF-025) is now in scope. Opening the upstream PR still requires explicit owner approval.
 - In-scope deliverables and explicit exclusions:
@@ -59,8 +65,15 @@ This is the scientific contract agents read. Executable paths and commands are i
   - Where several sources feed one cell, volumes add, and T, S and all tracers
     are flux-weighted means. This conserves heat, salt and tracer content.
   - The volume goes through exf's `runoff` array, so the downstream exf/model
-    physics (`pkg/exf/exf_mapfields.F`) is unchanged. T, S and tracers enter as
-    tendency terms (shelfice/icefront pattern); see the package design.
+    physics (`pkg/exf/exf_mapfields.F`) is unchanged. At a surface target the
+    heat goes through exf's `runoftemp` field and its `Qnet` term, as dense
+    runoff temperature does (this needs `ALLOW_RUNOFTEMP`), and salt and
+    tracers are added to `surfaceForcingS` and `surfaceForcingPTr`, so KPP and
+    the `TFLUX`/`SFLUX` diagnostics see them (RUNOFF-031); under `pkg/seaice`
+    the heat, being part of `Qnet`, keeps only its open-water share `(1 − A)`,
+    as on the dense path (see the invariants below); subsurface targets
+    will use tendency terms (RUNOFF-025). See the package design, decisions 3
+    and 4.
 - Inputs/outputs, dimensions, units and coordinate/reference conventions: one
   NetCDF file with:
   - source ids (alphanumeric)
@@ -105,7 +118,13 @@ This is the scientific contract agents read. Executable paths and commands are i
     (decisions 5 and 6: `maskC`, `maskInC`, index range); a target on a blank
     tile is owned by no tile and shows up as a fraction deficit.
   - Total applied volume flux, `Σ runoff·rA`, equals `Σ_s flux_s(t)`.
-  - Heat, salt and tracer input (`Σ F_c·X_c`) equals `Σ_s flux_s·X_s`.
+  - Heat, salt and tracer input (`Σ F_c·X_c`) equals `Σ_s flux_s·X_s`. For heat
+    this is a statement about the term the package hands to exf `Qnet`
+    (`RNFqnet`, RUNOFF-031), before any sea-ice open-water scaling: under
+    `pkg/seaice` (`SEAICE_EXTERNAL_FLUXES`) only `(1 − A)` of it reaches ocean
+    and ice, as on the dense `runoftempfile` path, and the share `A` is
+    delivered nowhere (RUNOFF-024; measured 259.44 of 262.30 W/m² at
+    `A = 0.98911`). Volume, salt and tracers are not scaled by the ice.
   - Fractions are ≥ 0.
   - With the feature compiled in but not used, results are bit-for-bit unchanged.
 - Parameters, control variables, objectives and statistical estimands: new
@@ -163,7 +182,7 @@ This is the scientific contract agents read. Executable paths and commands are i
     (`refusal_check.py --case ptracer_unknown --case ptracer_off`, with
     `ptracer_match` and `ptracer_ignored` as the must-run controls). This entry
     was moved here from RUNOFF-004 on 2026-10-04 because matching to ptracers
-    belongs with the tendency term that consumes it; the RUNOFF-004-era warning
+    belongs with the tracer term that consumes it; the RUNOFF-004-era warning
     walk it describes was replaced by this refusal and no longer exists.
     `RNF_NC_SERIES` has five more refusals around the same matching, of which
     three were enrolled in correction round 1 (`ptracer_name_empty`,
@@ -187,9 +206,11 @@ This is the scientific contract agents read. Executable paths and commands are i
     - **Not a gap after all.** Earlier wording here carried, as an optional
       hardening, "two runoff-tracer variables whose names differ only in
       trailing blanks, which both match the same ptracer and of which
-      `rnf_tendency_apply.F` keeps the last". The last clause is true — the
-      `iRnf` loop of `RNF_TENDENCY_APPLY_PTR` assigns on every match, so it
-      keeps the last — but the condition is **unreachable**, on three
+      `rnf_tendency_apply.F` keeps the last". The last clause was true of
+      that routine — the `iRnf` loop of `RNF_TENDENCY_APPLY_PTR` assigned on
+      every match, so it kept the last; its successor `RNF_FORCING_SURF_PTR`
+      (RUNOFF-031) loops over the runoff tracers and would add both — but the
+      condition is **unreachable**, on three
       measured legs (the second and third added in correction round 2 from
       review B's measurements, re-measured here):
       - `RNF_NC_SERIES` trims the variable name with `ILNBLNK`, which treats
@@ -356,7 +377,7 @@ This is the scientific contract agents read. Executable paths and commands are i
     default on 1 and on 2 processes, and fails against a build with either
     condition reverted — on the `sflux` warning or on the runoff warning
     respectively.
-  - Neither enrolled tendency instrument measures the relaxation, although
+  - Neither enrolled single-cell heat instrument measures the relaxation, although
     both now run with `useExfCheckRange` at its default:
     `tendency_term_check.py` presents a dry record to the one call at
     `nIter0`, and `exf_heat_check.py` stays under the bound (its dense half
@@ -517,20 +538,31 @@ This is the scientific contract agents read. Executable paths and commands are i
 
 - Include `*_OPTIONS.h` first. Use `_RL`/`_RS`, `myThid` and `bi,bj` tile loops.
 - New code lives in `pkg/rnf` under `#ifdef ALLOW_RNF` with run-time switch
-  `useRNF`. The exf footprint is **two** files and nothing else in `pkg/exf`
-  (package design, decision 2):
+  `useRNF`. The exf footprint is **three** files and nothing else in `pkg/exf`
+  (package design, decisions 2 and 3):
   - one guarded call in `exf_getffields.F` (`RNF_EXF_RUNOFF`, which fills the
-    exf `runoff` array);
+    exf `runoff` array, and its `runoftemp` array when the file carries a
+    temperature);
   - two tests conditioned on `useRNF` in `EXF_CHECK_RANGE`
     (`exf_check_range.F`): the runoff **upper** bound is skipped, and the
     `sflux` bound is applied to `sflux + runoff` so that it still refuses an
     out-of-range `evap - precip`. Both are guarded by `useRNF` alone, so a run
     without `pkg/rnf` is byte-for-byte unaffected, and the negative-runoff
-    test and every other field's range check are untouched.
+    test and every other field's range check are untouched;
+  - one condition in `exf_mapfields.F` (RUNOFF-031, owner decision
+    2026-10-09): the `ALLOW_RUNOFTEMP` block that adds the runoff heat to
+    `Qnet` runs for `RNF_applyT` as well as for a `runoftempfile`, with
+    `RNF_SIZE.h`/`RNF.h` included under `ALLOW_RNF` for the flag. Without
+    `pkg/rnf` the block is the one upstream has.
 
   This is a convention, so read it as the permitted footprint: editing
-  `exf_check_range.F` in those two places is *allowed and done*, not
-  off-limits. Any further exf edit needs its own decision.
+  `exf_check_range.F` and `exf_mapfields.F` in those places is *allowed and
+  done*, not off-limits. Any further exf edit needs its own decision.
+  Outside pkg/exf the forcing hooks are one call in
+  `model/src/external_forcing_surf.F` (`RNF_FORCING_SURF`) and one in
+  `pkg/longstep/longstep_forcing_surf.F` (`RNF_FORCING_SURF_PTR`), both
+  RUNOFF-031; `model/src/apply_forcing.F` and pkg/ptracers are as upstream
+  has them.
 - Put new parameters in `data.rnf` (`RNF_PARM01`), read in `rnf_readparms.F` and
   reported in the package summary.
 

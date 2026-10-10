@@ -1,29 +1,53 @@
 #!/usr/bin/env python3
-"""The package heat term against the exf runoff-temperature term, cell by cell.
+"""Sparse runoff heat against dense runoff heat, cell by cell, through one exf code path.
 
 What this checks
 ================
 
-``pkg/exf`` already has one way to give runoff a temperature: with
-``ALLOW_RUNOFTEMP`` and a ``runoftempfile`` it adds
+``pkg/exf`` has one way to give runoff a temperature: with
+``ALLOW_RUNOFTEMP`` and a runoff temperature it adds
 ``Cp*(theta - runoftemp)*runoff*rhoConstFresh`` to ``Qnet``
-(``pkg/exf/exf_mapfields.F:199-211``), which the model turns into a
-temperature tendency through ``surfaceForcingT -= Qnet*mu/Cp``. In
-tendency form that is
+(``pkg/exf/exf_mapfields.F``, the ``ALLOW_RUNOFTEMP`` block), which the
+model turns into a temperature tendency through
+``surfaceForcingT -= Qnet*mu/Cp`` and which therefore reaches KPP and
+``TFLUX``. Since RUNOFF-031 ``pkg/rnf`` uses that same block: its
+``RNF_EXF_RUNOFF`` sets the exf ``runoff`` **and** ``runoftemp`` fields,
+and ``EXF_MAPFIELDS`` applies the block when ``RNF_applyT`` is true as
+well as when a ``runoftempfile`` is set (package design, decision 3).
+So a sparse run and a dense run of the same runoff now differ only in
+how the two exf fields are filled -- a per-source table spread over its
+cells against a dense field read from a file -- and everything from
+``EXF_MAPFIELDS`` on is the same code.
 
-    rhoConstFresh*runoff*(runoftemp - theta)*mass2rUnit*D
+Four comparisons, all cell by cell, between a dense run and a sparse
+run of the same runoff with the same per-source temperatures:
 
-``pkg/rnf`` applies ``[(mT) - m_T*theta]*mass2rUnit*D`` instead
-(decision 3 of ``docs/package_design.md``). Where every source of a
-cell carries a temperature, the two are the same number computed by
-different code on different inputs -- a dense field of per-cell
-temperatures against a per-source table -- so comparing them cell by
-cell is the cross-path check RUNOFF-013's acceptance asks for.
+* ``EXFroft``, the runoff temperature each path handed to exf, over
+  **every** cell (the sparse path sets 0 where there is no runoff, and
+  the dense file written here has 0 there too);
+* ``EXFroff``, the runoff each path handed to exf, over every cell;
+* the runoff heat itself: the sparse run's ``RNFqnet``, which
+  ``RNF_EXF_RUNOFF`` computes with the operands and expression of the
+  exf block, against that block evaluated on the dense run's own
+  ``EXFroff``, ``EXFroft`` and ``THETA``, at every target cell. This is
+  the comparison of RUNOFF-013's acceptance, now with the package side
+  read from the term it hands to exf rather than from a tendency;
+* ``TFLUX``, the model's own total surface heat flux
+  (``model/src/diags_oceanic_surf_flux.F``), over every cell. This is
+  the leg that needs no formula at all: it is what the model applied,
+  read from each run, and it would show any heat the package put
+  anywhere other than through exf.
 
-This is not a check of one formula against a copy of itself: the dense
-side is read out of ``EXFroff`` and ``EXFroft``, the two fields pkg/exf
-itself applied, and the sparse side out of ``RNFgT``, the term pkg/rnf
-itself applied, from two runs of the same experiment.
+**Bitwise where the inputs are bitwise.** The criterion is ``RTOL``
+relative per cell (LL-010: the two paths' inputs are not bitwise equal
+in general -- ``EXFroff`` is ``flux*frac/rA`` on one side and a
+precomputed ``float32`` value on the other, and ``EXFroft`` is
+``(mT)/m`` against the file's value, each up to an ulp apart). Where
+both runs hand exf bitwise identical ``EXFroff`` and ``EXFroft`` and
+start the measured step from a bitwise identical ``theta``, the code
+from there on is the same, so the heat and ``TFLUX`` must then be
+bitwise identical too; :func:`main` requires that, and reports how many
+cells it held at.
 
 How the two runs are set up
 ---------------------------
@@ -34,7 +58,7 @@ directory is written by this script and the compile command is printed
 when the binary is missing. ``RNF_CHECK`` refuses a non-blank
 ``runoftempfile`` together with ``useRNF`` (decision 2), which is why
 the comparison needs two runs rather than one: the dense run has
-``useRNF`` false and the file, the sparse run has the file blank and
+``useRNF`` false and the files, the sparse run has the files blank and
 ``pkg/rnf``.
 
 The source temperatures differ from source to source, so the
@@ -42,14 +66,10 @@ comparison is over a field with structure and not over one constant:
 the dense ``runoftemp`` file is built from the same per-source values
 as the sparse file, at the cells the sparse file's targets name.
 
-**Ice-free by construction.** The exf term is part of ``Qnet``, which
-``pkg/seaice`` and ``pkg/thsice`` scale by the open-water fraction
-while the package term is not scaled, so the two agree only where
-there is no ice (decision 3, "Comparison with exf runoftemp"). Rather
-than look for ice-free cells in a sea-ice run, both runs here have
-``pkg/seaice`` switched off, which makes every cell ice-free. What this
-check therefore does not establish is the under-ice behaviour; that
-difference is inherited from the dense path and is RUNOFF-024's.
+**Ice-free by construction.** Both runs have ``pkg/seaice`` switched
+off. Under ice the two paths now behave alike -- the heat is part of
+``Qnet`` on both, scaled by the open-water fraction -- but this check
+does not measure that.
 
 The control
 -----------
@@ -63,8 +83,7 @@ same field read twice -- would pass.
 Usage
 =====
 
-    tests/mitgcm_oracle.sh lab_sea input      # once, for the harness
-    python3 tests/rnf/exf_heat_check.py [--control] [--keep]
+    python3 tests/rnf/exf_heat_check.py [--build] [--control] [--keep]
 
 Exit status: 0 if the comparison passes, 1 if it fails, 2 if the binary
 is missing.
@@ -82,16 +101,16 @@ from refusal_check import (CELLS, ROOT, VERIF, add_to_namelist,  # noqa: E402
 from applied_field_check import set_namelist  # noqa: E402
 from tendency_term_check import (FIRST_DUMP, SALT0, STEPS,  # noqa: E402
                                  THETA0, build_if_stale, dump_at,
-                                 layer_thickness, param, read_mds,
+                                 write_roft_code, BUILD as ROFT_BUILD,
+                                 param, read_mds,
                                  report_build, run_model, state_at,
                                  write_state, THETA_FILE, SALT_FILE)
 
 EXPERIMENT = "lab_sea"
 #: Scratch input directories, one per run.
 PREFIX = "input.rnfterm_exf"
-#: Build with ALLOW_RUNOFTEMP defined, and the code directory of it.
-BUILD = "build_esx_roft"
-CODE = "code_rnfterm_roft"
+#: Build with ALLOW_RUNOFTEMP defined: tendency_term_check's ordinary one.
+BUILD = ROFT_BUILD
 #: The sparse file this check writes, and the dense pair it writes beside it.
 SPARSE_FILE = "runoff_exf.nc"
 DENSE_RUNOFF = "runoff_exf_dense.bin"
@@ -109,8 +128,9 @@ NX, NY = 20, 16
 
 DATA_DIAGNOSTICS = """# Cross-path heat check of tests/rnf/exf_heat_check.py:
 # snapshots (frequency < 0) through MDS, in float64, of the two fields
-# pkg/exf applied (EXFroff, EXFroft) and of the term pkg/rnf applied
-# (RNFgT, level 1). A run has the streams of its own path only.
+# handed to pkg/exf (EXFroff, EXFroft), of the model's surface heat flux
+# (TFLUX) and, in the sparse run, of the heat pkg/rnf hands to
+# EXF_MAPFIELDS (RNFqnet).
  &DIAGNOSTICS_LIST
   diag_mnc = .FALSE.,
 {streams} &
@@ -128,26 +148,13 @@ STREAM = """  fields(1,{n}) = '{field}',
 
 
 def write_code():
-    """Write the code directory of the build with ALLOW_RUNOFTEMP defined."""
-    code = os.path.join(VERIF, EXPERIMENT, CODE)
-    shutil.rmtree(code, ignore_errors=True)
-    os.makedirs(code)
-    base = os.path.join(VERIF, EXPERIMENT, "code")
-    for name in sorted(os.listdir(base)):
-        src = os.path.join(base, name)
-        if os.path.isfile(src):
-            shutil.copyfile(src, os.path.join(code, name))
-    with open(os.path.join(ROOT, "MITgcm", "pkg", "exf",
-                           "EXF_OPTIONS.h")) as fh:
-        options = fh.read()
-    new, count = re.subn(r"(?m)^#undef\s+ALLOW_RUNOFTEMP\s*$",
-                         "#define ALLOW_RUNOFTEMP", options)
-    if count != 1:
-        raise ValueError(f"pkg/exf/EXF_OPTIONS.h has {count} "
-                         f"'#undef ALLOW_RUNOFTEMP' lines, expected 1")
-    with open(os.path.join(code, "EXF_OPTIONS.h"), "w") as fh:
-        fh.write(new)
-    return code
+    """Write the code directory of the build with ALLOW_RUNOFTEMP defined.
+
+    The same directory and build as ``tests/rnf/tendency_term_check.py``'s
+    ordinary one (:func:`tendency_term_check.write_roft_code`), so the two
+    checks share one binary and one staleness rule.
+    """
+    return write_roft_code()
 
 
 def compile_command(code):
@@ -302,8 +309,10 @@ def write_input(input_dir, sparse, dt=3600.0):
     with open(os.path.join(input_dir, "data.exf"), "w") as fh:
         fh.write(exf)
 
-    fields = ([("RNFgT   ", "rnfGT")] if sparse
-              else [("EXFroff ", "exfRoff"), ("EXFroft ", "exfRoft")])
+    fields = [("EXFroff ", "exfRoff"), ("EXFroft ", "exfRoft"),
+              ("TFLUX   ", "tFlux")]
+    if sparse:
+        fields.append(("RNFqnet ", "rnfQnet"))
     streams = "".join(STREAM.format(n=k+1, field=f, name=name, dt=dt)
                       for k, (f, name) in enumerate(fields))
     with open(os.path.join(input_dir, "data.diagnostics"), "w") as fh:
@@ -319,47 +328,84 @@ def write_input(input_dir, sparse, dt=3600.0):
     return dt
 
 
+def rel_dev(a, b):
+    """Relative deviation of two numbers, 0 when both are 0."""
+    scale = max(abs(a), abs(b))
+    return 0.0 if scale == 0.0 else abs(a - b)/scale
+
+
 def compare(dense_dir, sparse_dir, info, dt):
-    """Compare the two paths cell by cell at the measured step."""
+    """Compare the two paths cell by cell at the measured step.
+
+    The dense runoff heat is the exf ``ALLOW_RUNOFTEMP`` block of
+    ``pkg/exf/exf_mapfields.F`` evaluated on the dense run's own fields,
+    ``HeatCapacity_Cp*(theta - runoftemp)*runoff*rhoConstFresh``, in
+    that operand order; the sparse one is what ``RNF_EXF_RUNOFF``
+    computed for the same block (``RNFqnet``).
+    """
     import numpy as np
     text = read_file(dense_dir, "output.txt") or ""
-    rho = param(text, "rhoConst")
+    cp = param(text, "HeatCapacity_Cp")
     rho_fresh = param(text, "rhoConstFresh")
-    mu = 1.0/rho
-    rac, _ = read_mds(dense_dir, "RAC")
-    hfac, _ = read_mds(dense_dir, "hFacC")
-    drf1 = layer_thickness(dense_dir)
-
-    roff, label_roff = dump_at(dense_dir, "exfRoff", 0, whole=True)
-    roft, label_roft = dump_at(dense_dir, "exfRoft", 0, whole=True)
-    gt, label_gt = dump_at(sparse_dir, "rnfGT", 0, whole=True)
-    theta_d = state_at(dense_dir, FIRST_DUMP, 0)["theta_field"]
-    theta_s = state_at(sparse_dir, FIRST_DUMP, 0)["theta_field"]
+    fields = {}
+    for side, run_dir in (("dense", dense_dir), ("sparse", sparse_dir)):
+        for stream in ("exfRoff", "exfRoft", "tFlux"):
+            fields[side, stream], _ = dump_at(run_dir, stream, 0,
+                                              whole=True)
+    qnet_s, _ = dump_at(sparse_dir, "rnfQnet", 0, whole=True)
+    theta_d = state_at(dense_dir, FIRST_DUMP, 0)["theta_field"][:NX*NY]
+    theta_s = state_at(sparse_dir, FIRST_DUMP, 0)["theta_field"][:NX*NY]
+    roff_d, roft_d = fields["dense", "exfRoff"], fields["dense", "exfRoft"]
+    roff_s, roft_s = fields["sparse", "exfRoff"], fields["sparse", "exfRoft"]
+    tflux_d, tflux_s = fields["dense", "tFlux"], fields["sparse", "tFlux"]
 
     cells = sorted({int(c) for c in info["cells"]})
-    worst, worst_cell = 0.0, None
+    worst = {"qnet": (0.0, None), "roft": (0.0, None),
+             "roff": (0.0, None), "tflux": (0.0, None)}
     per_cell = {}
+    same_input = 0
+    bitwise_violations = []
     for cell in cells:
-        dense = (rho_fresh*roff[cell]*(roft[cell] - theta_d[cell])
-                 * mu/(drf1*hfac[cell]))
-        got = gt[cell]
-        scale = max(abs(dense), abs(got))
-        rel = 0.0 if scale == 0.0 else abs(got - dense)/scale
-        per_cell[cell] = {"dense": dense, "sparse": got, "relative": rel,
-                          "runoff": roff[cell], "runoftemp": roft[cell],
-                          "theta": theta_d[cell]}
-        if rel > worst:
-            worst, worst_cell = rel, cell
-    # cells where one path acts and the other does not
-    nonzero_dense = {int(c) for c in np.nonzero(roff)[0]}
-    nonzero_sparse = {int(c) for c in np.nonzero(gt)[0]}
-    return {"cells": len(cells), "worst": worst, "worst_cell": worst_cell,
+        dense = cp*(theta_d[cell] - roft_d[cell])*roff_d[cell]*rho_fresh
+        got = float(qnet_s[cell])
+        row = {"dense": dense, "sparse": got,
+               "relative": rel_dev(got, dense),
+               "runoff": (float(roff_d[cell]), float(roff_s[cell])),
+               "runoftemp": (float(roft_d[cell]), float(roft_s[cell])),
+               "theta": float(theta_d[cell])}
+        per_cell[cell] = row
+        if row["relative"] > worst["qnet"][0]:
+            worst["qnet"] = (row["relative"], cell)
+        if (roff_d[cell] == roff_s[cell] and roft_d[cell] == roft_s[cell]
+                and theta_d[cell] == theta_s[cell]):
+            same_input += 1
+            if got != dense or tflux_s[cell] != tflux_d[cell]:
+                bitwise_violations.append(cell)
+    for key, (a, b) in (("roft", (roft_s, roft_d)), ("roff", (roff_s, roff_d)),
+                        ("tflux", (tflux_s, tflux_d))):
+        for cell in range(a.size):
+            r = rel_dev(float(a[cell]), float(b[cell]))
+            if r > worst[key][0]:
+                worst[key] = (r, cell)
+    nonzero_dense = {int(c) for c in np.nonzero(roff_d*(roft_d - theta_d))[0]}
+    nonzero_sparse = {int(c) for c in np.nonzero(qnet_s)[0]}
+    return {"cells": len(cells), "worst": max(w for w, _ in worst.values()),
+            "worst_by_leg": {k: {"relative": w, "cell": c}
+                             for k, (w, c) in worst.items()},
             "per_cell": per_cell,
+            "same_input_cells": same_input,
+            "bitwise_violations": bitwise_violations,
+            "bitwise": {
+                "exfRoff": int(np.count_nonzero(roff_d[cells] == roff_s[cells])),
+                "exfRoft": int(np.count_nonzero(roft_d[cells] == roft_s[cells])),
+                "qnet": sum(1 for c in cells
+                            if per_cell[c]["dense"] == per_cell[c]["sparse"]),
+                "tflux_all": int(np.count_nonzero(tflux_d == tflux_s)),
+                "tflux_cells_total": int(tflux_d.size)},
             "extra": sorted(nonzero_sparse - nonzero_dense),
             "missing": sorted(nonzero_dense - nonzero_sparse),
             "theta_differs": int(np.count_nonzero(theta_d != theta_s)),
-            "labels": [label_roff, label_roft, label_gt],
-            "rhoConstFresh": rho_fresh, "mu": mu, "drF": drf1}
+            "HeatCapacity_Cp": cp, "rhoConstFresh": rho_fresh}
 
 
 def run_pair(args, perturb=None):
@@ -450,15 +496,31 @@ def main(argv=None):
             problems.append(f"the two paths act on different cells: "
                             f"{len(result['extra'])} extra, "
                             f"{len(result['missing'])} missing")
-        if result["worst"] > RTOL:
-            problems.append(f"largest relative deviation "
-                            f"{result['worst']:.3e} at cell "
-                            f"{result['worst_cell']} > {RTOL!r}")
+        for leg, w in result["worst_by_leg"].items():
+            if w["relative"] > RTOL:
+                problems.append(f"{leg}: largest relative deviation "
+                                f"{w['relative']:.3e} at cell "
+                                f"{w['cell']} > {RTOL!r}")
+        if result["bitwise_violations"]:
+            problems.append(f"cells whose exf inputs and theta are "
+                            f"bitwise equal but whose heat or TFLUX is "
+                            f"not: {result['bitwise_violations']}")
     verdict = "PASS" if not problems else "FAIL"
+    legs = result.get("worst_by_leg", {})
+    bits = result.get("bitwise", {})
     print(f"{verdict} exf_vs_package: {result.get('cells', 0)} cells, "
           f"largest relative deviation {result.get('worst', float('nan')):.3e}"
+          f" (" + ", ".join(f"{k} {v['relative']:.3e}"
+                            for k, v in legs.items()) + ")"
           f", theta fields differing in "
           f"{result.get('theta_differs', '?')} values")
+    if bits:
+        print(f"     bitwise equal: EXFroff {bits['exfRoff']}, EXFroft "
+              f"{bits['exfRoft']}, runoff heat {bits['qnet']} of "
+              f"{result['cells']} target cells; TFLUX {bits['tflux_all']} "
+              f"of {bits['tflux_cells_total']} cells; exf inputs and "
+              f"theta bitwise equal at {result['same_input_cells']} target "
+              f"cells")
     for problem in problems:
         print(f"     {problem}")
 

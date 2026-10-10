@@ -196,6 +196,7 @@
       [
         "{python}",
         "tests/rnf/tendency_term_check.py",
+        "--build",
         "--case",
         "L_set",
         "--case",
@@ -208,6 +209,7 @@
       [
         "{python}",
         "tests/rnf/budget_check.py",
+        "--build",
         "--case",
         "lab_sea",
         "--mpi",
@@ -216,6 +218,7 @@
       [
         "{python}",
         "tests/rnf/budget_check.py",
+        "--build",
         "--case",
         "lab_sea_missing",
         "--mpi",
@@ -224,6 +227,7 @@
       [
         "{python}",
         "tests/rnf/budget_check.py",
+        "--build",
         "--case",
         "lab_sea",
         "--mpi",
@@ -569,12 +573,18 @@
       ],
       [
         "{python}",
+        "tests/rnf/kpp_heat_check.py",
+        "--build"
+      ],
+      [
+        "{python}",
         "tests/rnf/budget_check.py",
         "--build"
       ],
       [
         "{python}",
         "tests/rnf/budget_check.py",
+        "--build",
         "--case",
         "lab_sea",
         "--mpi",
@@ -607,6 +617,7 @@
       [
         "{python}",
         "tests/rnf/budget_check.py",
+        "--build",
         "--case",
         "lab_sea",
         "--mpi",

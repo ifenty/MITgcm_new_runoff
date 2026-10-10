@@ -159,6 +159,20 @@ Both reviewers found the omission by **calling** :func:`cases`, which is the
 enumeration that sees every case however it was built, and that is how the
 test above derives the set.
 
+Two configuration refusals came with RUNOFF-031, each with a must-run
+control: ``temperature_no_runoftemp`` (a file with ``runoff_temperature``
+on lab_sea's build, which leaves ``ALLOW_RUNOFTEMP`` undefined: the runoff
+heat goes through the exf ``runoftemp`` field, which needs it) against
+``temperature_ignored`` (the same file with ``RNF_useTemp = .FALSE.``),
+and ``longstep_tracer`` (pkg/longstep with ``LS_nIter = 2`` and a runoff
+tracer, RUNOFF-043 option C) against ``longstep_no_tracer`` (the same long
+step, no tracer variable). The two long-step cases start at iteration 0,
+because ``LONGSTEP_CHECK_ITERS`` stops ``nIter0 = 1`` with a long step of 2
+before ``RNF_CHECK`` runs. Both refusals were shown failing on a mutant
+binary with the guard removed, where the run then ends normally; such a
+binary is selected with ``--use-build NAME`` (serial only), which never
+touches ``build_esx``.
+
 The scratch input and run directories are removed afterwards (``--keep``
 leaves the run directories for inspection). Exit status: 0 if every case
 passes, 1 if any fails or none ran, 2 if the lab_sea binary is missing or a
@@ -168,6 +182,7 @@ Usage::
 
     python tests/rnf/refusal_check.py [--mpi N] [--keep] [--json]
                                       [--timeout S] [--case NAME ...]
+                                      [--use-build NAME]
 """
 import argparse
 import glob
@@ -255,6 +270,23 @@ DATA_LONGSTEP = """# pkg/longstep defaults, for the runoff tracer cases
  LS_nIter = 1,
  &
 """
+
+# A long step of two dynamics steps (RUNOFF-043), for the refusal of a
+# runoff tracer under pkg/longstep with LS_nIter /= 1 and its
+# companion without tracers. LONGSTEP_CHECK_ITERS (called from
+# SET_PARMS, before RNF_CHECK) stops a run whose nIter0 is not a
+# multiple of LS_nIter, and lab_sea/input starts at nIter0 = 1 from a
+# pickup, so both cases start at iteration 0 instead (startTime = 0,
+# the initial state from lab_sea's own hydrogThetaFile and
+# hydrogSaltFile, PTRACERS_Iter0 = 0).
+DATA_LONGSTEP_2 = """# A long step of two dynamics steps (RUNOFF-043)
+ &LONGSTEP_PARM01
+ LS_nIter = 2,
+ &
+"""
+DATA_PTRACERS_ITER0 = DATA_PTRACERS.replace(" PTRACERS_Iter0 = 1,",
+                                            " PTRACERS_Iter0 = 0,")
+assert DATA_PTRACERS_ITER0 != DATA_PTRACERS
 
 # Lines printed only after every configuration check has passed.
 PASSED = "RNF_CHECK: configuration checks passed"
@@ -959,6 +991,19 @@ def cases(data_pkg, data_exf, info=None):
             var[:] = value
         return edit
 
+    def add_temperature(value):
+        """Add a runoff_temperature series in degC (RUNOFF-031)."""
+        def edit(ds):
+            var = ds.createVariable("runoff_temperature", "f8",
+                                    ("time", "source"))
+            var.units = "degC"
+            var[:] = value
+        return edit
+
+    # lab_sea/input/data started at iteration 0 (see DATA_LONGSTEP_2)
+    with open(os.path.join(VERIF, EXPERIMENT, "input", "data")) as fh:
+        data_t0 = replace_line(fh.read(), "startTime", " startTime=0.0,")
+
     # The targets of the last source (three cells), for a negative fraction
     # that the other two hide in a sum of exactly 1.
     last = [k for k, s in enumerate(info["target_source"])
@@ -1626,10 +1671,9 @@ def cases(data_pkg, data_exf, info=None):
          "forbid": no_error},
         # The control of the two runoff-tracer refusals above: the same
         # file, with the name the ptracer really has. It must run, report
-        # the match, and apply the term, which is the only case of this
-        # script that reaches RNF_TENDENCY_APPLY_PTR at all (the tracer
+        # the match, and apply the term (RNF_FORCING_SURF_PTR; the
         # term's value is measured by tendency_term_check.py and
-        # budget_check.py, RUNOFF-008). Without it, both
+        # budget_check.py, RUNOFF-008 and RUNOFF-031). Without it, both
         # refusals could be refusing every tracer variable and would
         # still pass.
         {"name": "ptracer_match",
@@ -1660,6 +1704,64 @@ def cases(data_pkg, data_exf, info=None):
              "RNF_NC_SERIES: runoff_ptracer_ghost is in the file and"
              " RNF_usePtracers is false:"],
          "summary": {"RNF_nTrUse": "0", "RNF_usePtracers": "F"},
+         "flux_sum": info["flux_sum"], "stop": "ABNORMAL END",
+         "forbid": no_error},
+        # RUNOFF-043, owner decision 2026-10-09, option C: pkg/longstep
+        # with a long step (LS_nIter = 2) and a file that feeds a
+        # ptracer is refused in RNF_CHECK, because the runoff tracer term
+        # is that of the current step while pkg/longstep applies the
+        # long-step average of the freshwater flux. The message names
+        # the package, LS_nIter and each runoff tracer variable.
+        {"name": "longstep_tracer",
+         "files": {"data.pkg": pkg_ptr, "data.rnf": rnf_bad,
+                   "data": data_t0,
+                   "data.ptracers": DATA_PTRACERS_ITER0,
+                   "data.longstep": DATA_LONGSTEP_2},
+         "nc": {"bad.nc": {"edit": add_series("runoff_ptracer_dye", 2.0)}},
+         "stderr": ["RNF_CHECK: pkg/longstep with LS_nIter =     2 cannot"
+                    " take runoff tracers:",
+                    "RNF_CHECK:   runoff_ptracer_dye of the file",
+                    "RNF_CHECK: use LS_nIter = 1, or RNF_usePtracers=.FALSE."
+                    " to read the file without them", one_error],
+         "stdout": [], "stop": stop_check, "forbid": after_checks},
+        # Its companion: the same long step and the same ptracer, with a
+        # file that carries no tracer variable. Not refused: the volume
+        # reaches EmPmR, and LS_fwFlux, through exf's own runoff field,
+        # which is time-consistent under pkg/longstep. Without this case
+        # the refusal could be refusing pkg/longstep with LS_nIter = 2
+        # outright and still pass.
+        {"name": "longstep_no_tracer",
+         "files": {"data.pkg": pkg_ptr, "data.rnf": rnf_bad,
+                   "data": data_t0,
+                   "data.ptracers": DATA_PTRACERS_ITER0,
+                   "data.longstep": DATA_LONGSTEP_2},
+         "nc": {"bad.nc": {}},
+         "normal_end": True, "stderr": [], "stdout": stdout_ok,
+         "summary": {"RNF_nTrUse": "0"},
+         "flux_sum": info["flux_sum"], "stop": "ABNORMAL END",
+         "forbid": no_error},
+        # RUNOFF-031: the runoff heat goes through the exf runoftemp field
+        # and its EXF_MAPFIELDS term, which exist only with
+        # ALLOW_RUNOFTEMP, and lab_sea's build leaves it undefined. A
+        # file with runoff_temperature is refused there rather than read
+        # and silently not applied.
+        {"name": "temperature_no_runoftemp",
+         "files": {"data.pkg": pkg_on, "data.rnf": rnf_bad},
+         "nc": {"bad.nc": {"edit": add_temperature(5.0)}},
+         "stderr": ["RNF_CHECK: the file has runoff_temperature, which needs"
+                    ' "#define ALLOW_RUNOFTEMP"',
+                    "RNF_CHECK: or RNF_useTemp=.FALSE. in data.rnf to read"
+                    " the file without it", one_error],
+         "stdout": [], "stop": stop_check, "forbid": after_checks},
+        # Its control: the same file with RNF_useTemp = .FALSE., the way
+        # the message offers to read it on purpose. Must run.
+        {"name": "temperature_ignored",
+         "files": {"data.pkg": pkg_on,
+                   "data.rnf": add_to_namelist(
+                       rnf_bad, "RNF_PARM01", "  RNF_useTemp = .FALSE.,")},
+         "nc": {"bad.nc": {"edit": add_temperature(5.0)}},
+         "normal_end": True, "stderr": [], "stdout": stdout_ok,
+         "summary": {"RNF_hasTemp": "F", "RNF_useTemp": "F"},
          "flux_sum": info["flux_sum"], "stop": "ABNORMAL END",
          "forbid": no_error},
         # The at-the-bound companion of flux_above_source_max, and the
@@ -2052,7 +2154,18 @@ def main(argv=None):
                         help="seconds after which a run counts as hanging")
     parser.add_argument("--case", action="append", default=[],
                         help="run only this case (repeatable)")
+    parser.add_argument("--use-build", default=None, metavar="NAME",
+                        help="run on this serial lab_sea build instead of "
+                             "build_esx: for the must-fail demonstrations "
+                             "on mutant binaries")
     args = parser.parse_args(argv)
+    if args.use_build:
+        if args.mpi:
+            parser.error("--use-build is a serial build; drop --mpi")
+        global build_name
+
+        def build_name(nproc, _name=args.use_build):
+            return _name
 
     if args.mpi < 0:
         parser.error("--mpi needs a positive process count")

@@ -22,7 +22,8 @@ How the item type is found: the declarations of the routine the statement is
 in, then those of the package headers ``RNF.h`` and ``RNF_SIZE.h``, then the
 model headers a message actually takes items from (``MODEL_HEADERS``: the grid
 and the run-time parameters, for the cell coordinates and the time step that
-``RNF_EXF_RUNOFF`` prints when it refuses a cell), then literals and a small
+``RNF_EXF_RUNOFF`` prints when it refuses a cell, and the pkg/longstep
+parameters, for the ``LS_nIter`` of ``RNF_CHECK``), then literals and a small
 table of intrinsics (``LEN``, ``ILNBLNK``, ``ABS`` and so on). Scoping is per routine, which matters: ``attVal`` is ``_RL`` in
 ``RNF_NC_ATT_REAL`` and ``CHARACTER*(*)`` in ``RNF_NC_ATT_TEXT``. An item the
 module cannot classify fails
@@ -53,11 +54,14 @@ PKG = os.path.join(MITGCM, "pkg", "rnf")
 #: prints a variable from an unlisted header does not pass quietly -- it fails
 #: :func:`test_every_write_item_of_pkg_rnf_is_classified` with "has no known
 #: type", which is how this list came to exist (RUNOFF-040). Extend it there
-#: and then, rather than widening the classifier.
+#: and then, rather than widening the classifier. ``LONGSTEP_PARAMS.h`` was
+#: added by RUNOFF-031, for the ``LS_nIter`` that ``RNF_CHECK`` names when it
+#: refuses a runoff tracer under pkg/longstep.
 MODEL_HEADERS = (
     os.path.join(MITGCM, "eesupp", "inc", "EEPARAMS.h"),
     os.path.join(MITGCM, "model", "inc", "PARAMS.h"),
     os.path.join(MITGCM, "model", "inc", "GRID.h"),
+    os.path.join(MITGCM, "pkg", "longstep", "LONGSTEP_PARAMS.h"),
 )
 
 #: Fortran type keywords and the item kind each one declares.

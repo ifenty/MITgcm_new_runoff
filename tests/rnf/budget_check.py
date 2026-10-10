@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Budget-closure oracle of the runoff volume, heat, salt and tracers (RUNOFF-016, -008).
+"""Budget-closure oracle of the runoff volume, heat, salt and tracers (RUNOFF-016, -008, -031).
 
 What this closes, and against what
 ==================================
 
 ``pkg/rnf`` spreads each source over its target cells and applies the
-heat, salt and tracer it carries as *tendency* terms (package design,
-decision 3), so for those three there is no dense field to compare
-against. The existing numerical instruments are per-cell:
+heat, salt and tracer it carries through the surface flux fields
+(package design, decisions 3 and 4, since RUNOFF-031): the heat through
+the exf ``runoftemp`` field and its ``Qnet`` term, the salt and tracers
+added to ``surfaceForcingS`` and ``surfaceForcingPTr``. For those three
+there is no dense input field to compare against. The existing numerical instruments are per-cell:
 ``tests/rnf/tendency_term_check.py`` compares the applied term with an
 analytic row of the decision-3 table at **one** cell of **one** tile in a
 single-process run, and ``tests/rnf/exf_heat_check.py`` cross-checks the
@@ -27,7 +29,7 @@ closure     summed over all cells                equals, over the sources
 volume      ``RNF_vflx(c) * rA(c)``              ``sum_s flux_s``
 heat        ``(mT)(c) * rA(c)``                  ``rhoConstFresh * sum_{s: T present} flux_s*T_s``
 salt        ``(mS)(c) * rA(c)``                  ``rhoConstFresh * sum_s flux_s*S_s``
-tracer k    ``(mC_k)(c) * rA(c)``, from ``RNFtrNN``  ``rhoConstFresh * sum_s flux_s*C_{s,k}``
+tracer k    ``(mC_k)(c) * rA(c)``, from ``RNFtfNN``  ``rhoConstFresh * sum_s flux_s*C_{s,k}``
 ptracer n   ``(mC)(c) * rA(c)``, from ``ForcTrNN``  ``rhoConstFresh * sum_s flux_s*C_{s,name(n)}``
 ==========  ===================================  =========================
 
@@ -38,10 +40,10 @@ not the same closure, and the difference is the mapping ``RNF_trPtr``:
 see "Several tracers" below.
 
 A cell with no runoff contributes exactly 0 to every closure, so the wider sum
-costs nothing and cannot divide by a zero thickness: ``EXFroff`` is 0
-there and the inverted tendency is 0 both because the package writes
-nothing there and because the factor it is multiplied by vanishes wherever
-``hFacC`` does.
+costs nothing and cannot divide by a zero thickness: ``EXFroff`` and the
+package's flux diagnostics are 0 there, and the one inverted tendency
+(``ForcTrNN``) is 0 both because nothing is added there and because the
+factor it is multiplied by vanishes wherever ``hFacC`` does.
 
 The right-hand sides are the file's own source series at the record the
 model reported for that step, so the closure is a statement about where
@@ -57,26 +59,32 @@ which ``EXF_DIAGNOSTICS_FILL`` publishes as ``EXFroff`` -- the same path
 ``tests/rnf/applied_field_check.py`` uses, and for the same reason.
 
 ``(mT)``, ``(mS)`` and ``(mC_n)`` are not dumped. What is dumped is the
-tendency the package applied, through its own ``RNFgT``, ``RNFgS`` and
-``RNFtrNN`` diagnostics, filled inside ``RNF_TENDENCY_APPLY_T``, ``_S``
-and ``_PTR`` where the terms are computed
-(``pkg/rnf/rnf_tendency_apply.F:188``, ``:341``, ``:500``):
+runoff's own contribution to each surface flux field, through the
+package's diagnostics, filled where the terms are computed
+(``pkg/rnf/rnf_exf_runoff.F:262``, ``pkg/rnf/rnf_forcing_surf.F:164``,
+``:314``):
 
-    g_X = [ (mX) - m_X * X_ref ] * mass2rUnit * recip_drF(k)
-                                              * recip_hFacC(i,j,k,bi,bj)
+    RNFqnet  = Cp*(theta - runoftemp)*runoff*rhoConstFresh
+             = m_T*theta*Cp - (mT)*Cp            (W/m^2, Qnet's sign)
+    RNFsflx  = (mS) - m*S_ref                     (g/m^2/s)
+    RNFtfNN  = (mC_n) - m*C_ref,n                 (tracer * kg/m^2/s)
 
-so each sum is recovered by undoing that one factor,
+so each sum is recovered with no thickness at all,
 
-    (mX)(c) = g_X(c) * drF(ks) * hFacC(c,ks) / mass2rUnit
-              + m_X(c) * X_ref(c)
+    (mT)(c) = m_T(c)*theta(c) - RNFqnet(c)/Cp,
+    (mS)(c) = RNFsflx(c) + m(c)*S_ref,    (mC_n)(c) = RNFtfNN(c) + m(c)*C_ref,
 
-with every number on the right taken from the run itself: ``mass2rUnit``
-from its parameter dump (``model/src/config_summary.F:939``; it is read,
-not re-derived from ``rhoConst``), ``drF(ks)`` from the ``delR``/``delZ``
-of its own ``data``, ``hFacC`` from its own ``hFacC.data`` and ``rA`` from
-its own ``RAC.data``.
+with ``Cp`` (``HeatCapacity_Cp``) taken from the run's parameter dump.
+The per-ptracer closures read what each ptracer actually received, its
+forcing tendency ``ForcTrNN = (mC)*mass2rUnit*D``, and undo that one
+factor, ``D = recip_drF(ks)*recip_hFacC(c,ks)``, with every number on
+the right taken from the run itself: ``mass2rUnit`` from its parameter
+dump (``model/src/config_summary.F:939``; it is read, not re-derived from
+``rhoConst``), ``drF(ks)`` from the ``delR``/``delZ`` of its own
+``data``, ``hFacC`` from its own ``hFacC.data`` and ``rA`` from its own
+``RAC.data``.
 
-**``hFacC`` has to be the one the term used.** Under ``NONLIN_FRSURF``
+**``hFacC`` has to be the one the ptracer term used.** Under ``NONLIN_FRSURF``
 with ``nonlinFreeSurf > 0`` the model rewrites ``recip_hFacC`` at the
 surface level on every step (``model/src/update_surf_dr.F:57``), and the
 ``hFacC.data`` written at initialization would then not be the value the
@@ -92,10 +100,10 @@ package's salinity branch is the ``salt_EvPrRn`` one, which is where
 
 * salt: ``salt_EvPrRn = 0`` is the MITgcm default
   (``model/src/set_defaults.F:265``) and makes ``S_ref`` exactly 0
-  (``rnf_tendency_apply.F:296-297``), so ``(mS)`` comes straight out of
-  ``RNFgS``. :func:`judge` asserts the run reported 0.
+  (``rnf_forcing_surf.F:132-133``), so ``(mS)`` comes straight out of
+  ``RNFsflx``. :func:`judge` asserts the run reported 0.
 * tracer: ``PTRACERS_EvPrRn(n) = 0`` makes ``C_ref`` exactly 0
-  (``rnf_tendency_apply.F:453-454``), asserted the same way for every
+  (``rnf_forcing_surf.F:280-281``), asserted the same way for every
   fed ptracer. With ``PTRACERS_ref(n) = 0`` as well, and these runs in
   branch U (``convertFW2Salt`` = 35, asserted not -1), the model's own
   freshwater term for the tracer, ``EmPmR*(PTRACERS_ref -
@@ -103,12 +111,12 @@ package's salinity branch is the ``salt_EvPrRn`` one, which is where
   (``pkg/longstep/longstep_forcing_surf.F:126-145``: lab_sea compiles
   pkg/longstep, which sets ``surfaceForcingPTr`` in place of
   ``PTRACERS_FORCING_SURF``), so the ptracer's whole forcing tendency
-  ``ForcTrNN`` is the package term and inverts with the same factor.
-* temperature: in a build with ``ALLOW_ATM_TEMP`` and ``ALLOW_RUNOFF``
-  -- which both committed experiments have -- ``T_ref`` is the ambient
-  ``theta`` whatever ``temp_EvPrRn`` is set to
-  (``rnf_tendency_apply.F:145-149``), so it cannot be zeroed by a
-  namelist. ``theta`` is read instead, from the run's own state dump of
+  ``ForcTrNN`` is the package term, inverted by ``mass2rUnit*D``.
+* temperature: the exf ``runoftemp`` term assumes the water arrives at
+  the ambient ``theta`` whatever ``temp_EvPrRn`` is set to
+  (``RNF_EXF_RUNOFF`` builds ``runoftemp`` as
+  ``[(mT) + (m - m_T)*theta]/m``, ``rnf_exf_runoff.F:235-266``), so its
+  reference cannot be zeroed by a namelist. ``theta`` is read instead, from the run's own state dump of
   the iteration the dump belongs to (:func:`theta_at`), and ``m_T``
   comes from the reconstruction, which is where the missing-temperature
   rule lives. What that costs, and what pays for it, is the next
@@ -165,7 +173,8 @@ dump also reports ``heat_naive``, the same closure with the rule
 within :data:`RTOL` and ``heat_naive`` above it by at least
 :data:`DISCRIMINATION`, so the case cannot pass while the rule makes no
 difference to the number (measured on ``lab_sea_missing``: ``heat``
-3.850e-16 against ``heat_naive`` 1.946e-01). That case has one source
+1.925e-16 against ``heat_naive`` 1.946e-01; 3.850e-16 on the tendency
+route before RUNOFF-031). That case has one source
 missing its temperature in every record and a second missing it in one
 record of a pair the interpolating brackets of this time axis do use. On
 every other case ``heat_naive`` and ``heat`` are the same measurement and
@@ -179,9 +188,11 @@ The issue flags that with the forcing inside Adams-Bashforth
 package term is extrapolated like the model's own forcing, so an
 instantaneous per-step budget built from the **state change** would not
 close. This check does not build one. It closes the term the package
-itself recorded, read from the diagnostic filled inside
-``RNF_TENDENCY_APPLY_*`` at the point the term is computed -- upstream of
-``gT_loc``, of ``gtForc`` and of the extrapolation -- so the closure is
+itself recorded, read from the diagnostics filled in ``RNF_EXF_RUNOFF``
+and ``RNF_FORCING_SURF`` at the point the term is computed -- upstream of
+the surface forcing fields, of ``gtForc`` and of the extrapolation (and,
+for the ptracers, ``ForcTrNN``, which ``PTRACERS_INTEGRATE`` fills before
+it) -- so the closure is
 independent of the time-stepping scheme rather than made to work by
 choosing one.
 
@@ -341,19 +352,21 @@ tracers onto several ptracers is measured on a second binary,
 
 * ``lab_sea_ptr2`` feeds ptracers ``rnfa``, ``rnfb`` from a file whose
   variables are in the **opposite** order, so ``RNF_trPtr`` = (2, 1).
-  The ``RNFtrNN`` closures are **blind to that mapping**: the package
+  The ``RNFtfNN`` closures are **blind to that mapping**: the package
   names the diagnostic after the runoff tracer and fills it from
   ``RNF_apXTr(...,iRnf)`` whichever ptracer it is added to
-  (``rnf_tendency_apply.F:480-500``). The ``ForcTrNN`` closures are what
+  (``rnf_forcing_surf.F:298-317``). The ``ForcTrNN`` closures are what
   see it, since that is what each ptracer actually received. Measured:
   the four tracer closures close at 1.962e-16 to 2.170e-16, runoff tracer
   1 matching ptracer 2 and runoff tracer 2 matching ptracer 1.
 * ``--control swap`` exchanges the two variables' **names** and keeps
   their data in place, which is a swapped ``RNF_trPtr`` made by the
-  input. It must leave the ``RNFtrNN`` closures at round-off and fail
+  input. It must leave the ``RNFtfNN`` closures at round-off and fail
   every ``ForcTrNN`` closure: measured 5.002e-01 and 3.334e-01. A mutant
   binary with ``RNF_trPtr(n) = n`` (an identity mapping, which on this
-  file *is* a swap) gives the same two figures and fails the plain case.
+  file *is* a swap) gives the same two figures and fails the plain case,
+  measured on the tendency route (RUNOFF-008) and again on the surface
+  route (RUNOFF-031, ``--use-build``).
 * ``lab_sea_unfed`` has a file that feeds only ``rnfa``. The unfed
   ``rnfb`` must get nothing, judged by :func:`judge_unfed` on two legs:
   its ``ForcTrNN`` exactly 0.0 everywhere, and its state bitwise equal
@@ -393,7 +406,8 @@ the inversion is numerically **inert** on both configurations: measured,
 ``hFacC(:,:,1)`` is exactly 1.0 at all 7 lab_sea and all 1189 cs32 target
 cells, and forcing it to 1.0 leaves every residual bitwise unchanged
 (review A of this issue). So the factor is right by reading
-``RNF_TENDENCY_APPLY_*`` and not by measurement here; a partial surface
+``PTRACERS_APPLY_FORCING`` and not by measurement here; since RUNOFF-031
+it enters only the ``ForcTrNN`` closures; a partial surface
 cell, a cavity column under pkg/shelfice, or an r-star case is where it
 would first actually be exercised.
 
@@ -434,12 +448,20 @@ from applied_field_check import (dump_name, dump_iteration,  # noqa: E402
                                  record_trace, set_namelist, time_step)
 from tendency_term_check import (build_if_stale, param,  # noqa: E402
                                  param_all, read_mds, report_build,
-                                 write_mods_code)
+                                 write_mods_code, write_roft_code,
+                                 exf_options, BUILD as ROFT_BUILD)
 
 #: The scratch input directories this check writes, one per run.
 PREFIX = "input.rnfbudget_"
 #: Binary of the ordinary build; the MPI ones are this plus ``_mpiN``.
+#: It is the one cs32 runs on: its committed ``EXF_OPTIONS.h`` defines
+#: ``ALLOW_RUNOFTEMP``, which the runoff heat needs (RUNOFF-031).
 BUILD = "build_esx"
+#: lab_sea's committed exf options leave ``ALLOW_RUNOFTEMP`` undefined, so
+#: its cases run on ``tendency_term_check``'s ``ALLOW_RUNOFTEMP`` build,
+#: and on a ``_mpi2`` build of the same code for 2 processes, both
+#: compiled by ``--build`` from the mods directory
+#: ``tendency_term_check.write_roft_code`` writes.
 #: The lab_sea build with ``PTRACERS_num = 2`` (RUNOFF-008), compiled by
 #: ``--build`` from the mods directory :func:`write_ptr2_code` writes.
 #: Single process only: no ``_mpiN`` variant of it exists.
@@ -503,14 +525,14 @@ DATA_DIAGNOSTICS = """# Budget-closure oracle of tests/rnf/budget_check.py.
 # (fileFlags 'D'), one per time step:
 #   EXFroff  :: the exf runoff field, which RNF_EXF_RUNOFF has set to
 #               RNF_vflx, i.e. the volume flux per unit area applied
-#   RNFgT    :: the runoff temperature tendency term, as pkg/rnf applied
-#               it, at the surface level
-#   RNFgS    :: the same for salinity
-#   RNFtrNN  :: the same for runoff tracer NN, i.e. the NN-th
-#               runoff_ptracer_* variable of the file (lab_sea only)
+#   RNFqnet  :: the runoff heat pkg/rnf hands to Qnet [W/m^2]
+#   RNFsflx  :: the runoff salt flux it adds to surfaceForcingS [g/m^2/s]
+#   RNFtfNN  :: the flux of runoff tracer NN it adds to surfaceForcingPTr,
+#               i.e. of the NN-th runoff_ptracer_* variable of the file
+#               (lab_sea only)
 #   ForcTrNN :: the forcing tendency of ptracer NN (PTRACERS_INTEGRATE's
 #               gTrForc), i.e. what that ptracer actually received
-# The tendency streams are level 1 only: that is the surface level
+# The one tendency stream, ForcTrNN, is level 1 only: that is the surface level
 # of every column of these set-ups (z coordinates, no pkg/shelfice), and
 # the only level at which the terms are non-zero.
  &DIAGNOSTICS_LIST
@@ -529,9 +551,9 @@ def data_ptracers(case, iter0, nr):
 
     * ``PTRACERS_EvPrRn(n) = 0`` and ``PTRACERS_ref(:,n) = 0`` for every
       **fed** ptracer. The first makes ``C_ref`` exactly 0 in
-      ``RNF_TENDENCY_APPLY_PTR`` (``rnf_tendency_apply.F:453-454``), so
-      the term is ``(mC)*mass2rUnit*D`` and can be inverted without a
-      reference value; the second makes the model's own freshwater term
+      ``RNF_FORCING_SURF_PTR`` (``rnf_forcing_surf.F:280-281``), so
+      ``RNFtfNN`` is ``(mC)`` and ``ForcTrNN`` is ``(mC)*mass2rUnit*D``,
+      both read without a reference value; the second makes the model's own freshwater term
       for the tracer vanish too, since these runs are in branch U
       (``convertFW2Salt`` = 35, the default lab_sea keeps) where that
       term is ``EmPmR*(PTRACERS_ref - PTRACERS_EvPrRn)*mass2rUnit``
@@ -593,7 +615,7 @@ def data_ptracers(case, iter0, nr):
 #: ``ptracers`` are the ``PTRACERS_names`` of the run, in order (empty:
 #: pkg/ptracers off), and ``file_tracers`` the ``runoff_ptracer_<NAME>``
 #: variables of its file, in file order, which is the runoff-tracer
-#: numbering of ``RNFtrNN``. A ptracer the file does not feed is
+#: numbering of ``RNFtfNN``. A ptracer the file does not feed is
 #: *unfed*: it gets no closure and is judged by :func:`judge_unfed`
 #: against a reference run whose file has no tracer variable at all.
 #: ``build`` names a non-default binary (``PTR2_BUILD``).
@@ -606,7 +628,7 @@ CASES = (
      "table_from": ("lab_sea", "input.rnof_const", "runoff_sparse.nc"),
      "records": 5, "period": 2, "steps": 6,
      "ptracers": (TRACER_NAME,), "file_tracers": (TRACER_NAME,),
-     "mpi": (0, 2), "min_records": 2,
+     "build": ROFT_BUILD, "mpi": (0, 2), "min_records": 2,
      "perturb_source": 3},
     # The cube sphere: 1189 sources over six facets and, on 4 processes,
     # over four processes. One constant record (no pkg/cal there).
@@ -628,7 +650,7 @@ CASES = (
      "table_from": ("lab_sea", "input.rnof_const", "runoff_sparse.nc"),
      "records": 5, "period": 2, "steps": 6,
      "ptracers": (TRACER_NAME,), "file_tracers": (TRACER_NAME,),
-     "mpi": (0, 2), "min_records": 2,
+     "build": ROFT_BUILD, "mpi": (0, 2), "min_records": 2,
      "missing": {0: "all", 1: (3,)}, "perturb_source": 3},
     # The Adams-Bashforth pair. Two runs of the lab_sea case that differ
     # in exactly one namelist value, tracForcingOutAB, and in nothing
@@ -644,7 +666,7 @@ CASES = (
      "table_from": ("lab_sea", "input.rnof_const", "runoff_sparse.nc"),
      "records": 5, "period": 2, "steps": 6,
      "ptracers": (TRACER_NAME,), "file_tracers": (TRACER_NAME,),
-     "mpi": (0,), "min_records": 2,
+     "build": ROFT_BUILD, "mpi": (0,), "min_records": 2,
      "trac_forcing_out_ab": 1, "minimal_pkgs": True,
      "perturb_source": 3},
     {"name": "ab_in", "experiment": "lab_sea",
@@ -652,7 +674,7 @@ CASES = (
      "table_from": ("lab_sea", "input.rnof_const", "runoff_sparse.nc"),
      "records": 5, "period": 2, "steps": 6,
      "ptracers": (TRACER_NAME,), "file_tracers": (TRACER_NAME,),
-     "mpi": (0,), "min_records": 2,
+     "build": ROFT_BUILD, "mpi": (0,), "min_records": 2,
      "trac_forcing_out_ab": 0, "minimal_pkgs": True, "same_as": "ab_out",
      "perturb_source": 3},
     # Two runoff tracers feeding two ptracers (RUNOFF-008), on the
@@ -716,7 +738,8 @@ def write_ptr2_code():
     if count != 1:
         raise ValueError(f"pkg/ptracers/PTRACERS_SIZE.h has {count} "
                          f"'PARAMETER(PTRACERS_num = 1 )' lines, expected 1")
-    return write_mods_code(PTR2_CODE, {"PTRACERS_SIZE.h": new})
+    return write_mods_code(PTR2_CODE, {"PTRACERS_SIZE.h": new,
+                                       "EXF_OPTIONS.h": exf_options(True)})
 
 
 def tracer_closures(case):
@@ -725,9 +748,9 @@ def tracer_closures(case):
     Two kinds, which see different things:
 
     * ``tracer``, ``tracer2``, ...: runoff tracer k, i.e. the k-th
-      ``runoff_ptracer_*`` variable of the file, read from ``RNFtrNN``.
-      ``RNF_TENDENCY_APPLY_PTR`` names that diagnostic after the runoff
-      tracer, not after the ptracer (``rnf_tendency_apply.F:499``), and
+      ``runoff_ptracer_*`` variable of the file, read from ``RNFtfNN``.
+      ``RNF_FORCING_SURF_PTR`` names that diagnostic after the runoff
+      tracer, not after the ptracer (``rnf_forcing_surf.F:314``), and
       fills it from ``RNF_apXTr(...,iRnf)`` whichever ptracer it is
       applied to, so this closure is **blind to the mapping**
       ``RNF_trPtr``: it measures what the package loaded.
@@ -744,7 +767,7 @@ def tracer_closures(case):
     """
     out = []
     for k, name in enumerate(case["file_tracers"], start=1):
-        out.append(("tracer" if k == 1 else f"tracer{k}", f"RNFtr{k:02d}",
+        out.append(("tracer" if k == 1 else f"tracer{k}", f"RNFtf{k:02d}",
                     f"rnfBudC{k:02d}", name))
     for n, name in enumerate(case["ptracers"], start=1):
         if name in case["file_tracers"]:
@@ -1181,10 +1204,13 @@ def dense_fields(table, source, rac, ncells, frac=None):
 def diagnostics_text(case, dt):
     """Return the ``data.diagnostics`` of a case: one stream per quantity."""
     wanted = [("EXFroff ", STREAMS["vol"], None),
-              ("RNFgT   ", STREAMS["heat"], 1),
-              ("RNFgS   ", STREAMS["salt"], 1)]
+              ("RNFqnet ", STREAMS["heat"], None),
+              ("RNFsflx ", STREAMS["salt"], None)]
     for _name, field, stream, _series in tracer_closures(case):
-        wanted.append((f"{field:8s}", stream, 1))
+        # RNFtfNN is two-dimensional; ForcTrNN is a 3-D tendency, of
+        # which level 1 is the surface level of these set-ups
+        wanted.append((f"{field:8s}", stream,
+                       1 if field.startswith("ForcTr") else None))
     for n, _name, stream in unfed_ptracers(case):
         wanted.append((f"ForcTr{n:02d}", stream, 1))
     lines = []
@@ -1276,7 +1302,7 @@ def write_input(case, input_dir, table, perturb=None, no_tracers=False):
       ``select_rStar = 0`` is there because ``CONFIG_CHECK`` refuses r*
       with a linear free surface, and ``useRealFreshWaterFlux = .FALSE.``
       only reaches the salinity and tracer branch tests
-      (``rnf_tendency_apply.F:298-299`` and ``:455-456``), which
+      (``rnf_forcing_surf.F:134-135`` and ``:282-283``), which
       ``salt_EvPrRn = 0`` and ``PTRACERS_EvPrRn(n) = 0`` already
       short-circuit -- so it changes nothing this check measures and is
       set for consistency with ``nonlinFreeSurf = 0`` rather than out of
@@ -1390,7 +1416,7 @@ def write_input(case, input_dir, table, perturb=None, no_tracers=False):
         with open(os.path.join(input_dir, "data.longstep"), "w") as fh:
             fh.write("# Written by tests/rnf/budget_check.py: one passive\n"
                      "# tracer step per dynamics step, so no step is\n"
-                     "# skipped and RNFtrNN is filled on every one.\n"
+                     "# skipped and RNFtfNN is filled on every one.\n"
                      " &LONGSTEP_PARM01\n"
                      "  LS_nIter = 1,\n"
                      "  LS_whenToSample = 0,\n"
@@ -1507,7 +1533,7 @@ def measure(case, run_dir, table, oracle_frac, iterations):
     out = {"params": {}}
     for name in ("mass2rUnit", "rhoConstFresh", "rhoConst", "salt_EvPrRn",
                  "convertFW2Salt", "nonlinFreeSurf", "tracForcingOutAB",
-                 "temp_EvPrRn"):
+                 "temp_EvPrRn", "HeatCapacity_Cp"):
         out["params"][name] = param(text, name)
     if case["ptracers"]:
         # One value per ptracer, in PTRACERS_names order. An unset
@@ -1516,6 +1542,7 @@ def measure(case, run_dir, table, oracle_frac, iterations):
             out["params"][name] = param_all(text, name)
     mu = out["params"]["mass2rUnit"]
     rho_fresh = out["params"]["rhoConstFresh"]
+    cp = out["params"]["HeatCapacity_Cp"]
 
     rac, rac_sizes = read_mds(run_dir, "RAC")
     ncells = rac.size
@@ -1533,7 +1560,9 @@ def measure(case, run_dir, table, oracle_frac, iterations):
             f"have hFacC(:,:,1) <= 0 in this run: the tendency term there is "
             f"divided by a zero thickness and cannot be inverted")
     # 1/(mass2rUnit*D) with D = recip_drF(1)*recip_hFacC(:,:,1), as
-    # RNF_TENDENCY_APPLY_* applies it.
+    # PTRACERS_APPLY_FORCING applies surfaceForcingPTr: the inversion of
+    # the ptracers' own forcing tendency ForcTrNN. The package's own
+    # diagnostics are fluxes and need no inversion of a thickness.
     inverse = drf1 * hfac1 / mu
 
     trace = record_trace(run_dir)
@@ -1570,17 +1599,25 @@ def measure(case, run_dir, table, oracle_frac, iterations):
         applied, sizes = read_mds(run_dir, f"{STREAMS['vol']}.{iteration}")
         v_got = level1(applied, sizes, ncells)
         got = {"vflx": v_got}
-        for key_q, name in (("mXT", "heat"), ("mXS", "salt")):
-            raw, sizes = read_mds(run_dir, f"{STREAMS[name]}.{iteration}")
-            got[key_q] = level1(raw, sizes, ncells) * inverse
-        # Each tracer closure inverts its own stream with the same factor:
-        # C_ref is 0 and the model adds nothing (data_ptracers), so the
-        # stream is (mC)*mass2rUnit*D whether it is RNFtrNN or ForcTrNN.
-        for name, _field, stream, _series in tracers:
+        # RNFqnet is Cp*(theta - runoftemp)*runoff*rhoConstFresh, the
+        # term RNF_EXF_RUNOFF hands to EXF_MAPFIELDS, and RNFsflx is
+        # (mS) - m*S_ref with S_ref = 0 here: so -RNFqnet/Cp is
+        # m_T*theta - (mT) (runoftemp is [(mT) + (m - m_T)*theta]/m) and
+        # RNFsflx is (mS) itself.
+        raw, sizes = read_mds(run_dir, f"{STREAMS['heat']}.{iteration}")
+        got["mXT"] = -level1(raw, sizes, ncells) / cp
+        raw, sizes = read_mds(run_dir, f"{STREAMS['salt']}.{iteration}")
+        got["mXS"] = level1(raw, sizes, ncells)
+        # Each tracer closure reads its own stream. C_ref is 0 and the
+        # model adds nothing (data_ptracers), so RNFtfNN is (mC) itself
+        # and the ptracer's forcing tendency ForcTrNN is
+        # (mC)*mass2rUnit*D, which is inverted.
+        for name, field, stream, _series in tracers:
             raw, sizes = read_mds(run_dir, f"{stream}.{iteration}")
-            got[name] = level1(raw, sizes, ncells) * inverse
+            got[name] = level1(raw, sizes, ncells) * (
+                inverse if field.startswith("ForcTr") else 1.0)
         # T_ref is the ambient theta of the iteration this dump belongs
-        # to; (mT) = RNFgT/(mass2rUnit*D) + m_T*theta.
+        # to; (mT) = m_T*theta - RNFqnet/Cp.
         #
         # ``mXT_naive`` always takes m_T as the whole mass flux, from the
         # model's own EXFroff dump: m_T = rhoConstFresh*RNF_vflx, which is
@@ -1739,11 +1776,11 @@ def judge(case, run_dir, result, control=None):
             f"nonlinFreeSurf = {params['nonlinFreeSurf']}, not 0: the model "
             f"rewrites recip_hFacC at the surface every step "
             f"(update_surf_dr.F:57), so the run's hFacC.data is not the "
-            f"thickness the tendency term was divided by")
+            f"thickness the ptracer forcing tendency was divided by")
     if params["salt_EvPrRn"] != 0.0:
         problems.append(
             f"salt_EvPrRn = {params['salt_EvPrRn']}, not 0: S_ref is then "
-            f"not 0 and RNFgS is not (mS)*mass2rUnit*D")
+            f"not 0 and RNFsflx is not (mS)")
     for n, name in enumerate(case["ptracers"], start=1):
         ev = params["PTRACERS_EvPrRn"][n - 1]
         ref = params["PTRACERS_ref"][n - 1]
@@ -1752,8 +1789,8 @@ def judge(case, run_dir, result, control=None):
                 problems.append(
                     f"PTRACERS_EvPrRn({n}) = {ev} and PTRACERS_ref({n}) = "
                     f"{ref}, not both 0: C_ref is then not 0 or the model "
-                    f"adds a freshwater term of its own, and neither RNFtrNN "
-                    f"nor ForcTr{n:02d} is (mC)*mass2rUnit*D")
+                    f"adds a freshwater term of its own, and neither RNFtf{n:02d} "
+                    f"is (mC) nor ForcTr{n:02d} (mC)*mass2rUnit*D")
         elif ev != UNSET_RL or ref != case.get("unfed_ref", 0.0):
             problems.append(
                 f"the unfed ptracer {n} ({name}) to have PTRACERS_EvPrRn "
@@ -1955,7 +1992,7 @@ def judge(case, run_dir, result, control=None):
     if control == "swap":
         # A swap of the two tracers' names is a swap of RNF_trPtr made by
         # the input: runoff tracer k still carries the series the oracle
-        # expects for position k, so the RNFtrNN closures (blind to the
+        # expects for position k, so the RNFtfNN closures (blind to the
         # mapping) must still close, while each ptracer now receives the
         # other one's water, so every ForcTrNN closure must fail.
         ptr = [c[0] for c in tracer_closures(case) if c[0].startswith("p")]
@@ -2108,13 +2145,14 @@ def check_case(case, nproc, args, control=None):
     input_name = PREFIX + name
     exp_dir = os.path.join(VERIF, case["experiment"])
     input_dir = os.path.join(exp_dir, input_name)
-    build = case.get("build", BUILD) + (f"_mpi{nproc}" if nproc else "")
+    base_build = args.use_build or case.get("build", BUILD)
+    build = base_build + (f"_mpi{nproc}" if nproc else "")
     binary = os.path.join(exp_dir, build, "mitgcmuv")
     result = {"case": case["name"], "processes": nproc, "control": control,
               "closures": list(closures_of(case)), "problems": []}
     if not os.path.isfile(binary):
         print(f"MISSING {name}: no binary at {binary}")
-        if case.get("build") == PTR2_BUILD:
+        if case.get("build") in (PTR2_BUILD, ROFT_BUILD):
             print("     rerun this check with --build, which compiles it")
         else:
             print(f"     build it with tests/mitgcm_oracle.sh "
@@ -2140,7 +2178,7 @@ def check_case(case, nproc, args, control=None):
             oracle_frac[info["entries"]] = info["to"]
         run_dir, run_exit, timed_out = run_model(
             case["experiment"], input_name, nproc, args.timeout,
-            build=case.get("build", BUILD))
+            build=base_build)
         logs = "\n".join(filter(None, (
             read_file(run_dir, n) for n in ("output.txt", "mpirun.log"))))
         result["ended_normally"] = "Execution ended Normally" in logs
@@ -2185,7 +2223,7 @@ def check_case(case, nproc, args, control=None):
             write_input(case, ref_input_dir, table, no_tracers=True)
             ref_dir, ref_exit, ref_timed_out = run_model(
                 case["experiment"], ref_input, nproc, args.timeout,
-                build=case.get("build", BUILD))
+                build=base_build)
             ref_logs = read_file(ref_dir, "output.txt") or ""
             if (ref_timed_out or ref_exit != 0
                     or "Execution ended Normally" not in ref_logs):
@@ -2316,9 +2354,18 @@ def main(argv=None):
                              "binary is reported and the run exits 2")
     parser.add_argument("--keep", action="store_true",
                         help="keep the scratch input and run directories")
+    parser.add_argument("--use-build", default=None, metavar="NAME",
+                        help="run every selected case on this build of "
+                             "its experiment instead of its own: for the "
+                             "must-fail demonstrations on mutant "
+                             "binaries, never compiled into the builds "
+                             "this check reuses")
     parser.add_argument("--timeout", type=int, default=1800)
     parser.add_argument("--json", help="write the measurements here")
     args = parser.parse_args(argv)
+    if args.use_build and args.build:
+        parser.error("--use-build names a binary built elsewhere; it does "
+                     "not combine with --build")
 
     selected = CASES
     if args.case:
@@ -2340,10 +2387,22 @@ def main(argv=None):
         print(f"no selected case runs on {args.mpi} process(es) with "
               f"control(s) {args.control}")
         return 2
-    if args.build and any(c.get("build") == PTR2_BUILD for c, _, _ in runs):
-        if not report_build(build_if_stale(PTR2_BUILD, write_ptr2_code,
-                                           timeout=args.timeout)):
-            return 2
+    if args.build:
+        # Only the non-default builds the selected runs need, each once.
+        wanted = []
+        for case, nproc, _control in runs:
+            base = case.get("build")
+            if base not in (PTR2_BUILD, ROFT_BUILD):
+                continue
+            key = (base + (f"_mpi{nproc}" if nproc else ""),
+                   write_ptr2_code if base == PTR2_BUILD else write_roft_code,
+                   bool(nproc))
+            if key not in wanted:
+                wanted.append(key)
+        for build, writer, mpi in wanted:
+            if not report_build(build_if_stale(build, writer, mpi=mpi,
+                                               timeout=args.timeout)):
+                return 2
 
     results, missing = [], False
     for case, nproc, control in runs:

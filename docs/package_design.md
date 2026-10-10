@@ -4,7 +4,8 @@
 > 2026-10-03); implementation in progress (skeleton: RUNOFF-012; static read,
 > placement, file checks and the volume flux of a constant record:
 > RUNOFF-004; time handling: RUNOFF-005; the temperature, salinity and
-> tracer tendency terms and the reads they need: RUNOFF-013).** This is
+> tracer terms and the reads they need: RUNOFF-013, moved from tendency terms
+> to the surface flux fields by RUNOFF-031).** This is
 > the decision record for RUNOFF-010. Every statement about existing MITgcm
 > behavior was read from the live source in `MITgcm/` (branch `new_runoff`) and
 > carries a `file:line` citation. Nothing here was established by running the
@@ -22,12 +23,12 @@ Paths are relative to `MITgcm/`.
 |---|---|---|
 | 1 | Package identity | New package `pkg/rnf` (`ALLOW_RNF`, `useRNF`, `data.rnf`). The name `runoff` is unusable. |
 | 2 | Volume flux | The package fills the exf `runoff` field (option A). It needs `useEXF` and `ALLOW_RUNOFF`. `exf_mapfields.F` is unchanged. |
-| 3 | Temperature, salinity | Tendency terms in `APPLY_FORCING_T/S`, each of the form mass flux × (source property − property the freshwater formulation already assigned). |
-| 4 | Passive tracers | The same term, added in `PTRACERS_APPLY_FORCING`; names matched to `PTRACERS_names` at init. |
+| 3 | Temperature, salinity | Surface targets use the surface flux fields (RUNOFF-031): heat through the exf `runoftemp` field and its `EXF_MAPFIELDS` term in `Qnet` (needs `ALLOW_RUNOFTEMP`), salt added to `surfaceForcingS`, as mass flux × (source property − property the freshwater formulation already assigned). Subsurface: tendency terms, RUNOFF-025. |
+| 4 | Passive tracers | The same form, added to `surfaceForcingPTr` after `PTRACERS_FORCING_SURF` and again in `LONGSTEP_FORCING_SURF`; names matched to `PTRACERS_names` at init; refused under pkg/longstep with `LS_nIter ≠ 1`. |
 | 5 | Target level | Surface targets use the model's own surface-level rule (`1`, `Nr` or `kSurfC`). Targets under an ice shelf or beyond an open boundary are refused; so is a moving shelf edge (`SHI_update_kTopC`) until the `addMass` path exists. |
 | 6 | Reading, decomposition | NetCDF `NF_*` calls under `HAVE_NETCDF`, master thread, every process reads; index range checked in the model; cell placement by the `mdsio` arithmetic. |
 | 7 | Time handling | exf record routines for fixed and monthly sampling; own code for hold-exact, yearly sampling and the source-vector read. One set of record weights for all series. |
-| 8 | Diagnostics, monitor, pickup | Nine diagnostics plus one per tracer; a monitor block; no pickup. |
+| 8 | Diagnostics, monitor, pickup | The runoff's own surface fluxes (`RNFqnet`, `RNFsflx`, `RNFtfNN`) plus the input fields; a monitor block; no pickup. |
 | 9 | TAF | Fixed-size arrays from `RNF_SIZE.h` with runtime counts; state enters only through dense loops. |
 | 10 | Namelist | `data.rnf`, namelist `RNF_PARM01`. |
 
@@ -76,7 +77,8 @@ FORWARD_STEP
  |   |- SHELFICE_/ICEFRONT_THERMODYNAMICS  do_oceanic_phys.F:523, 539
  |   |- EXTERNAL_FORCING_SURF           do_oceanic_phys.F:579
  |   |   |- PTRACERS_FORCING_SURF       external_forcing_surf.F:188-197
- |   |   `- SHELFICE_FORCING_SURF       external_forcing_surf.F:394-400
+ |   |   |- SHELFICE_FORCING_SURF       external_forcing_surf.F:394-400
+ |   |   `- RNF_FORCING_SURF            external_forcing_surf.F:402-409 (RUNOFF-031)
  |   `- KPP_CALC                        do_oceanic_phys.F:956
  |- THERMODYNAMICS                      forward_step.F:733 or 1005
  |   |- TEMP_INTEGRATE -> APPLY_FORCING_T   thermodynamics.F:321, temp_integrate.F:322
@@ -143,9 +145,10 @@ z coordinates with `useShelfIce` (`model/src/apply_forcing.F:466-474`).
   `surfaceForcingT −= Qnet·μ/Cp` (`model/src/external_forcing_surf.F:225-231`)
   this cancels the branch-N term for the runoff part, so runoff enters at the
   surface water temperature (`pkg/exf/exf_mapfields.F:139-140`).
-- With `ALLOW_RUNOFTEMP` and a `runoftempfile`, exf adds
+- With `ALLOW_RUNOFTEMP` and a `runoftempfile` (or, since RUNOFF-031, the
+  sparse package's `RNF_applyT`), exf adds
   `Cp·(θ − runoftemp)·runoff·rhoConstFresh` to `Qnet`
-  (`pkg/exf/exf_mapfields.F:199-211`). In tendency form this is
+  (`pkg/exf/exf_mapfields.F:203-220`). In tendency form this is
   `gT += rhoConstFresh·runoff·(runoftemp − θ)·μ·D` at the surface level.
 
 ### What sea ice and ice shelves do to these fields
@@ -220,12 +223,13 @@ match.
 | `rnf_getrec.F` | record indices and weights (decision 7) |
 | `rnf_fields_load.F` | per step: read records, interpolate, build the dense fields |
 | `rnf_exf_runoff.F` | copies the volume flux into exf `runoff` |
-| `rnf_tendency_apply.F` | `RNF_TENDENCY_APPLY_T`, `_S`, `_PTR` |
+| `rnf_forcing_surf.F` | `RNF_FORCING_SURF`, `RNF_FORCING_SURF_PTR`: salt and tracer into the surface forcing fields (RUNOFF-031; `rnf_tendency_apply.F` before it) |
 | `rnf_diagnostics_fill.F`, `rnf_monitor.F` | output (decision 8) |
 | `rnf_ad_diff.list`, `rnf_ad.flow` | TAF lists, as `pkg/mypackage/mypackage_ad_diff.list` and `mypackage_ad.flow` |
 
-**Registration.** The sites in `PARAMS.h`, the `packages_*` routines and
-`apply_forcing.F` copy the existing `ICEFRONT` entries. The Pattern column gives
+**Registration.** The sites in `PARAMS.h` and the `packages_*` routines copy
+the existing `ICEFRONT` entries; the surface-forcing hook copies
+`SHELFICE_FORCING_SURF`'s. The Pattern column gives
 the lines to follow or the insertion point.
 
 | Site | Edit | Pattern |
@@ -238,10 +242,11 @@ the lines to follow or the insertion point.
 | `model/src/packages_check.F` | `CALL RNF_CHECK`, with `PACKAGES_ERROR_MSG` when not compiled | `packages_check.F:372-377` |
 | `model/src/load_fields_driver.F` | `CALL RNF_FIELDS_LOAD` before the exf block | `load_fields_driver.F:208-217` |
 | `pkg/exf/exf_getffields.F` | `CALL RNF_EXF_RUNOFF` between the runoff read and the control block | `exf_getffields.F:450`, `485` |
-| `model/src/apply_forcing.F` | `CALL RNF_TENDENCY_APPLY_T` and `_S` after the `ICEFRONT` calls | `apply_forcing.F:711-716`, `943-948` |
-| `pkg/ptracers/ptracers_apply_forcing.F` | `CALL RNF_TENDENCY_APPLY_PTR` beside `GCHEM_ADD_TENDENCY` | `ptracers_apply_forcing.F:71-78` |
+| `model/src/external_forcing_surf.F` | `CALL RNF_FORCING_SURF` at the end of the tile loop, after `SHELFICE_FORCING_SURF` (RUNOFF-031) | `external_forcing_surf.F:394-400` |
+| `pkg/exf/exf_mapfields.F` | the `ALLOW_RUNOFTEMP` block also for `RNF_applyT` (RUNOFF-031) | `exf_mapfields.F:203-220` |
+| `pkg/longstep/longstep_forcing_surf.F` | `CALL RNF_FORCING_SURF_PTR` after the field is rebuilt (RUNOFF-031) | `longstep_forcing_surf.F:154-162` |
 | inside the package, end of `RNF_FIELDS_LOAD` | `CALL RNF_DIAGNOSTICS_FILL` and `CALL RNF_MONITOR`, for the fields that do not depend on the model state | `exf_getforcing.F:377`, `380` |
-| inside the package, `RNF_TENDENCY_APPLY_*` | diagnostics fill of the state-dependent terms, at the level where they are computed | `apply_forcing.F:607-613` |
+| inside the package, `RNF_EXF_RUNOFF` and `RNF_FORCING_SURF` | diagnostics fill of the state-dependent terms, where they are computed | `apply_forcing.F:607-613` |
 | `pkg/pkg_depend` | `rnf +exf` | `pkg_depend:37-39` |
 
 - `data.pkg` gains `useRNF=.TRUE.` only in experiments that use the package.
@@ -335,10 +340,12 @@ build without exf and is not scheduled.
   Both halves are in this routine for the same reason: it is where the applied
   field exists and where `rA`, the top-layer thickness and the time step are
   all available.
-- This call is **one of the two** changes to exf code; the other is the pair of
-  tests conditioned on `useRNF` in `EXF_CHECK_RANGE`, described under "Known
-  effects inherited from the dense path" below. Those two are the whole exf
-  footprint. `exf_mapfields.F` is not edited.
+- This call is **one of the three** changes to exf code; the second is the
+  pair of tests conditioned on `useRNF` in `EXF_CHECK_RANGE`, described under
+  "Known effects inherited from the dense path" below, and the third, since
+  RUNOFF-031, is the condition of the `ALLOW_RUNOFTEMP` block of
+  `exf_mapfields.F`, which also runs for `RNF_applyT` (decision 3). Those three
+  are the whole exf footprint.
 
 **Mutual exclusion and other refusals in `RNF_CHECK`** (each a fatal error
 through `PRINT_ERROR` and the package error count):
@@ -919,58 +926,112 @@ documents exf and not the internals of `pkg/rnf`.
 
 ## Decision 3: temperature and salinity contributions
 
-**Alternatives.**
+**Revised 2026-10-09 by RUNOFF-031 (owner decision, quoted in that issue of
+`open_issues.md`):** "follow existing conventions for adding volume, heat,
+salt, and other tracers. In the case of fluxes entering the surface grid cell,
+we should use the surface flux fields that mitgcm's other surface forcing uses.
+However, just like our shelfice package, we need to explicitly track all
+subsurface fluxes where the fluxes are applied to tendencies." Phase 1 has
+surface targets only (decision 5), so what follows is the **surface route**.
+The subsurface route, tendency terms at interior levels with budget
+diagnostics, belongs to RUNOFF-025 and RUNOFF-020, with its diagnostics in
+RUNOFF-015.
 
-- **Fill exf `runoftemp`**, as the earlier contract assumed. `EXF_MAPFIELDS`
-  applies that field only when `runoftempfile` is not blank
-  (`pkg/exf/exf_mapfields.F:200`), and a non-blank name makes `EXF_SET_FLD` read
-  that file (`pkg/exf/exf_getffields.F:437-450`, `pkg/exf/exf_set_fld.F:117-121`).
-  The package cannot drive `runoftemp` without editing `exf_mapfields.F`. It
-  also has no counterpart for salinity or tracers.
-- **Add to `surfaceForcingT/S`** in a hook at the end of `EXTERNAL_FORCING_SURF`,
-  as `SHELFICE_FORCING_SURF` does
-  (`model/src/external_forcing_surf.F:394-400`). KPP would see the terms, but
-  the hook serves the surface level only.
-- **Tendency terms** in `APPLY_FORCING_T/S`, the pattern of
-  `ICEFRONT_TENDENCY_APPLY_T/S` (`model/src/apply_forcing.F:711-716`, `943-948`;
-  `pkg/icefront/icefront_tendency_apply.F:44-54`) and of `SHELFICE_FORCING_T/S`
-  (`model/src/apply_forcing.F:703-709`, `935-941`;
-  `pkg/shelfice/shelfice_forcing.F:73-100`).
+**Superseded: the tendency route (RUNOFF-010, implemented by RUNOFF-013,
+2026-10-02 to 2026-10-09).** The terms used to be tendency terms in
+`APPLY_FORCING_T/S` (`RNF_TENDENCY_APPLY_T/S`, in the pattern of
+`ICEFRONT_TENDENCY_APPLY_T/S`), because the owner's 2026-10-02 direction asked
+for the shelfice/icefront tendency pattern. The comparison with exf
+`runoftemp` that went with that choice listed what the tendency route cost:
+the heat was not scaled under ice like the rest of `Qnet`, KPP did not see it,
+and `TFLUX`/`SFLUX` did not include it (RUNOFF-031's original question). Those
+three no longer apply. `RNF_TENDENCY_APPLY_*` and their hooks in
+`model/src/apply_forcing.F` and `pkg/ptracers/ptracers_apply_forcing.F` were
+**deleted** rather than kept for RUNOFF-025: an interior target needs the
+`addMass` references of decision 5 rather than these, and the upstream PR
+carries no dead code. Both hook files are byte-identical to `master` again.
 
-**Choice.** Tendency terms, as the owner directed. The same routine later serves
-interior levels.
+**Alternatives, re-read from source for RUNOFF-031.**
 
-**What is added.** At a target cell, at the level given by decision 5:
+- *Heat.* (a) Fill the exf field `runoftemp` and let `EXF_MAPFIELDS` apply its
+  `ALLOW_RUNOFTEMP` block, which adds `Cp·(θ − runoftemp)·runoff·rhoConstFresh`
+  to `Qnet` (`pkg/exf/exf_mapfields.F:203-220`). That block used to run only
+  for a non-blank `runoftempfile`, so it needs one edit. (b) Add to
+  `surfaceForcingT` in a hook at the end of `EXTERNAL_FORCING_SURF`.
+- *Salt.* (a) Add to exf `saltflx`, which `EXF_MAPFIELDS` copies into the model
+  field `saltFlux` under `ALLOW_SALTFLX`, and which becomes
+  `surfaceForcingS −= saltFlux·μ` (`model/src/external_forcing_surf.F:233-234`).
+  (b) Add to `surfaceForcingS` itself at the end of `EXTERNAL_FORCING_SURF`.
+
+**Choice.**
+
+- *Heat: (a).* It is MITgcm's existing convention for the heat of runoff, so
+  the sparse heat is the dense `runoftempfile` heat by construction: the same
+  code from `EXF_MAPFIELDS` on, through `Qnet` into `surfaceForcingT`, KPP,
+  `TFLUX` and the sea-ice packages. `RNF_EXF_RUNOFF` fills `runoftemp`
+  (`pkg/rnf/rnf_exf_runoff.F:235-266`), and the block's condition is
+  `runoftempfile .NE. ' ' .OR. RNF_applyT` (`pkg/exf/exf_mapfields.F:206-209`,
+  `RNF.h` included under `ALLOW_RNF` at `:64-67`), so there is no second copy
+  of the formula. The field exists only with `ALLOW_RUNOFTEMP`, so a file with
+  `runoff_temperature` in a build without it is refused by `RNF_CHECK`
+  (`pkg/rnf/rnf_check.F:189-203`), as `EXF_CHECK` refuses a dense
+  `runoftempfile` there (`pkg/exf/exf_check.F:331-338`); `RNF_useTemp=.FALSE.`
+  reads such a file on purpose. lab_sea's committed options leave
+  `ALLOW_RUNOFTEMP` undefined, so every lab_sea instrument that carries a
+  temperature now runs on a build that defines it (`build_esx_roft`); cs32
+  defines it already.
+- *Salt: (b).* (a) cannot carry the term in a sea-ice run: `pkg/seaice` and
+  `pkg/thsice` assign `saltFlux` (`pkg/seaice/seaice_growth.F:2007`, `2066`,
+  `2096`; `pkg/thsice/thsice_step_fwd.F:132`, `276`) after exf and before
+  `EXTERNAL_FORCING_SURF` reads it, so a runoff salt added there would be
+  silently dropped wherever either package runs, as a user's own
+  `saltflxfile` already is. MITgcm has no runoff-salinity convention;
+  `surfaceForcingS` is the field all surface salt forcing ends in, and
+  `SHELFICE_FORCING_SURF` adds there too. `RNF_FORCING_SURF`
+  (`pkg/rnf/rnf_forcing_surf.F`) is called at the end of the
+  `EXTERNAL_FORCING_SURF` tile loop, after `SHELFICE_FORCING_SURF`
+  (`model/src/external_forcing_surf.F:402-409`), so nothing resets it; KPP
+  and `SFLUX` read the result.
+
+**What is added.** At a target cell, with the notation above:
 
 $$
-g_T \mathrel{+}= \left[(mT) - m_T\,T_{\mathrm{ref}}\right]\mu D ,
+\mathrm{runoftemp} = \frac{(mT) + (m - m_T)\,\theta}{m},
 \qquad
-g_S \mathrel{+}= \left[(mS) - m\,S_{\mathrm{ref}}\right]\mu D .
+Q_{\mathrm{net}} \mathrel{+}= C_p\,(\theta - \mathrm{runoftemp})\,m
+= -C_p\left[(mT) - m_T\,\theta\right],
 $$
 
-`T_ref` and `S_ref` are the temperature and salinity that the model's own
-freshwater formulation has already given to this water. Each term is the mass
-flux times the difference between the source property and that reference. The
-form is the one the model uses for `addMass`
-(`model/src/apply_forcing.F:504-531`, `874-901`).
+$$
+\mathrm{surfaceForcingS} \mathrel{+}= \left[(mS) - m\,S_{\mathrm{ref}}\right]\mu .
+$$
+
+After `surfaceForcingT −= Qnet·μ/Cp` the heat is `[(mT) − m_T·θ]μ`, which is the
+old temperature term with `T_ref = θ`; it is applied at the surface level by
+`APPLY_FORCING_T` like every surface heat flux. `runoftemp` is `(mT)/m` where
+every source of the cell carries a temperature (then `m_T = m` bitwise, since
+`RNF_LOAD_AT` accumulates both from the same expression times exactly 1), `θ`
+itself where none does (so that cell adds exactly nothing), and 0 where there
+is no runoff, where the formula's factor `runoff` is zero anyway; it is 0 and
+not `θ` there because `EXF_CHECK_RANGE` refuses a `runoftemp` below −2 °C in
+any wet cell at `nIter0`. `S_ref` is the salinity the model's own freshwater
+formulation has already given the water:
 
 | Quantity | Value | Why |
 |---|---|---|
-| `T_ref` | `θ(i,j,k)` | `temp_EvPrRn` unset: the model adds nothing, so the water arrives at `θ` (`config_summary.F:407-409`). `temp_EvPrRn` set with `ALLOW_ATM_TEMP`: exf cancels the model term for runoff (`exf_mapfields.F:175-185`), so it again arrives at `θ`. |
-| `T_ref` | `temp_EvPrRn` | `temp_EvPrRn` set and `ALLOW_ATM_TEMP` undefined: the exf cancellation is not compiled (`exf_mapfields.F:132-198`), so the model term stands and the dense path also delivers runoff at `temp_EvPrRn`. |
+| `T_ref` (heat) | `θ(i,j,ks)` | the exf block assumes the water arrives at the surface temperature; the model's and exf's own `temp_EvPrRn` terms stand beside it as on the dense path (table below) |
 | `S_ref` | `salt_EvPrRn` | `salt_EvPrRn` set (default 0, `set_defaults.F:265`): every branch gives the water this salinity. |
-| `S_ref` | `S(i,j,k)` | `salt_EvPrRn` unset, branch N or L: the model adds nothing. |
+| `S_ref` | `S(i,j,ks)` | `salt_EvPrRn` unset, branch N or L: the model adds nothing. |
 | `S_ref` | `convertFW2Salt` | `salt_EvPrRn` unset, branch U. |
-
-The package includes `EXF_OPTIONS.h` to see `ALLOW_ATM_TEMP`, as `pkg/seaice`
-does (`pkg/seaice/seaice_growth.F:1-4`).
 
 **Algebra for each formulation.** Runoff contributes `+m` to `PmEpR` and `−m` to
 `EmPmR`. This assumes `exf_outscal_sflux = 1`, because exf multiplies `sflux` by
 that factor (`pkg/exf/exf_mapfields.F:118`); `RNF_CHECK` refuses any other value
 (decision 2). The "model" column is the runoff part of the term in the branch
-table; "exf" is the cancellation; "package" is the term above; "total" is their
-sum.
+table; "exf" is exf's own `temp_EvPrRn` term for the runoff
+(`pkg/exf/exf_mapfields.F:178-188`, only with `ALLOW_ATM_TEMP`); "package" is
+the `runoftemp` term above; "total" is their sum. Every column is part of the
+dense `runoftempfile` path as well, so this table is that path's table too.
 
 *Temperature, all sources carrying a temperature (`m_T = m`).*
 
@@ -978,20 +1039,36 @@ sum.
 |---|---|---|---|---|
 | N or L, `temp_EvPrRn` unset | 0 | 0 | `[(mT) − mθ]μ` | `[(mT) − mθ]μ` |
 | N or L, set, `ALLOW_ATM_TEMP` | `m(temp_EvPrRn − θ)μ` | `m(θ − temp_EvPrRn)μ` | `[(mT) − mθ]μ` | `[(mT) − mθ]μ` |
-| N or L, set, no `ALLOW_ATM_TEMP` | `m(temp_EvPrRn − θ)μ` | 0 | `[(mT) − m·temp_EvPrRn]μ` | `[(mT) − mθ]μ` |
+| N or L, set, no `ALLOW_ATM_TEMP` | `m(temp_EvPrRn − θ)μ` | 0 | `[(mT) − mθ]μ` | `[(mT) − mθ]μ + m(temp_EvPrRn − θ)μ` |
 | U, `temp_EvPrRn` unset | 0 | 0 | `[(mT) − mθ]μ` | `[(mT) − mθ]μ` |
 | U, set, `ALLOW_ATM_TEMP` | `m(temp_EvPrRn − tRef)μ` | `m(θ − temp_EvPrRn)μ` | `[(mT) − mθ]μ` | `[(mT) − m·tRef]μ` |
-| U, set, no `ALLOW_ATM_TEMP` | `m(temp_EvPrRn − tRef)μ` | 0 | `[(mT) − m·temp_EvPrRn]μ` | `[(mT) − m·tRef]μ` |
+| U, set, no `ALLOW_ATM_TEMP` | `m(temp_EvPrRn − tRef)μ` | 0 | `[(mT) − mθ]μ` | `[(mT) − mθ]μ + m(temp_EvPrRn − tRef)μ` |
 
-In branch U with `temp_EvPrRn` set, both builds end at `[(mT) − m·tRef]μ`,
-because the model writes its term against `tRef(ks)`. With `ALLOW_ATM_TEMP`
-this is the mix of `θ` and `tRef(ks)` that exf already has in that branch.
+In branch U with `temp_EvPrRn` set and `ALLOW_ATM_TEMP`, the total is
+`[(mT) − m·tRef]μ`, because the model writes its term against `tRef(ks)`: the
+mix of `θ` and `tRef(ks)` exf already has in that branch.
 
-The exf column is part of `Qnet`; under sea ice it is scaled like the other
-heat terms (see the comparison below), so the cancellation is complete only in
-ice-free cells. With an ice fraction `a` and `temp_EvPrRn` set, the branch-N
-total becomes `[(mT) − mθ]μ + a·m(temp_EvPrRn − θ)μ`. The second part is a
-residual of the dense path, which has it too; the package does not remove it.
+**The two rows without `ALLOW_ATM_TEMP` changed with RUNOFF-031.** Nothing
+cancels the model's own `temp_EvPrRn` term for the runoff there, and the exf
+`runoftemp` term assumes the water arrives at `θ`, so the water is counted at
+`temp_EvPrRn` and again from `θ` to its own temperature. That is the dense
+`runoftempfile` path's total in such a build (point 5 of the superseded
+comparison below), and the sparse path, which now shares the code, has it
+too. The tendency route delivered the source heat in those two rows by using
+`T_ref = temp_EvPrRn`; following the existing convention gives that up. It is
+measured (`tests/rnf/tendency_term_check.py`, rows T3 and T6) and reported to
+the owner with the RUNOFF-031 result; the alternatives are a refusal of a
+runoff temperature with `temp_EvPrRn` set and `ALLOW_ATM_TEMP` undefined, or
+leaving it as the dense path has it.
+
+The exf and package columns are both part of `Qnet`, so under sea ice both are
+scaled like the other heat terms, by the open-water fraction `1 − A`
+(`pkg/seaice/seaice_growth.F:956-957`, with `SEAICE_EXTERNAL_FLUXES`), while
+the model column and the runoff's volume, salt and tracers are not. The share
+`A` of those two columns reaches neither the ocean nor the ice: the totals of
+the table hold in ice-free cells only. This is the dense `runoftempfile`
+path's behaviour and the sparse path's alike, and RUNOFF-024 records it with
+review A's measurement (`A = 0.98911`: 259.44 of 262.30 W/m² undelivered).
 
 In branch N the cell also gains the volume `mμ` at temperature `θ`, so its heat
 content changes by `mμθ + [(mT) − mθ]μ = (mT)μ`. Multiplied by `rhoConst·Cp·rA`
@@ -1001,12 +1078,12 @@ volume is fixed and the total is the dilution tendency
 `mμ(T_c − θ)` with `T_c = (mT)/m`.
 
 *Missing temperature.* A source without a temperature is left out of `(mT)` and
-`m_T`. It contributes nothing to the package term and enters at `T_ref`. That is
-the ambient temperature `θ`, except in a build without `ALLOW_ATM_TEMP` that
-sets `temp_EvPrRn`. With `T_ref = θ` the cell's effective inflow temperature is
+`m_T`. It contributes nothing to the package term and enters at `θ`, as runoff
+without a `runoftempfile` does on the dense path: `runoftemp` is
 `T_c = [(mT) + (m − m_T)θ]/m`, the flux-weighted mean of the contract with `θ`
-standing in for a missing value. No division by `m` is
-performed, so a cell with zero flux needs no special case.
+standing in for a missing value, and a cell whose sources all lack a
+temperature gets `runoftemp = θ` exactly. The one division, by `m`, is made in
+`RNF_EXF_RUNOFF`, where `m = 0` is a case of its own.
 
 *Salinity.*
 
@@ -1025,12 +1102,17 @@ is the virtual salt flux of water with salinity `S_c = (mS)/m` against the
 uniform reference.
 
 *S = 0.* Without a salinity variable `(mS) = 0`. With the default
-`salt_EvPrRn = 0` the package term is identically zero, the routine returns
-without touching `gS`, and the result equals the dense path. With a non-default
+`salt_EvPrRn = 0` the package term is identically zero, `RNF_applyS` is false,
+`surfaceForcingS` is not touched, and the result equals the dense path. With a non-default
 `salt_EvPrRn` the package still delivers salinity 0, which is what the contract
 states, and then differs from the dense path, where runoff takes `salt_EvPrRn`.
 
-**Time level.** The package fields must belong to the same step as the
+**Time level.** *Heat:* the `runoftemp` field is built from the fields of the
+current step, the step of the exf `runoff` it multiplies, which is what a dense
+`runoftemp` is read for; it follows the dense path and not the table below. In
+branch N without `staggerTimeStep` the model's own `PmEpR` term and the
+`runoftemp` term therefore belong to adjacent steps, on both paths alike.
+*Salt and tracers:* the package fields must belong to the same step as the
 freshwater flux that the model uses for its own temperature, salinity and
 tracer terms. The rule below also applies to decision 4. `deltaT` is
 `deltaTClock`, the step by which `myTime` advances.
@@ -1073,58 +1155,51 @@ tracer terms. The rule below also applies to decision 4. `deltaT` is
 term is extrapolated in time like the model's own forcing. A budget then closes
 in the sum over time and not step by step.
 
-**Comparison with exf `runoftemp`.** In an ice-free cell with every source
-carrying a temperature, the package term `[(mT) − mθ]μD` equals the exf term
-`rhoConstFresh·runoff·(runoftemp − θ)·μ·D` when `runoftemp = T_c`. The two paths
-differ in five ways:
+**Comparison with exf `runoftemp` (rewritten by RUNOFF-031).** The sparse and
+dense heat now differ only in how the two exf fields are filled; from
+`EXF_MAPFIELDS` on they are the same code. Of the five differences the tendency
+route had (superseded text, RUNOFF-010), the first three are gone: the heat is
+scaled under ice like the rest of `Qnet`, on both paths alike and with the
+ice-covered share reaching neither ocean nor ice (RUNOFF-024) (`pkg/seaice` with
+`SEAICE_EXTERNAL_FLUXES`, `pkg/seaice/seaice_growth.F:956-957`; `pkg/thsice`
+by `opFrac`, `pkg/thsice/thsice_step_fwd.F:273`), KPP reads it through
+`surfaceForcingT` (`pkg/kpp/kpp_calc.F:419-421`), and `TFLUX` includes it
+(`model/src/diags_oceanic_surf_flux.F:116-152`); the same holds for the salt in
+`surfaceForcingS` and `SFLUX`. The fourth, round-off, remains, because `EXFroff`
+is `flux·frac/rA` against a `float32` dense value and `EXFroft` is `(mT)/m`
+against the file's value. The fifth, the dense path's total in a build without
+`ALLOW_ATM_TEMP` that sets `temp_EvPrRn`, is now the sparse path's too (the
+table above). Measured (`tests/rnf/exf_heat_check.py`, 2026-10-09): over 7
+cells the sparse `RNFqnet` against the dense exf term at 5.834e-16, `EXFroft`
+1.480e-16, `EXFroff` 1.891e-16, and `TFLUX` bitwise in all 320 cells; the heat
+is bitwise at exactly the 3 cells where both runs hand exf bitwise identical
+inputs. `tests/rnf/kpp_heat_check.py` measures on lab_sea with KPP that the
+`TFLUX` difference of runs with and without a 25 °C source equals
+`Cp·rhoConstFresh·m_v·(T_r − θ)` (2.605038e+02 W/m², relative 0.0) and that
+KPP's surface buoyancy forcing `KPPbo` changes at that cell only.
 
-1. The exf term is part of `Qnet`. Under `pkg/seaice` built with
-   `SEAICE_EXTERNAL_FLUXES`, as cs32 is
-   (`verification/global_ocean.cs32x15/code/SEAICE_OPTIONS.h:25`), it is scaled
-   by the open-water fraction (`pkg/seaice/seaice_growth.F:956-957`), and under
-   `pkg/thsice` by `opFrac` (`pkg/thsice/thsice_step_fwd.F:273`). The package
-   term is not scaled. `global_ocean.cs32x15/input.seaice` runs `pkg/seaice`
-   (`verification/global_ocean.cs32x15/input.seaice/data.pkg`), so a sparse run
-   with tendency-based temperature cannot be expected to match
-   `results/output.seaice.txt` wherever a runoff cell holds ice. Whether such
-   cells exist in the ten steps of that experiment was not measured.
-2. The exf term is in `surfaceForcingT`, which KPP reads
-   (`pkg/kpp/kpp_calc.F:419-421`, `pkg/kpp/kpp_transport_t.F:79`). The package
-   term goes straight to `gT`, so KPP's surface buoyancy flux and non-local
-   transport do not include it. The freshwater buoyancy of the volume itself
-   still reaches KPP through `EmPmR`.
-3. The diagnostics `TFLUX` and `SFLUX` are built from `surfaceForcingT/S` and
-   `PmEpR` (`model/src/diags_oceanic_surf_flux.F:116-152`, `162-190`) and do not include
-   the package terms. The package diagnostics of decision 8 report them.
-4. The order of floating-point operations differs, so agreement is to round-off
-   where it holds.
-5. In a build without `ALLOW_ATM_TEMP` that sets `temp_EvPrRn`, the dense path
-   totals `m(temp_EvPrRn + T_c − 2θ)μ`: the model term `m(temp_EvPrRn − θ)μ`
-   stands, and the exf `runoftemp` term `m(T_c − θ)μ` assumes arrival at `θ`.
-   The package total is `[(mT) − mθ]μ`, the heat of the source.
-
-A cell-by-cell check that does not depend on ice: from `EXFroff`, `EXFroft` and
-`THETA` of a dense run compute `Cp·rhoConstFresh·runoff·(runoftemp − θ)` and
-compare it with the package heat diagnostic of the sparse run.
-
-**Consequence for issues.** RUNOFF-013 implements these terms; its acceptance
-against the cs32 `input.seaice` oracle has to be restricted to ice-free runoff
-cells or replaced by the cell-by-cell check. RUNOFF-014 tests each table row.
-RUNOFF-016 checks `(mT)` and `(mS)` against `rhoConstFresh·Σ flux·frac·X`.
-It does **not** need the sum over time that this paragraph expected for forcing
-inside Adams-Bashforth: `tests/rnf/budget_check.py` reads the `RNFgT`/`RNFgS`
-diagnostics where `RNF_TENDENCY_APPLY_*` fills them, upstream of `gtForc` and of
-the extrapolation, so the closure is per record and independent of the scheme.
-Measured: two runs differing only in `tracForcingOutAB` (1 against 0) give
-bitwise identical volume, salt and tracer residuals. Its heat sum runs over the
-sources whose temperature is **present** in every record used, which is the
-restriction the "Missing temperature" paragraph states; omitting it breaks the
-closure by 1.9e-1. RUNOFF-022 adds a
-restart in synchronous branch N across a record boundary. RUNOFF-024 records
-the unscaled heat under ice and the inherited `temp_EvPrRn` residual.
-RUNOFF-017 gains the refusal of a synchronous restart before the first record.
-RUNOFF-008 is superseded for salinity. RUNOFF-006 keeps the volume oracle and
-loses the `runoftemp` fill.
+**Consequence for issues.** RUNOFF-013 implemented the superseded tendency
+terms; RUNOFF-031 replaced them for surface targets. RUNOFF-014 tests each
+table row in branch N. RUNOFF-016 checks `(mT)` and `(mS)` against
+`rhoConstFresh·Σ flux·frac·X`: `tests/rnf/budget_check.py` now recovers them from
+`RNFqnet` and `RNFsflx`, which are filled upstream of the surface forcing
+fields and of the Adams-Bashforth extrapolation, so the closure is per record
+and independent of the scheme (measured: two runs differing only in
+`tracForcingOutAB` give bitwise identical volume, salt and tracer residuals).
+Its heat sum runs over the sources whose temperature is **present** in every
+record used, which is the restriction the "Missing temperature" paragraph
+states; omitting it breaks the closure by 1.9e-1. RUNOFF-022 adds a restart in
+synchronous branch N across a record boundary. RUNOFF-024 now records the
+inherited behaviour of the dense path rather than a difference from it: under
+`pkg/seaice` with `SEAICE_EXTERNAL_FLUXES` only `(1 − A)` of the whole runoff
+heat term reaches ocean and ice, so `A·[(mT) − m_T·θ]μ` is delivered nowhere
+whether or not `temp_EvPrRn` is set (plus `A·m(θ − temp_EvPrRn)μ` when it is,
+with `ALLOW_ATM_TEMP`); measured by review A of RUNOFF-031 at `A = 0.98911`,
+259.44 of 262.30 W/m². RUNOFF-037 (the exf
+runoff-temperature range check, which reads `runoff` where it means
+`runoftemp`) now applies to sparse runoff as well. RUNOFF-017 gains the
+refusal of a synchronous restart before the first record. RUNOFF-006 keeps the
+volume oracle and gains the `runoftemp` fill.
 
 ## Decision 4: passive tracers
 
@@ -1139,27 +1214,56 @@ RunOff" (`pkg/ptracers/PTRACERS_PARAMS.h:17`) and defaults to unset
 `GCHEM_ADD_TENDENCY` and `RBCS_ADD_TENDENCY`
 (`pkg/ptracers/ptracers_apply_forcing.F:71-78`, `80-100`, `114-121`).
 
-**Alternatives.** Add to `surfaceForcingPTr` in `PTRACERS_FORCING_SURF`; or add a
-tendency in `PTRACERS_APPLY_FORCING`.
+**Alternatives.** Add to `surfaceForcingPTr` after `PTRACERS_FORCING_SURF` has
+set it; or add a tendency in `PTRACERS_APPLY_FORCING`.
 
-**Choice.** `CALL RNF_TENDENCY_APPLY_PTR( gPtracer, iMin, iMax, jMin, jMax, k, bi, bj, iTracer, … )` in
-`PTRACERS_APPLY_FORCING`, beside the `GCHEM` call, under `ALLOW_RNF` and
-`useRNF`. For a tracer `n` that has a file variable:
+**Choice (revised by RUNOFF-031; the tendency in `PTRACERS_APPLY_FORCING`,
+`RNF_TENDENCY_APPLY_PTR`, is superseded and deleted).** The term goes into
+`surfaceForcingPTr`, the surface field of every other ptracer surface forcing,
+which `PTRACERS_APPLY_FORCING` applies at the surface level and KPP's
+non-local transport reads (`pkg/kpp/kpp_transport_ptr.F:89`, `116`).
+`RNF_FORCING_SURF_PTR` (`pkg/rnf/rnf_forcing_surf.F`) adds, for a tracer `n`
+that has a file variable,
 
 $$
-g_{C_n} \mathrel{+}= \left[(mC_n) - m\,C_{\mathrm{ref},n}\right]\mu D ,
+\mathrm{surfaceForcingPTr}_n \mathrel{+}= \left[(mC_n) - m\,C_{\mathrm{ref},n}\right]\mu ,
 $$
 
-with `C_ref,n = PTRACERS_EvPrRn(n)` if set; otherwise `pTracer(i,j,k,n)` in
-branches N and L and `PTRACERS_ref(ks,n)` in branch U
-(`pkg/ptracers/ptracers_forcing_surf.F:175-183`). A tracer without a file
-variable gets no term and behaves as in the dense path. The time-level rule of
-decision 3 applies unchanged, because `PTRACERS_FORCING_SURF` uses the same
-`PmEpR` in branch N (`pkg/ptracers/ptracers_forcing_surf.F:123-134`).
+with `C_ref,n = PTRACERS_EvPrRn(n)` if set; otherwise `pTracer(i,j,ks,n)` in
+branches N and L and `PTRACERS_ref(ks,n)` in branch U, the three arms of
+`PTRACERS_FORCING_SURF` (`pkg/ptracers/ptracers_forcing_surf.F:114-189`). A
+tracer without a file variable gets no term and behaves as in the dense path.
+The time-level rule of decision 3 applies unchanged, because
+`PTRACERS_FORCING_SURF` uses the same `PmEpR` in branch N.
 
-**Reason.** It matches decision 3, works at any level, and keeps the package out
-of the `surfaceForcingPTr` logic that KPP shares
-(`pkg/kpp/kpp_transport_ptr.F:89`).
+**Hook points, two, and why.** `RNF_FORCING_SURF` calls it at the end of the
+`EXTERNAL_FORCING_SURF` tile loop, i.e. after `PTRACERS_FORCING_SURF` has set
+the field (`model/src/external_forcing_surf.F:188-197`, `402-409`), so
+pkg/ptracers itself is not edited. **A hook there alone does not reach a
+pkg/longstep run**: `LONGSTEP_THERMODYNAMICS` zeroes and rebuilds
+`surfaceForcingPTr` in `LONGSTEP_FORCING_SURF` before every ptracer step
+(`pkg/longstep/longstep_thermodynamics.F:156-159`,
+`pkg/longstep/longstep_forcing_surf.F:60-68`), which would erase the term. lab_sea
+compiles pkg/longstep, so every lab_sea tracer oracle runs through it. The
+second call is therefore at the end of `LONGSTEP_FORCING_SURF`
+(`pkg/longstep/longstep_forcing_surf.F:154-162`), with the diagnostic filled
+only by the first, so it is filled once per step.
+
+**pkg/longstep with a long step (RUNOFF-043, option C).** The term added in
+`LONGSTEP_FORCING_SURF` is that of the current step while the model's own term
+uses `LS_fwFlux`, the long-step average of the freshwater flux, so the two
+belong to different times when `LS_nIter ≠ 1`. The move does not change that,
+so the refusal the owner decided is implemented here: `RNF_CHECK` stops when
+`usePTRACERS`, `RNF_nTrUse ≥ 1` and `LS_nIter ≠ 1`, naming pkg/longstep,
+`LS_nIter` and each runoff tracer variable, and suggesting `LS_nIter = 1` or
+`RNF_usePtracers=.FALSE.` (`pkg/rnf/rnf_check.F:206-227`). `LS_nIter ≠ 1`
+without runoff tracers is not refused: the volume reaches `EmPmR`, and
+`LS_fwFlux`, through exf's own runoff field. Averaging the term instead is
+RUNOFF-044.
+
+**Reason.** It is the field the ptracers surface forcing already uses, KPP
+sees it, and the same reference rule as for salinity keeps the three
+freshwater formulations consistent between salt and tracers.
 
 **Name matching.** In `RNF_INIT_FIXED`, each variable `runoff_ptracer_<NAME>` is
 compared with `PTRACERS_names(iTr)` for `iTr = 1 … PTRACERS_numInUse`
@@ -1178,38 +1282,42 @@ phosphate concentration (`pkg/bling/bling_main.F:225-229`). With option A it
 applies to sparse runoff as well. A file that also supplies that tracer would
 count it twice; `RNF_CHECK` warns when both are active.
 
-**Consequence for issues.** RUNOFF-008 is replaced by this decision and can be
-closed into RUNOFF-013 or a tracer issue of its own. The tracer term has **two**
-oracles (RUNOFF-008):
+**Consequence for issues.** RUNOFF-008 implemented the tracer term on the
+tendency route; RUNOFF-031 moved it to `surfaceForcingPTr` and re-derived its
+**two** oracles at unchanged tolerances:
 
 - `tests/rnf/tendency_term_check.py` has an analytic single-cell row for each
   of the four linear-free-surface reference arms (`PTRACERS_EvPrRn` set or
-  unset, in branch L or U): the `RNFtr01` diagnostic against
-  `[(mC) − m·C_ref]·mass2rUnit·D` (measured 0.00e+00), and the two-run
-  difference of the tracer's own state change `Tp_gTr01` against package plus
-  model term (at most 1.68e-15). On lab_sea the model's term is
-  `LONGSTEP_FORCING_SURF`'s, not `PTRACERS_FORCING_SURF`'s, because
-  pkg/longstep takes the ptracer step over; the arms are the same, with
-  `EmPmR` replaced by its long-step average.
+  unset, in branch L or U): the `RNFtf01` diagnostic against
+  `[(mC) − m·C_ref]` (measured 0.00e+00), and the two-run difference of the
+  tracer's own state change `Tp_gTr01` against package plus model term (at
+  most 1.68e-15). On lab_sea the model's term is `LONGSTEP_FORCING_SURF`'s,
+  not `PTRACERS_FORCING_SURF`'s, because pkg/longstep takes the ptracer step
+  over; the arms are the same, with `EmPmR` replaced by its long-step
+  average. A wrong arm fails it at 2.222e-01 and a sign flip at up to 2.00.
 - `tests/rnf/budget_check.py` (RUNOFF-016) closes
   `Σ_c (mC_n)(c)·rA(c) = rhoConstFresh·Σ_s flux_s·C_{s,n}` at 1.962e-16
-  relative on a non-degenerate series, per runoff tracer from `RNFtrNN` and per
+  relative on a non-degenerate series, per runoff tracer from `RNFtfNN` and per
   ptracer from `ForcTrNN`. The second is the one that sees the `RNF_trPtr`
   mapping, measured on a `PTRACERS_num = 2` lab_sea build with the file's
   variables in the opposite order to `PTRACERS_names`; a swap of the two
-  fails it at 5.0e-01 and 3.3e-01. A ptracer the file does not feed is
-  measured to receive exactly nothing.
+  fails it at 5.0e-01 and 3.3e-01, and so does an identity-mapping mutant. A
+  ptracer the file does not feed is measured to receive exactly nothing.
 
 Neither runs on cs32, which does not compile pkg/ptracers, nor in branch N
 (RUNOFF-014). RUNOFF-017 gains the unmatched-name and ptracers-off refusals.
-RUNOFF-029 covers tracer series in every time mode.
+RUNOFF-029 covers tracer series in every time mode. RUNOFF-044 would replace
+the pkg/longstep refusal by averaging.
 
 ## Decision 5: target level and cavities
 
-**Surface level.** `RNF_TENDENCY_APPLY_*` receives `k` from the caller and
-applies a surface target when `k` equals the model's surface level for that
-column, evaluated at call time with the rule of
-`model/src/apply_forcing.F:466-474` and `617-636`:
+**Surface level.** Since RUNOFF-031 the package does not choose the level of
+a surface target at all: its heat, salt and tracer go into `Qnet`,
+`surfaceForcingS` and `surfaceForcingPTr` (decisions 3 and 4), which the model
+applies at the surface level of each column with the rule of
+`model/src/apply_forcing.F:466-474` and `617-636` (and
+`pkg/ptracers/ptracers_apply_forcing.F:57-65` for the tracers), evaluated at
+call time:
 
 - z coordinates without `useShelfIce`: `k = 1`;
 - pressure coordinates: `k = Nr`, as exf uses for its surface index
@@ -1232,7 +1340,7 @@ beyond an open boundary (`model/inc/GRID.h:359`). `pkg/obcs` sets it
 (`pkg/obcs/obcs_init_fixed.F:375-379`) before the package's init runs
 (`model/src/packages_init_fixed.F:223`). With `useRealFreshWaterFlux` the model
 multiplies `EmPmR` by this mask (`model/src/external_forcing_surf.F:149-156`),
-so such a target would lose its volume and keep its tendency terms. The
+so such a target would lose its volume and keep its heat, salt and tracer. The
 alternative, accepting these targets and reporting a count, was rejected
 because the volume invariant would fail without stopping the run. The refusal
 applies in every freshwater formulation, so that one file behaves the same way
@@ -1244,8 +1352,9 @@ tests.
 under `pkg/shelfice`. The volume cannot follow that definition through the
 surface flux: `SHELFICE_FORCING_SURF` sets `EmPmR` and the surface forcing to
 zero wherever `kTopC ≠ 0` (`pkg/shelfice/shelfice_forcing_surf.F:57-69`), after
-exf and before the solver. A target there would keep its tendency terms and
-lose its volume without any message.
+exf and before the solver. A target there would lose its volume and its heat
+(part of `Qnet`) without any message, while its salt and tracer, which
+`RNF_FORCING_SURF` adds after `SHELFICE_FORCING_SURF`, would still arrive.
 
 **Alternatives for those cells.**
 
@@ -1271,7 +1380,7 @@ only while `kTopC` stays fixed.
   (`pkg/shelfice/shelfice_init_varia.F:118-131`) and at every step
   (`pkg/shelfice/shelfice_thermodynamics.F:239-256`, called at
   `model/src/do_oceanic_phys.F:523`). A target that was open at init can then
-  come under the shelf, lose its volume and keep its tendency terms.
+  come under the shelf and lose its volume without a message.
 - The flag is true only when `ALLOW_SHELFICE_REMESHING` is compiled and
   `SHELFICEMassStepping` is set
   (`pkg/shelfice/shelfice_readparms.F:103-107`, `230`).
@@ -1467,24 +1576,31 @@ is written by the model's own pickup (`model/src/write_pickup.F:314`).
 **Diagnostics** (registered with `DIAGNOSTICS_ADDTOLIST` as in
 `pkg/exf/exf_diagnostics_init.F:204-216`, filled once per step). The fields
 that depend only on the input are filled by `RNF_DIAGNOSTICS_FILL` at the end of
-`RNF_FIELDS_LOAD`. `RNFheat`, `RNFsalt`, `RNFgT`, `RNFgS` and `RNFtrNN` depend
-on the model state through the reference value, and `DO_OCEANIC_PHYS` can still
-change that state after the load (`FREEZE_SURFACE`,
-`model/src/do_oceanic_phys.F:552-558`). They are filled inside
-`RNF_TENDENCY_APPLY_*`, where the term is computed, as `APPLY_FORCING_T` does
-for one of its own terms (`model/src/apply_forcing.F:607-613`).
+`RNF_FIELDS_LOAD`. The three surface-flux diagnostics depend on the model state
+through the reference value, and `DO_OCEANIC_PHYS` can still change that state
+after the load (`FREEZE_SURFACE`, `model/src/do_oceanic_phys.F:552-558`), so
+each is filled where its term is computed, from the values the term used.
+**Revised by RUNOFF-031:** they are the runoff's own contributions to the
+surface flux fields it feeds, each in the units and sign of that field, so a
+budget can separate the runoff from the rest of `TFLUX`, `SFLUX` and the
+ptracers surface forcing. They replace the three-dimensional tendency
+diagnostics `RNFgT`, `RNFgS` and `RNFtrNN` of RUNOFF-013, which ended with the
+tendency terms.
 
 | Name | Units | Content |
 |---|---|---|
 | `RNFvflx ` | m/s | volume flux per area, `m / rhoConstFresh`; equals `EXFroff` before controls |
 | `RNFmflx ` | kg/m²/s | mass flux `m` |
-| `RNFheat ` | W/m² | `Cp·[(mT) − m_T·T_ref]`, the applied heat term |
-| `RNFsalt ` | g/m²/s | `(mS) − m·S_ref`, the applied salt term |
+| `RNFqnet ` | W/m² | the heat `EXF_MAPFIELDS` adds to `Qnet` for the runoff, `Cp·(θ − runoftemp)·runoff·rhoConstFresh = −Cp·[(mT) − m_T·θ]`, > 0 decreases θ, as `EXFqnet` and `Qnet`; filled by `RNF_EXF_RUNOFF`, before the control `xx_runoff` and before sea ice scales `Qnet`; only with `ALLOW_RUNOFTEMP` |
+| `RNFsflx ` | g/m²/s | `(mS) − m·S_ref`, the salt `RNF_FORCING_SURF` adds to `surfaceForcingS` times `rUnit2mass`, > 0 increases salinity, as `SFLUX` |
 | `RNFtemp ` | °C | `(mT)/m_T` where `m_T > 0` |
 | `RNFsaln ` | g/kg | `(mS)/m` where `m > 0` |
 | `RNFnsrc ` | 1 | number of sources feeding the cell |
-| `RNFgT   `, `RNFgS   ` | °C/s, g/kg/s | tendencies at the target level (3D) |
-| `RNFtrNN ` | tracer units·kg/m²/s | `(mC_n) − m·C_ref,n` for runoff tracer `NN`, i.e. the `NN`-th `runoff_ptracer_*` variable of the file, not ptracer `NN` |
+| `RNFtfNN ` | tracer units·kg/m²/s | `(mC_n) − m·C_ref,n`, the tracer `RNF_FORCING_SURF_PTR` adds to `surfaceForcingPTr` times `rUnit2mass`, for runoff tracer `NN`, i.e. the `NN`-th `runoff_ptracer_*` variable of the file, not ptracer `NN` |
+
+`RNFqnet`, `RNFsflx` and `RNFtfNN` are registered and filled (RUNOFF-031);
+`RNFvflx`, `RNFmflx`, `RNFtemp`, `RNFsaln`, `RNFnsrc` and the monitor are
+RUNOFF-015's. All are two-dimensional.
 
 **Monitor** (`RNF_MONITOR`, at `monitorFreq`, in the style of
 `pkg/exf/exf_monitor.F:189-198`):
@@ -1498,12 +1614,12 @@ exf keeps writing its own `runoff` statistics only when `runofffile` is set
 (`pkg/exf/exf_monitor.F:189-192`), so the package monitor is the only runoff
 output in the monitor block.
 
-**Consequence for issues.** RUNOFF-015 implements this list. RUNOFF-016 reads
-the **diagnostics** of the applied terms (`RNFgT`, `RNFgS`, `RNFtrNN`, the three
-RUNOFF-013 registered) and the exf `EXFroff`; it does **not** read the monitor
-sums, which do not exist yet, and it did not need them. `RNFtrNN` is read by
-`tests/rnf/budget_check.py` and, since RUNOFF-008, by
-`tests/rnf/tendency_term_check.py` (`RNFtr01` against the analytic term), so
+**Consequence for issues.** RUNOFF-015 implements the rest of this list.
+RUNOFF-016 reads the **diagnostics** of the applied terms (`RNFqnet`,
+`RNFsflx`, `RNFtfNN` since RUNOFF-031) and the exf `EXFroff`; it does **not**
+read the monitor sums, which do not exist yet, and it did not need them.
+`RNFtfNN` is read by `tests/rnf/budget_check.py` and by
+`tests/rnf/tendency_term_check.py` (`RNFtf01` against the analytic term), so
 its fill is observed by both. Because it is numbered by runoff tracer and filled
 from that runoff tracer's sums whichever ptracer it is added to, it cannot see
 the runoff-tracer-to-ptracer mapping; `budget_check` reads the ptracers' own
@@ -1519,14 +1635,17 @@ restart of the record state.
 - The sparse lists are used only in `RNF_FIELDS_LOAD`, which turns them into
   dense per-tile fields (`m`, `m_T`, `(mT)`, `(mS)`, `(mC_n)`). That routine
   depends on input data, not on the model state.
-- The model state enters only in `RNF_TENDENCY_APPLY_*`, in dense `i,j` loops of
-  the same shape as the `addMass` lines (`model/src/apply_forcing.F:508-517`).
-  TAF needs no special treatment of indirect addressing there.
+- The model state enters only in `RNF_EXF_RUNOFF` (`theta`, for the
+  `runoftemp` of a cell with a missing temperature, and the `RNFqnet`
+  diagnostic) and in `RNF_FORCING_SURF` / `RNF_FORCING_SURF_PTR` (the local
+  salinity or tracer reference), in dense `i,j` loops of the same shape as the
+  surface-forcing loops of `EXTERNAL_FORCING_SURF`. TAF needs no special
+  treatment of indirect addressing there.
 - Store directives for the dense fields follow exf, which stores `runoff` after
   reading it (`pkg/exf/exf_getforcing.F:243-245`). If the source flux becomes a
   control variable, the record buffers need level directives like
   `pkg/exf/exf_ad_check_lev1_dir.h:85-87`.
-- `rnf_ad_diff.list` names `rnf_exf_runoff.f` and `rnf_tendency_apply.f`;
+- `rnf_ad_diff.list` names `rnf_exf_runoff.f` and `rnf_forcing_surf.f`;
   `rnf_ad.flow` declares the I/O routines, as in `pkg/mypackage`.
 
 **Array sizing: alternatives.** Compile-time maxima with runtime counts inside
@@ -1690,12 +1809,17 @@ are listed in [the code map](code_map.md).
     the property sums `m_T`, `(mT)`, `(mS)` and `(mC_n)` use a second
     expression of the same value. They are accumulated in volume-flux
     units and scaled by `rhoConstFresh` in one pass at the end, as
-    `RNF_mflx` is. No division by the total flux is made anywhere: the
-    tendency terms use the sums, so a cell with zero flux needs no
-    special case.
+    `RNF_mflx` is. The salt and tracer terms use the sums, so a cell with
+    zero flux needs no special case there; the one division by the total
+    flux, `(mT)/m` for `runoftemp`, is made in `RNF_EXF_RUNOFF` with
+    `m = 0` as a case of its own (RUNOFF-031).
 14. **The time level is decided in one place (decision 3, "Time
-    level").** The tendency routines read a second set of dense fields,
-    `RNF_ap*`, and need not know which time level they hold.
+    level").** The salt and tracer routines read a second set of dense
+    fields, `RNF_ap*` (the mass flux, `(mS)` and `(mC_n)`; the heat
+    fields left the set with RUNOFF-031, since the heat follows the exf
+    runoff of the current step), and need not know which time level they
+    hold. The set is exchanged after it is copied, because the surface
+    forcing fields are used over the halo (`KPP_CALC` from `2-OLx`).
     `RNF_FIELDS_LOAD` keeps that set at the current step, except in
     branch N without `staggerTimeStep` (`RNF_lagFlds`), where it holds
     the previous step: zero at the first step of a run from iteration 0,
@@ -1710,18 +1834,16 @@ are listed in [the code map](code_map.md).
     whose previous step precedes the first record, has no enrolled case
     (RUNOFF-017).
 15. **Only the diagnostics of the applied terms are registered
-    (decision 8).** RUNOFF-013's acceptance needs the package's own
-    record of what it added, so `rnf_diagnostics_init.F` registers
-    `RNFgT`, `RNFgS` and `RNFtrNN`, filled inside
-    `RNF_TENDENCY_APPLY_T`, `_S` and `_PTR` at the level and with the
-    reference each term used. The input-only fields, `RNFheat`,
-    `RNFsalt` and the monitor are left to RUNOFF-015. Decision 8 lists
-    `RNFheat` and `RNFsalt` as two-dimensional, which has to be settled
-    with their fill: a 2-D diagnostic may be filled once per step and
-    tile, while these terms are computed at one level per column and
-    that level is `kSurfC(i,j)` under an ice shelf. The three registered
-    here are three-dimensional, which is how decision 8 lists `RNFgT`
-    and `RNFgS`, so the question does not arise for them.
+    (decision 8).** `rnf_diagnostics_init.F` registers the runoff's own
+    surface fluxes, `RNFqnet` (with `ALLOW_RUNOFTEMP`), `RNFsflx` and
+    `RNFtfNN`, filled where each term is computed, from the values that
+    term used (RUNOFF-031; RUNOFF-013 registered the three-dimensional
+    tendency diagnostics `RNFgT`, `RNFgS` and `RNFtrNN`, which ended with
+    the tendency terms). All three are two-dimensional and filled once per
+    step: the tracer term is added twice under pkg/longstep, once after
+    `PTRACERS_FORCING_SURF` and once after `LONGSTEP_FORCING_SURF`, and
+    only the first call fills `RNFtfNN`. The input-only fields and the
+    monitor are left to RUNOFF-015.
 16. **`RNF_nTr` is 5, not 1.** One runoff tracer was enough while none
     was read. Each one costs two record buffers of `RNF_nSrcTile` per
     tile and two dense per-tile fields, so the bound is not free; a file
@@ -1742,12 +1864,15 @@ are listed in [the code map](code_map.md).
 1. The profile and the model contract place the feature inside `pkg/exf` with
    parameters in `data.exf`. This design is a package that feeds exf, with
    parameters in `data.rnf`.
-2. The contract says `runoftemp` is filled when temperature is present. That is
-   not possible without editing `exf_mapfields.F` (decision 3).
+2. The contract says `runoftemp` is filled when temperature is present. That
+   needed one edit of `exf_mapfields.F`, made by RUNOFF-031 (decision 3); until
+   then the package applied a tendency term instead.
 3. The profile invariant "heat, salt and tracer input equals `Σ flux·X`" holds
    in mass terms, `rhoConstFresh·Σ flux·X`. In model volume units the factor
    `rhoConstFresh/rhoConst` appears (decisions 2 and 4).
-4. Equivalence with exf `runoftemp` holds only in ice-free cells (decision 3).
+4. Equivalence with exf `runoftemp` held only in ice-free cells while the heat
+   was a tendency term; since RUNOFF-031 the two paths share the exf code
+   (decision 3).
 5. A surface target under an ice shelf cannot receive its volume through the
    surface flux (decision 5).
 6. The source lines named in the issue for the `ICEFRONT` and `SHELFICE` hooks
@@ -1761,17 +1886,13 @@ None blocks the next issues. Each has a recommended answer above.
 1. **exf as a prerequisite.** The package needs `useEXF`. Configurations without
    exf need exf added to their build, or the option-B path. Recommended: keep
    exf as a prerequisite.
-2. **Runoff heat under sea ice.** The tendency term delivers the full heat under
-   ice; exf `runoftemp` delivers the open-water share. Recommended: keep the
-   full heat, and test equivalence in ice-free cells.
+2. **Runoff heat under sea ice.** Answered by the owner's RUNOFF-031 decision:
+   the heat goes through `Qnet`, as the dense `runoftemp` does, so under ice it
+   is the open-water share on both paths.
 3. **Package name.** `rnf` is proposed; `discharge` is the alternative.
-4. **Temperature oracle in KPP configurations.** `lab_sea` runs KPP
-   (`verification/lab_sea/input/data.pkg:4`). A sparse run with tendency-based
-   temperature cannot match a dense `runoftemp` run to round-off there, because
-   KPP reads the dense term and not the package term (decision 3, difference
-   2). Recommended: decide RUNOFF-031 before RUNOFF-013 is accepted in a KPP
-   configuration, and until then test temperature in `lab_sea` with the
-   cell-by-cell check and the budgets.
+4. **Temperature oracle in KPP configurations.** Answered by RUNOFF-031: KPP
+   reads the sparse heat as it reads the dense one
+   (`tests/rnf/kpp_heat_check.py`).
 
 ## Citations index
 

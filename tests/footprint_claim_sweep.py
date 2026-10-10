@@ -362,13 +362,11 @@ KEEP = [
      "two above are the whole exf footprint of this change",
      "A: 'the two above' is the antecedent, in the same bullet."),
     ("docs/package_design.md",
-     "Those two are the whole exf",
-     "A: round 3 replaced the false 'only change to exf code' here; the "
-     "antecedent is this sentence itself, which names both edits."),
-    ("docs/package_design.md",
-     "`exf_mapfields.F` is not edited",
-     "A: a true negative claim about one named file, not an exclusivity "
-     "claim over the set of sites, and review B asked for it to be kept."),
+     "are the whole exf footprint.",
+     "A: round 3 replaced the false 'only change to exf code' here; "
+     "RUNOFF-031 made it three and removed the negative claim about "
+     "exf_mapfields.F that had become false. The antecedent is the bullet "
+     "itself, which names all three edits."),
     ("esx/project_profile.md",
      "test and every other field's range check are untouched",
      "A: antecedent is the two sub-bullets immediately above in the same "
@@ -376,9 +374,10 @@ KEEP = [
      "open_issues.md records why this one stayed implicit while "
      "package_design's was made explicit."),
     ("esx/project_profile.md",
-     "The exf footprint is **two** files and nothing else in `pkg/exf`",
-     "A: states the count and then enumerates both sites in the two "
-     "sub-bullets that follow, so adding a third site would contradict a "
+     "The exf footprint is **three** files and nothing else in `pkg/exf`",
+     "A: states the count and then enumerates the sites in the three "
+     "sub-bullets that follow (RUNOFF-031 added the third, and the number "
+     "was changed with it), so adding a fourth site would contradict a "
      "number rather than slip past a vague word."),
     # Needles are SINGLE LINE by contract, enforced below. This one was
     # written multi-line in round 3 and could never match, because kept()
@@ -399,9 +398,10 @@ KEEP = [
      "A: both conditioned tests are described in the paragraph immediately "
      "above, and the sentence goes on to name what still applies."),
     ("docs/model_contract.md",
-     "Nothing else in `pkg/exf` changed",
-     "A: trails an explicit enumeration of both exf edits in the same "
-     "sentence, so it closes that list rather than asserting one site."),
+     "Those three are the whole exf footprint. See",
+     "A: trails an explicit enumeration of the three exf edits in the same "
+     "paragraph (RUNOFF-031 replaced 'Nothing else in pkg/exf changed', "
+     "which the third edit made false), so it closes that list."),
     ("esx/project_profile.md",
      "without `pkg/rnf` is byte-for-byte unaffected",
      "A: a claim about a build with the package off, whose antecedent is "
@@ -584,7 +584,7 @@ KEEP = [
 
     # ---- tests/rnf/tendency_term_check.py
     ("tests/rnf/tendency_term_check.py",
-     "Analytic single-cell check of the runoff tendency terms",
+     "Analytic single-cell check of the runoff surface terms",
      "B: the marker is 'single' in 'single-cell', the check's own summary "
      "line. It describes the oracle's geometry, which the cases implement by "
      "writing a one-cell file; nothing about footprint."),
@@ -874,7 +874,7 @@ MUST_MATCH_PATHED = [
      "Nothing else changes. The negative-:code:`runoff` test still applies, "
      "so does\nevery other field's range check"),
     ("esx/project_profile.md",
-     "  `useRNF`. The exf footprint is **two** files and nothing else in "
+     "  `useRNF`. The exf footprint is **three** files and nothing else in "
      "`pkg/exf`"),
 ]
 

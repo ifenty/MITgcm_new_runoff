@@ -17,10 +17,13 @@
 > with record selection delegated to the `pkg/exf` routine of each mode.
 > **Implemented (RUNOFF-013):** the temperature, the salinity and the
 > passive tracers — read with the flux (`rnf_nc_utils.F`), spread over the
-> target cells as flux-weighted sums (`rnf_fields_load.F`) and applied as
-> tendency terms at the target level (`rnf_tendency_apply.F`), with the
-> diagnostics of those terms (`rnf_diagnostics_init.F`) and the refusal of
-> a tracer name that matches no ptracer.
+> target cells as flux-weighted sums (`rnf_fields_load.F`) and applied
+> (since RUNOFF-031) through the surface flux fields: the heat through the
+> exf `runoftemp` field (`rnf_exf_runoff.F`), the salt and tracers into
+> `surfaceForcingS`/`surfaceForcingPTr` (`rnf_forcing_surf.F`), with the
+> diagnostics of those contributions (`rnf_diagnostics_init.F`) and the
+> refusal of a tracer name that matches no ptracer. RUNOFF-013 applied them
+> as tendency terms, which RUNOFF-031 replaced.
 > **Measured (RUNOFF-016):** the four budget closures of "Invariants" below —
 > volume, heat, salt and each tracer — summed over the domain at every record
 > a run applies, by `tests/rnf/budget_check.py`. That is a test and not a
@@ -257,19 +260,27 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
     ([package design](package_design.md), decision 3, "Missing temperature").
   - A source without a salinity contributes S = 0.
   - Where `F_c = 0`, `X_c` is unused.
-- **Temperature, salinity and tracers enter as tendency terms** at the target
-  cell, added in `APPLY_FORCING_T`, `APPLY_FORCING_S` and
-  `PTRACERS_APPLY_FORCING`. With `m = rhoConstFresh · F_c / rA` the runoff mass
-  flux in kg m⁻² s⁻¹, each term is
+- **At a surface target, temperature, salinity and tracers enter through the
+  surface flux fields the rest of MITgcm's surface forcing uses** (owner
+  decision 2026-10-09, RUNOFF-031; subsurface targets, RUNOFF-025, will use
+  tendency terms with budget diagnostics). With `m = rhoConstFresh · F_c / rA`
+  the runoff mass flux in kg m⁻² s⁻¹:
+  - **Heat** follows MITgcm's existing convention for runoff heat: the package
+    sets the exf field `runoftemp` to `[Σ_s m_s·T_s + (m − m_T)·θ]/m`
+    (`m_T = Σ_{s: T present} m_s`) and exf adds
+    `Cp·(θ − runoftemp)·runoff·rhoConstFresh` to `Qnet`
+    (`pkg/exf/exf_mapfields.F`, the `ALLOW_RUNOFTEMP` block). A source
+    without a temperature then enters at `θ`, which is what makes the missing
+    value mean "the same as absent". This needs `ALLOW_RUNOFTEMP` in
+    `EXF_OPTIONS.h`, as a dense `runoftempfile` does; a file with
+    `runoff_temperature` in a build without it is refused.
+  - **Salinity and tracers** are added to `surfaceForcingS` and
+    `surfaceForcingPTr`:
+    `surfaceForcingX += [ Σ_s m_s·X_s − m·X_ref ] · mass2rUnit`,
+    where `X_ref` is the value the model's freshwater formulation has already
+    given to that water. Not to `saltFlux`, which pkg/seaice and pkg/thsice
+    overwrite.
 
-  `g_X += [ Σ_s m_s·X_s − m·X_ref ] · mass2rUnit / (drF · hFacC)`,
-
-  where `X_ref` is the value the model's freshwater formulation has already
-  given to that water. For temperature **both** sums run only over the sources
-  that carry one, i.e. `[ Σ_s m_s·T_s − m_T·T_ref ]` with
-  `m_T = Σ_{s: T present} m_s`: a source without a temperature then
-  contributes nothing to the term and enters at `X_ref`, which is what makes
-  the missing value mean "the same as absent".
   "Uniform reference" below is branch U of the package design: the
   model uses one reference value for the whole surface, which happens when
   `convertFW2Salt ≠ −1` and the run does not combine a real freshwater flux
@@ -280,8 +291,7 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
 
   | Quantity | `X_ref` | When |
   |---|---|---|
-  | Temperature | local `θ` | `temp_EvPrRn` unset; or set in a build with exf `ALLOW_ATM_TEMP` |
-  | Temperature | `temp_EvPrRn` | set in a build without `ALLOW_ATM_TEMP` |
+  | Temperature | local `θ` | always: the exf `runoftemp` term assumes arrival at `θ`; the model's and exf's own `temp_EvPrRn` terms stand beside it as on the dense path |
   | Salinity | `salt_EvPrRn` | set (default 0) |
   | Salinity | local `S` | `salt_EvPrRn` unset, local-value formulations |
   | Salinity | `convertFW2Salt` | `salt_EvPrRn` unset, uniform reference |
@@ -290,13 +300,20 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
   | Tracer `n` | `PTRACERS_ref(ks,n)` | unset, uniform reference |
 
   - With no salinity variable and the default `salt_EvPrRn = 0` the salinity
-    term is zero and the result equals the dense path.
+    term is zero and the result equals the dense path; so does a file with no
+    temperature, salinity or tracer at all, bit for bit.
   - A tracer without a file variable gets no term.
-  - The exf `runoftemp` field is not used: exf applies it only when a dense
-    `runoftempfile` is named.
-- **Time level of these terms.** They use the runoff fields of the same step as
-  the freshwater flux the model uses for its own temperature and salinity
-  terms.
+  - KPP, the `TFLUX`/`SFLUX` diagnostics and the sea-ice scaling of `Qnet`
+    see these terms as they see every other surface flux. Under `pkg/seaice`
+    that scaling keeps only `(1 − A)` of the heat, and the share `A` reaches
+    neither ocean nor ice, as on the dense path (§Invariants, RUNOFF-024).
+  - Under pkg/longstep with `LS_nIter ≠ 1` a file that feeds a ptracer is
+    refused (RUNOFF-043), because the term would belong to another time than
+    the long-step average of the freshwater flux.
+- **Time level.** The heat uses the runoff fields of the current step, the
+  step of the exf `runoff` field it multiplies, as the dense `runoftemp` does.
+  The salt and tracer terms use the runoff fields of the same step as the
+  freshwater flux the model uses for its own salinity and tracer terms.
   - A run that combines a real freshwater flux with a nonlinear free surface or
     pressure coordinates, and does not use `staggerTimeStep`: the fields one
     time step earlier, because the model's flux lags by one step. At the first
@@ -310,12 +327,13 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
     only in the `exactConserv` branch of `model/src/integr_continuity.F`. A
     nonlinear free surface always has it, because the model stops otherwise
     (`model/src/config_check.F`, the `nonlinFreeSurf` test).
-- **Known differences from exf `runoftemp`:** the tendency term is not scaled by
-  the open-water fraction under sea ice, is not part of the surface flux that
-  KPP reads, and is not included in the `TFLUX`/`SFLUX` diagnostics. In a build
-  without `ALLOW_ATM_TEMP` that sets `temp_EvPrRn`, the dense path assumes
-  runoff arrives at `θ` although the model delivers it at `temp_EvPrRn`; the
-  package delivers the source heat.
+- **Inherited from the dense `runoftemp` path:** under sea ice the heat is
+  scaled by the open-water fraction like the rest of `Qnet`; and in a build
+  without `ALLOW_ATM_TEMP` that sets `temp_EvPrRn`, nothing cancels the model's
+  own term for the runoff, so the water is counted at `temp_EvPrRn` and again
+  from `θ` to its own temperature. Until RUNOFF-031 the package's tendency
+  term delivered the source heat there; following the convention gives that up
+  (package design, decision 3).
 
 ### Invariants
 
@@ -351,13 +369,24 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
   reference temperature (§Temperature, salinity and tracers). Summing heat over
   all sources instead is not a small error: measured on a case where one source of
   four has no temperature, it breaks the closure by 1.9e-1 relative.
+- **The heat invariant is of the term the package hands to exf `Qnet`**
+  (`RNFqnet`, since RUNOFF-031), before the sea-ice open-water scaling of
+  `Qnet`. Under `pkg/seaice` with `SEAICE_EXTERNAL_FLUXES` only `(1 − A)` of
+  that term reaches the ocean and the ice (`pkg/seaice/seaice_growth.F:956-957`),
+  as on the dense `runoftempfile` path, and the share `A` is delivered nowhere:
+  measured by review A of RUNOFF-031 at `A = 0.98911`, `RNFqnet` −262.30 W/m²
+  of which 0.308 W/m² reached the ocean and 2.548 W/m² went into reduced
+  freezing, together `(1 − A)·Q` to 1.07e-12, while 259.44 W/m² arrived nowhere
+  (RUNOFF-024). The volume, salt and tracer inputs are not scaled by the ice.
 - Those four sums — volume, heat, salt and each tracer — are what
   `tests/rnf/budget_check.py` closes, for every record a run applies, against the
   source series of the file. It sums over every cell of the global layout, not
   only over the cells the file names, so water delivered elsewhere enters the sum.
-  Worst residuals measured (RUNOFF-016): volume 0.0 on both grids; heat
-  3.353e-16 (lab_sea, 1 and 2 processes) and 1.444e-16 (cs32, 1 and 4 processes);
-  salt 2.107e-16 on both; tracer 1.962e-16 (lab_sea only, since cs32 does not
+  Worst residuals measured (RUNOFF-016, re-derived for the surface route by
+  RUNOFF-031): volume 0.0 on both grids; heat 1.608e-16 (lab_sea, 1 and 2
+  processes; 3.353e-16 on the tendency route) and 1.444e-16 (cs32, 1 and 4
+  processes); salt 2.001e-16 (lab_sea) and 2.107e-16 (cs32); tracer 1.962e-16
+  (lab_sea only, since cs32 does not
   compile pkg/ptracers; RUNOFF-008 re-measured it on a non-degenerate tracer
   series, and added a two-tracer case on a `PTRACERS_num = 2` build whose four
   tracer closures, per runoff tracer and per ptracer, are 1.962e-16 to
@@ -397,14 +426,18 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
 - Fortran 77 fixed-form with CPP, in a package `pkg/rnf`: compile switch
   `ALLOW_RNF`, runtime switch `useRNF` in `data.pkg`, parameters in `data.rnf`
   (read in `rnf_readparms.F`, reported in `rnf_summary.F`). The edits inside exf
-  are **two**, and this is the footprint the upstream PR carries: one guarded
-  call in `exf_getffields.F` (`RNF_EXF_RUNOFF`), and two tests conditioned on
-  `useRNF` in `EXF_CHECK_RANGE` (`exf_check_range.F`) — the runoff upper bound
-  skipped, and the `sflux` bound applied to `sflux + runoff` so an out-of-range
-  `evap - precip` is still refused. Both exf conditions are guarded by `useRNF`
-  alone, so a build without `pkg/rnf` in use behaves exactly as before, the
-  dense `runoffFile` path included. Nothing else in `pkg/exf` changed. See
-  [package design](package_design.md) decision 2.
+  are in **three** files, and this is the footprint the upstream PR carries:
+  one guarded call in `exf_getffields.F` (`RNF_EXF_RUNOFF`); two tests
+  conditioned on `useRNF` in `EXF_CHECK_RANGE` (`exf_check_range.F`) — the
+  runoff upper bound skipped, and the `sflux` bound applied to
+  `sflux + runoff` so an out-of-range `evap - precip` is still refused; and,
+  since RUNOFF-031, the condition of the `ALLOW_RUNOFTEMP` block of
+  `exf_mapfields.F`, which also runs for `RNF_applyT`. The two exf range
+  conditions are guarded by `useRNF` alone and the `exf_mapfields.F` one by
+  `ALLOW_RNF` and a flag that only pkg/rnf sets, so a build without `pkg/rnf`
+  in use behaves exactly as before, the dense `runoffFile` path included.
+  Those three are the whole exf footprint. See
+  [package design](package_design.md) decisions 2 and 3.
 - No pickup file: the record state is a function of model time. The
   previous-step fields of the time-level rule are zero at a start from
   iteration 0 and are evaluated from the records at a restart.

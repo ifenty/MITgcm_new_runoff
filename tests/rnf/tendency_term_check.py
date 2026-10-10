@@ -1,26 +1,35 @@
 #!/usr/bin/env python3
-"""Analytic single-cell check of the runoff tendency terms (RUNOFF-013, -008).
+"""Analytic single-cell check of the runoff surface terms (RUNOFF-013, -008, -031).
 
 What this checks
 ================
 
-``pkg/rnf`` adds, at the target level of each target cell,
+Since RUNOFF-031 ``pkg/rnf`` puts the runoff heat, salt and tracers of a
+surface target into the surface flux fields the rest of the surface
+forcing uses (decisions 3 and 4 of ``docs/package_design.md``):
 
-    g_X += [ (mX) - m_X * X_ref ] * mass2rUnit
-                  * recip_drF(k) * recip_hFacC(i,j,k)
+* heat: ``RNF_EXF_RUNOFF`` sets the exf ``runoftemp`` field to
+  ``[(mT) + (m - m_T)*theta]/m`` and ``EXF_MAPFIELDS`` adds
+  ``Cp*(theta - runoftemp)*runoff*rhoConstFresh`` to ``Qnet``, i.e. the
+  temperature term ``[(mT) - m_T*theta]*mass2rUnit`` once
+  ``surfaceForcingT -= Qnet*mu/Cp``;
+* salt and tracer: ``RNF_FORCING_SURF`` adds
+  ``[(mX) - m*X_ref]*mass2rUnit`` to ``surfaceForcingS`` and
+  ``surfaceForcingPTr``,
 
-for X = temperature, salinity and each runoff tracer. ``X_ref`` is the
-property the model's own freshwater formulation has already given this
-water, so that the three contributions -- the model's, pkg/exf's
-cancellation through ``Qnet`` and the package's -- add up to the heat
-and salt the source really carries. The references per freshwater
-branch and the total each case adds up to are the two tables of
-decision 3 of ``docs/package_design.md``; this script measures both
-columns of both tables on a model run:
+each applied at the surface level as ``... * recip_drF(1) *
+recip_hFacC``. ``X_ref`` is the property the model's own freshwater
+formulation has already given this water (for heat the exf block
+assumes ``theta``), so that the contributions -- the model's, pkg/exf's
+``temp_EvPrRn`` term through ``Qnet`` and the package's -- add up to the
+total of the decision-3 tables. Those tables give the references per
+freshwater branch and the total each case adds up to; this script
+measures both columns of both tables on a model run:
 
-* the **package term**, against the ``RNFgT``/``RNFgS`` diagnostics the
-  package fills where it computes them. This is the T_ref/S_ref choice
-  of the "Package" column.
+* the **package term**, against the diagnostics the package fills where
+  it computes the term: ``RNFqnet`` (W/m^2, ``Qnet``'s sign),
+  ``RNFsflx`` (g/m^2/s) and ``RNFtf01``, each against the analytic
+  surface flux. This is the "Package" column.
 * the **total**, against the same run with the runoff flux set to zero.
   ``TOTTTEND`` and ``TOTSTEND`` are the model's own state tendencies,
   ``(theta^n - theta^(n-1))/dt``, so the difference of the two runs over
@@ -53,11 +62,15 @@ The passive tracer (RUNOFF-008)
 Every case also carries one passive tracer, ``rnfdye``, and is judged on
 the same two columns for it (:func:`judge_tracer`), against the four
 rows of :data:`C_ROWS`: ``PTRACERS_EvPrRn`` set or unset, in branch L or
-U. The **package** column is the ``RNFtr01`` diagnostic against
+U. The **package** column is the ``RNFtf01`` diagnostic against
 :func:`expected_tracer`, with ``C_ref`` chosen as
-``RNF_TENDENCY_APPLY_PTR`` chooses it (``rnf_tendency_apply.F:453-462``)
+``RNF_FORCING_SURF_PTR`` chooses it (``rnf_forcing_surf.F:278-289``)
 and the local tracer read from the run's own ``PTRACER01`` dump of the
 step before. The **total** is the two-run difference of ``Tp_gTr01``.
+On lab_sea the term reaches the tracer through pkg/longstep, whose
+``LONGSTEP_FORCING_SURF`` rebuilds ``surfaceForcingPTr`` before every
+ptracer step and re-adds the package term (RUNOFF-031: a hook only after
+``PTRACERS_FORCING_SURF`` would be erased there).
 
 Which quantity is the tracer's total was measured, not assumed, because
 lab_sea compiles pkg/longstep, which takes the ptracer step over
@@ -82,12 +95,19 @@ requires the measured package term to be at least ``RTOL *
 DISCRIMINATION`` away from the term every *other* reference would have
 given (the other arms, the initial tracer, zero): measured, the
 smallest such margin over the eight cases is 8.3e-2. Both columns were
-also measured failing on mutant binaries (RUNOFF-008): with the branch-L
-arm made to use ``PTRACERS_ref``, ``L_unset`` fails both columns at
-2.222e-01; with the applied term's sign flipped and the diagnostic left
+also measured failing on mutant binaries, first on the tendency route
+(RUNOFF-008) and again on the surface route (RUNOFF-031, mutants built
+into separate binaries and run with ``--use-build``): with the branch-L
+tracer arm made to use ``PTRACERS_ref``, ``L_unset`` fails both columns
+at 2.222e-01; with the local-salinity arm made to use 0, ``L_set``
+fails both at 1.172; with the theta that stands in for a missing
+temperature dropped from ``runoftemp``, ``missing_temp`` fails both at
+1.995; ``U_set``, which reaches none of the three, passes on that same
+binary. With every applied term's sign flipped and the diagnostics left
 alone, the package column stays at 0.00e+00 on all four ``_set``/
-``_unset`` cases while the total fails at 1.27 to 2.00 -- the RUNOFF-013
-lesson that the package column alone is blind to what was applied.
+``_unset`` cases while the total fails on every property, at 3.33e-01
+to 9.34 -- the RUNOFF-013 lesson that the package column alone is blind
+to what was applied.
 
 Adding pkg/ptracers to these runs changes nothing for T and S: every
 measured and expected T and S figure, and the theta and salt the
@@ -124,18 +144,35 @@ area from its ``RAC.data``, the layer thickness from ``delR`` of its own
 the tracer, ``PTRACERS_ref`` and ``PTRACERS_EvPrRn`` -- so that a case
 cannot pass against a setting it did not actually run.
 
+The two rows without ``ALLOW_ATM_TEMP``
+-------------------------------------------
+
+Since RUNOFF-031 the totals of rows T3 and T6 are the dense
+``runoftempfile`` path's: nothing cancels the model's own
+``temp_EvPrRn`` term for the runoff in that build, and the exf
+``runoftemp`` term assumes the water arrives at ``theta``, so the total
+is ``[(mT) - m*theta]*mu*D`` plus the model's ``m*(temp_EvPrRn -
+theta)*mu*D`` (L) or ``m*(temp_EvPrRn - tRef)*mu*D`` (U). The tendency
+route delivered the source heat there by using ``T_ref = temp_EvPrRn``;
+following the exf convention gives that up, which is recorded in
+decision 3 of the package design. :func:`expected` sums the three
+columns as before, so these rows measure the new algebra rather than
+assume it.
+
 Coverage, and what a passing run does not establish
 ---------------------------------------------------
 
 The ``rows`` field of each case names the table rows it covers, and
 :func:`main` fails if any row of :data:`T_ROWS`, :data:`S_ROWS` or
-:data:`C_ROWS` is left uncovered, so the set cannot silently shrink. Two rows need a build with
-``ALLOW_ATM_TEMP`` undefined, where pkg/exf does not cancel the model's
-own term: they are the cases with ``atm_temp`` false. ``--build``
+:data:`C_ROWS` is left uncovered, so the set cannot silently shrink. Every case needs a build with
+``ALLOW_RUNOFTEMP`` defined, which the runoff heat goes through, and two
+rows need one with ``ALLOW_ATM_TEMP`` undefined as well, where pkg/exf
+does not cancel the model's own term: they are the cases with
+``atm_temp`` false. ``--build``
 compiles that binary, and the ordinary one, when either is missing or
 older than its sources (:func:`build_if_stale`); without ``--build`` a
 missing binary is reported with its compile command and the run exits
-2, leaving those two rows uncovered. There is no flag that lets a run
+2. There is no flag that lets a run
 report success with a row no case exercised.
 
 A passing run establishes the terms at one cell, at one level, in a
@@ -159,8 +196,9 @@ Usage
     python3 tests/rnf/tendency_term_check.py --build   # self-contained
     python3 tests/rnf/tendency_term_check.py [--case NAME] [--keep]
 
-The second form needs the binaries to exist already, from ``--build`` or
-from ``tests/mitgcm_oracle.sh lab_sea input`` for the ordinary one.
+The second form needs the binaries to exist already, from ``--build``.
+``--use-build NAME`` runs every selected case on another lab_sea build,
+for the must-fail demonstrations on mutant binaries.
 
 Exit status: 0 if every case passes, 1 if one fails or a table row has
 no passing case, 2 if a binary is missing or could not be built, or a
@@ -184,9 +222,16 @@ EXPERIMENT = "lab_sea"
 #: The scratch input directories this check writes, one per run.
 PREFIX = "input.rnfterm_"
 #: Binary of the ordinary build, and of a build with ALLOW_ATM_TEMP undefined.
-BUILD = "build_esx"
+#: Both define ALLOW_RUNOFTEMP, which the committed pkg/exf option file
+#: leaves undefined and which the runoff heat needs since RUNOFF-031: it
+#: goes through the exf runoftemp field (``RNF_CHECK`` refuses a file
+#: with ``runoff_temperature`` in a build without it). The ordinary one
+#: is the binary ``tests/rnf/exf_heat_check.py`` uses as well.
+BUILD = "build_esx_roft"
 NOATM_BUILD = "build_esx_noatm"
-#: Code directory of that build, written by :func:`write_noatm_code`.
+#: Code directories of those builds, written by :func:`write_roft_code`
+#: and :func:`write_noatm_code`.
+ROFT_CODE = "code_rnfterm_roft"
 NOATM_CODE = "code_rnfterm_noatm"
 #: Name of the sparse file each case writes into its scratch input.
 SPARSE_FILE = "runoff_term.nc"
@@ -251,7 +296,7 @@ T_ROWS = ("T1-NL-unset", "T2-NL-set-atm", "T3-NL-set-noatm",
           "T4-U-unset", "T5-U-set-atm", "T6-U-set-noatm")
 S_ROWS = ("S1-NL-set", "S2-NL-unset", "S3-U-set", "S4-U-unset")
 #: Rows of the passive-tracer term (decision 4, RUNOFF-008): one per
-#: reference arm of ``RNF_TENDENCY_APPLY_PTR`` that a linear free surface
+#: reference arm of ``RNF_FORCING_SURF_PTR`` that a linear free surface
 #: reaches, each with ``PTRACERS_EvPrRn`` set or unset. Branch N
 #: (``nonlinFreeSurf > 0`` with ``useRealFreshWaterFlux``) is RUNOFF-014's
 #: for tracers as it is for T and S, so it has no row here.
@@ -277,14 +322,15 @@ TRC_FILE = "trc0_rnfterm.bin"
 #: difference of ``Tp_gTr01``. See :func:`judge_tracer`.
 TOTAL_C_STREAM = "Tp_g"
 
-DATA_DIAGNOSTICS = """# Analytic single-cell oracle of the runoff tendency
+DATA_DIAGNOSTICS = """# Analytic single-cell oracle of the runoff surface
 # terms, tests/rnf/tendency_term_check.py. Snapshots (frequency < 0) of
 # level 1 only, through MDS (diag_mnc = .FALSE.) and in float64
 # (fileFlags 'D'), of
 #   TOTTTEND, TOTSTEND :: the model's own state tendencies, which carry
 #                         the sum of every runoff contribution
-#   RNFgT, RNFgS       :: the package terms, as pkg/rnf applied them
-#   RNFtr01            :: the package term of runoff tracer 1
+#   RNFqnet            :: the runoff heat pkg/rnf hands to Qnet [W/m^2]
+#   RNFsflx            :: the runoff salt flux it adds [g/m^2/s]
+#   RNFtf01            :: the flux of runoff tracer 1 it adds
 #   Tp_gTr01           :: the tracer's own state change over the step,
 #                         (C^(n+1) - C^n)/dt, i.e. its TOTTTEND
 #   ForcTr01           :: the tracer's forcing tendency (gTrForc),
@@ -301,20 +347,17 @@ DATA_DIAGNOSTICS = """# Analytic single-cell oracle of the runoff tendency
   frequency(2) = -{dt!r},
   levels(1,2) = 1.,
   fileFlags(2) = 'D       ',
-  fields(1,3) = 'RNFgT   ',
-  fileName(3) = 'rnfGT',
+  fields(1,3) = 'RNFqnet ',
+  fileName(3) = 'rnfQnet',
   frequency(3) = -{dt!r},
-  levels(1,3) = 1.,
   fileFlags(3) = 'D       ',
-  fields(1,4) = 'RNFgS   ',
-  fileName(4) = 'rnfGS',
+  fields(1,4) = 'RNFsflx ',
+  fileName(4) = 'rnfSflx',
   frequency(4) = -{dt!r},
-  levels(1,4) = 1.,
   fileFlags(4) = 'D       ',
-  fields(1,5) = 'RNFtr01 ',
-  fileName(5) = 'rnfGC',
+  fields(1,5) = 'RNFtf01 ',
+  fileName(5) = 'rnfTfC',
   frequency(5) = -{dt!r},
-  levels(1,5) = 1.,
   fileFlags(5) = 'D       ',
   fields(1,6) = 'Tp_gTr01',
   fileName(6) = 'rnfTpC',
@@ -520,48 +563,74 @@ def write_mods_code(name, files):
     return code
 
 
-def write_noatm_code():
-    """Write the code directory of the build with ALLOW_ATM_TEMP undefined.
+def exf_options(atm_temp):
+    """Return the pkg/exf option file with ``ALLOW_RUNOFTEMP`` defined.
+
+    With ``atm_temp`` false ``ALLOW_ATM_TEMP`` is undefined as well
+    (which also drops ``ALLOW_BULKFORMULAE``, since that option file
+    defines it inside the same ``#ifdef``). Each substitution must match
+    exactly once, so a change of the committed option file stops the
+    check instead of silently building something else.
+    """
+    with open(os.path.join(ROOT, "MITgcm", "pkg", "exf",
+                           "EXF_OPTIONS.h")) as fh:
+        options = fh.read()
+    options, count = re.subn(r"(?m)^#undef\s+ALLOW_RUNOFTEMP\s*$",
+                             "#define ALLOW_RUNOFTEMP", options)
+    if count != 1:
+        raise ValueError(f"pkg/exf/EXF_OPTIONS.h has {count} "
+                         f"'#undef ALLOW_RUNOFTEMP' lines, expected 1")
+    if not atm_temp:
+        options, count = re.subn(r"(?m)^#define ALLOW_ATM_TEMP\s*$",
+                                 "#undef  ALLOW_ATM_TEMP", options)
+        if count != 1:
+            raise ValueError(f"pkg/exf/EXF_OPTIONS.h has {count} "
+                             f"'#define ALLOW_ATM_TEMP' lines, expected 1")
+    return options
+
+
+def write_roft_code():
+    """Write the code directory of the ordinary build of this check.
 
     ``experiment_compile.sh -mods`` takes a directory used *instead* of
     the experiment's ``code/``, so every file of ``lab_sea/code`` is
     copied and one is added: ``EXF_OPTIONS.h``, the pkg/exf default with
-    ``ALLOW_ATM_TEMP`` undefined (which also drops
-    ``ALLOW_BULKFORMULAE``, since that option file defines it inside the
-    same ``#ifdef``).
+    ``ALLOW_RUNOFTEMP`` defined (:func:`exf_options`).
 
     Returns the directory, written through :func:`write_mods_code`. It
     is git-ignored (``MITgcm/.git/info/exclude``), and this function does
     not compile: :func:`main` prints the command when the binary is
     missing.
     """
-    with open(os.path.join(ROOT, "MITgcm", "pkg", "exf",
-                           "EXF_OPTIONS.h")) as fh:
-        options = fh.read()
-    new, count = re.subn(r"(?m)^#define ALLOW_ATM_TEMP\s*$",
-                         "#undef  ALLOW_ATM_TEMP", options)
-    if count != 1:
-        raise ValueError(f"pkg/exf/EXF_OPTIONS.h has {count} "
-                         f"'#define ALLOW_ATM_TEMP' lines, expected 1")
-    return write_mods_code(NOATM_CODE, {"EXF_OPTIONS.h": new})
+    return write_mods_code(ROFT_CODE, {"EXF_OPTIONS.h": exf_options(True)})
 
 
-def compile_command(code):
-    """Return the command that builds the no-ALLOW_ATM_TEMP binary."""
+def write_noatm_code():
+    """Write the code directory of the build with ALLOW_ATM_TEMP undefined.
+
+    As :func:`write_roft_code`, with ``ALLOW_ATM_TEMP`` undefined too.
+    """
+    return write_mods_code(NOATM_CODE, {"EXF_OPTIONS.h": exf_options(False)})
+
+
+def compile_command(code, build):
+    """Return the command that builds ``build`` from the mods ``code``."""
     return ("./experiment_compile.sh %s -mods %s -build %s -j 8"
-            % (EXPERIMENT, code, NOATM_BUILD))
+            % (EXPERIMENT, code, build))
 
 
 #: Sources whose newest file decides whether a build is out of date.
 #: These are every path the project declares as a source **and**
 #: compiles into a `pkg/rnf` binary: the package itself; pkg/exf (the one
 #: guarded call, and the option file the mods directory is derived from);
-#: model/src (the APPLY_FORCING_T/S callers of the tendency routines);
+#: model/src (EXTERNAL_FORCING_SURF, the caller of the salt and tracer
+#: terms); pkg/longstep, whose LONGSTEP_FORCING_SURF re-adds the tracer
+#: term;
 #: model/inc, which holds PARAMS.h, where ``temp_EvPrRn``,
 #: ``salt_EvPrRn``, ``convertFW2Salt`` and ``UNSET_RL`` are declared --
-#: every one of them read by the tendency routines this script measures;
-#: pkg/ptracers, which holds the ``_PTR`` call site
-#: (``ptracers_apply_forcing.F``); and ``pkg/pkg_depend``, the plain file
+#: every one of them read by the terms this script measures;
+#: pkg/ptracers, whose surface forcing the tracer term is added to; and
+#: ``pkg/pkg_depend``, the plain file
 #: that declares ``rnf +exf`` to genmake2. An edit to any of them
 #: changes the binary, so leaving it out would let the reuse predicate
 #: hand back a binary older than its own source -- the LL-011 failure
@@ -577,7 +646,7 @@ def compile_command(code):
 #: which are covered here, so nothing is lost by leaving it out.
 BUILD_SOURCES = ("MITgcm/pkg/rnf", "MITgcm/pkg/exf", "MITgcm/model/src",
                  "MITgcm/model/inc", "MITgcm/pkg/ptracers",
-                 "MITgcm/pkg/pkg_depend")
+                 "MITgcm/pkg/longstep", "MITgcm/pkg/pkg_depend")
 
 
 def newest_source_time(extra=()):
@@ -612,7 +681,8 @@ def newest_source_time(extra=()):
     return newest
 
 
-def build_if_stale(build, write_code=None, jobs=8, timeout=1800):
+def build_if_stale(build, write_code=None, jobs=8, timeout=1800,
+                   mpi=False):
     """Compile ``build`` when its binary is missing or older than its sources.
 
     This is what makes a configured command self-contained: the mods
@@ -624,7 +694,8 @@ def build_if_stale(build, write_code=None, jobs=8, timeout=1800):
     (:func:`write_noatm_code` here, ``exf_heat_check.write_code``
     there); ``None`` builds the experiment's own ``code/`` with no
     ``-mods``, which is what ``tests/mitgcm_oracle.sh`` does for
-    ``build_esx``.
+    ``build_esx``. ``mpi`` compiles with ``-mpi``, for a ``_mpiN`` build
+    of the same code (``tests/rnf/budget_check.py``).
 
     **Staleness, and why it is not just "does the binary exist".** A
     binary left over from before an edit to ``pkg/rnf`` would make every
@@ -651,6 +722,8 @@ def build_if_stale(build, write_code=None, jobs=8, timeout=1800):
     command = ["./experiment_compile.sh", EXPERIMENT]
     if write_code is not None:
         command += ["-mods", write_code()]
+    if mpi:
+        command.append("-mpi")
     command += ["-build", build, "-j", str(jobs)]
     result["command"] = " ".join(command)
     try:
@@ -1078,8 +1151,8 @@ def expected_tracer(case, text, m, mu, dterm, area, c_local):
     the model had at the target cell when the measured step started,
     read from its own ``PTRACER01`` dump of the step before.
 
-    **Package**, as ``RNF_TENDENCY_APPLY_PTR`` chooses ``C_ref``
-    (``pkg/rnf/rnf_tendency_apply.F:453-462``): ``PTRACERS_EvPrRn`` when
+    **Package**, as ``RNF_FORCING_SURF_PTR`` chooses ``C_ref``
+    (``pkg/rnf/rnf_forcing_surf.F:278-289``): ``PTRACERS_EvPrRn`` when
     set; otherwise the local tracer when ``convertFW2Salt = -1`` (branch
     L; the branch-N arm before it needs a nonlinear free surface and is
     RUNOFF-014's); otherwise ``PTRACERS_ref(ks)`` (branch U).
@@ -1134,17 +1207,18 @@ def expected_tracer(case, text, m, mu, dterm, area, c_local):
     else:
         arm = "PTRACERS_ref"
     c_ref = candidates[arm]
-    pack = (mxc - m*c_ref)*mu*dterm
+    pack = mxc - m*c_ref
     model = 0.0
     if case["ptr_EvPrRn"] is not None:
         against = ptr_ref if case["branch"] == "U" else c_local
         model = m*(ptr_ev - against)*mu
-    total = pack + model*dterm
-    alternatives = {k: (mxc - m*v)*mu*dterm for k, v in candidates.items()
+    total = (pack*mu + model)*dterm
+    alternatives = {k: mxc - m*v for k, v in candidates.items()
                     if k != arm and v != c_ref}
     return {"PTRACERS_ref": ptr_ref, "PTRACERS_EvPrRn": ptr_ev,
             "mXC": mxc, "C_ref": c_ref, "C_ref_arm": arm,
             "C_local": c_local, "package_C": pack,
+            "package_C_tendency": pack*mu*dterm,
             "model_C": model*dterm, "total_C": total,
             "alternatives_C": alternatives,
             "finite": all(math.isfinite(v) for v in (pack, total))}
@@ -1198,17 +1272,35 @@ def expected(case, run_dir, cell, theta, salt0):
     mxt = rho_fresh*vxT
     mxs = rho_fresh*vxS
 
-    # Package column: the reference the model has already applied.
+    # Package column. Heat: the term RNF_EXF_RUNOFF hands to the exf
+    # runoftemp block of EXF_MAPFIELDS, HeatCapacity_Cp*(theta -
+    # runoftemp)*runoff*rhoConstFresh in W/m^2 with Qnet's sign, with
+    # runoftemp built as RNF_EXF_RUNOFF builds it (pkg/rnf/
+    # rnf_exf_runoff.F, the ALLOW_RUNOFTEMP block): (mT)/m where every
+    # source carries a temperature, theta where none does, and
+    # [(mT) + (m - m_T)*theta]/m otherwise. Its reference is therefore
+    # theta in every case: the exf block assumes the water arrives at
+    # theta. Salt: [(mS) - m*S_ref] in g/m^2/s, with the reference the
+    # model has already applied (RNF_FORCING_SURF).
     atm = case.get("atm_temp", True)
-    t_ref = theta if (atm or case["temp_EvPrRn"] is None) else temp_ev
-    pack_t = (mxt - m_t*t_ref)*mu*dterm
+    cp = param(text, "HeatCapacity_Cp")
+    if m == 0.0:
+        roft = 0.0
+    elif m_t == m:
+        roft = mxt/m
+    elif m_t == 0.0:
+        roft = theta
+    else:
+        roft = (mxt + (m - m_t)*theta)/m
+    pack_t = cp*(theta - roft)*vflx*rho_fresh
+    t_ref = theta
     if case["salt_EvPrRn"] is not None:
         s_ref = salt_ev
     elif case["branch"] == "L":
         s_ref = salt0
     else:
         s_ref = fw2salt
-    pack_s = (mxs - m*s_ref)*mu*dterm
+    pack_s = mxs - m*s_ref
 
     # Model and exf columns, then the total as their sum with the
     # package column. The three are kept apart, as the tables of
@@ -1225,19 +1317,32 @@ def expected(case, run_dir, cell, theta, salt0):
     #   exf:   -Cp*(theta - temp_EvPrRn)*runoff*rhoConstFresh added to
     #          Qnet, which surfaceForcingT subtracts as Qnet*mu/Cp,
     #          i.e. m*(theta - temp_EvPrRn)*mu, and only with
-    #          ALLOW_ATM_TEMP (pkg/exf/exf_mapfields.F:175-185)
+    #          ALLOW_ATM_TEMP (pkg/exf/exf_mapfields.F, the
+    #          temp_EvPrRn block)
+    #   package: the runoftemp term above, which surfaceForcingT
+    #          subtracts as Qnet*mu/Cp, i.e. -pack_t/Cp*mu; and the salt
+    #          term, which RNF_FORCING_SURF adds to surfaceForcingS times
+    #          mu. Both are applied at the surface level times D.
+    # Without ALLOW_ATM_TEMP and with temp_EvPrRn set, nothing cancels the
+    # model's term for the runoff, so the total is the model's term plus
+    # the runoftemp term: the water is counted at temp_EvPrRn and again
+    # from theta to its own temperature. That is the dense runoftempfile
+    # path's total in that build too (package design, decision 3,
+    # comparison point 5), which the sparse path now shares.
     model_t, exf_t = 0.0, 0.0
     if case["temp_EvPrRn"] is not None:
         against = t_ref1 if case["branch"] == "U" else theta
         model_t = m*(temp_ev - against)*mu
         if atm:
             exf_t = m*(theta - temp_ev)*mu
-    total_t = pack_t + (model_t + exf_t)*dterm
+    pack_t_tend = -pack_t/cp*mu*dterm
+    pack_s_tend = pack_s*mu*dterm
+    total_t = pack_t_tend + (model_t + exf_t)*dterm
     model_s = 0.0
     if case["salt_EvPrRn"] is not None:
         against = fw2salt if case["branch"] == "U" else salt0
         model_s = m*(salt_ev - against)*mu
-    total_s = pack_s + model_s*dterm
+    total_s = pack_s_tend + model_s*dterm
 
     return {"rA": area, "hFacC": hfac1, "drF": drf1, "mu": mu, "D": dterm,
             "m": m, "m_T": m_t, "mXT": mxt, "mXS": mxs,
@@ -1246,6 +1351,9 @@ def expected(case, run_dir, cell, theta, salt0):
             "convertFW2Salt": fw2salt, "tracForcingOutAB": out_ab,
             "nonlinFreeSurf": nonlin, "hFacC_dims": sizes,
             "package_T": pack_t, "package_S": pack_s,
+            "package_T_tendency": pack_t_tend,
+            "package_S_tendency": pack_s_tend,
+            "runoftemp": roft, "HeatCapacity_Cp": cp,
             "model_T": model_t*dterm, "exf_T": exf_t*dterm,
             "model_S": model_s*dterm,
             "total_T": total_t, "total_S": total_s,
@@ -1257,7 +1365,7 @@ def judge_tracer(case, run_dir, zero_dir, cell, dt, want, before, result,
                  problems):
     """Judge the passive-tracer row of ``case`` (RUNOFF-008).
 
-    Same two columns as T and S. **Package**: the ``RNFtr01`` dump
+    Same two columns as T and S. **Package**: the ``RNFtf01`` dump
     against :func:`expected_tracer`. **Total**: the difference of the
     two runs of ``Tp_gTr01``, which ``PTRACERS_INTEGRATE`` fills with
     ``(gTracer - pTracer)/PTRACERS_dTLev`` after the time step
@@ -1285,11 +1393,11 @@ def judge_tracer(case, run_dir, zero_dir, cell, dt, want, before, result,
         problems.append(f"the run reports PTRACERS_ref = "
                         f"{tw['PTRACERS_ref']!r}, not {TRC_REF!r}")
 
-    package, label = dump_at(run_dir, "rnfGC", cell)
+    package, label = dump_at(run_dir, "rnfTfC", cell)
     result["package_C_dump"] = label
-    zero_pack, _ = dump_at(zero_dir, "rnfGC", cell)
+    zero_pack, _ = dump_at(zero_dir, "rnfTfC", cell)
     if zero_pack != 0.0:
-        problems.append(f"the zero-flux run's rnfGC at the target cell is "
+        problems.append(f"the zero-flux run's rnfTfC at the target cell is "
                         f"{zero_pack!r}, not 0")
     candidates = {}
     for key, stream in (("Tp_g", "rnfTpC"), ("Forc", "rnfForcC")):
@@ -1336,13 +1444,17 @@ def judge_tracer(case, run_dir, zero_dir, cell, dt, want, before, result,
                 f"cannot tell the {tw['C_ref_arm']} arm from that one")
     result["C_ref_margins"] = margins
 
-    pack, tot = tw["package_C"], tw["total_C"]
+    # The package term is a flux and the total a tendency; compare them
+    # in tendency units, the package one converted with the run's own
+    # mass2rUnit and D, as PTRACERS_APPLY_FORCING applies it.
+    pack, tot = tw["package_C_tendency"], tw["total_C"]
     apart = abs(pack - tot)/max(abs(pack), abs(tot))
     result["apart_C"] = apart
     result["differ_C"] = apart > RTOL*DISCRIMINATION
     if result["differ_C"]:
-        got = abs(package - total)
-        scale = max(abs(package), abs(total))
+        package_tend = package*want["mu"]*want["D"]
+        got = abs(package_tend - total)
+        scale = max(abs(package_tend), abs(total))
         if got/scale <= RTOL*DISCRIMINATION:
             problems.append(
                 f"C: the package term and the total are expected to differ "
@@ -1416,7 +1528,7 @@ def judge(case, run_dir, zero_dir, cell, dt):
 
     # The package terms, as the package itself recorded them.
     measured = {}
-    for key, stream in (("package_T", "rnfGT"), ("package_S", "rnfGS")):
+    for key, stream in (("package_T", "rnfQnet"), ("package_S", "rnfSflx")):
         measured[key], label = dump_at(run_dir, stream, cell)
         result[key + "_dump"] = label
     for key, stream in (("total_T", "rnfTotT"), ("total_S", "rnfTotS")):
@@ -1430,7 +1542,7 @@ def judge(case, run_dir, zero_dir, cell, dt):
     # The reference run applies no runoff at all, so its package terms
     # have to be exactly zero; otherwise the difference above is not the
     # total of this case.
-    for key, stream in (("package_T", "rnfGT"), ("package_S", "rnfGS")):
+    for key, stream in (("package_T", "rnfQnet"), ("package_S", "rnfSflx")):
         zero_value, _ = dump_at(zero_dir, stream, cell)
         if zero_value != 0.0:
             problems.append(f"the zero-flux run's {stream} at the target "
@@ -1453,17 +1565,24 @@ def judge(case, run_dir, zero_dir, cell, dt):
 
     # Where the row says the package term and the total differ, they have
     # to differ by much more than the tolerance, or the case would pass
-    # without telling the two columns apart.
+    # without telling the two columns apart. The package terms are fluxes
+    # and the totals tendencies, so the comparison is made in tendency
+    # units, with the factors the model applies them with: the heat
+    # through surfaceForcingT -= Qnet*mu/Cp, the salt through
+    # surfaceForcingS += flux*mu, both times D at the surface level.
+    to_tendency = {"T": -1.0/want["HeatCapacity_Cp"]*want["mu"]*want["D"],
+                   "S": want["mu"]*want["D"]}
     for term in ("T", "S"):
-        pack, total = want["package_" + term], want["total_" + term]
+        pack = want["package_" + term + "_tendency"]
+        total = want["total_" + term]
         apart = abs(pack - total)/max(abs(pack), abs(total))
         result["apart_" + term] = apart
         differ = apart > RTOL*DISCRIMINATION
         result["differ_" + term] = differ
         if differ:
-            got = abs(measured["package_" + term]
-                      - measured["total_" + term])
-            scale = max(abs(measured["package_" + term]),
+            measured_pack = measured["package_" + term]*to_tendency[term]
+            got = abs(measured_pack - measured["total_" + term])
+            scale = max(abs(measured_pack),
                         abs(measured["total_" + term]))
             if got/scale <= RTOL*DISCRIMINATION:
                 problems.append(
@@ -1480,14 +1599,16 @@ def judge(case, run_dir, zero_dir, cell, dt):
 def check_case(case, args):
     """Run one case and its zero-flux reference, and judge them."""
     build = BUILD if case.get("atm_temp", True) else NOATM_BUILD
+    if args.use_build:
+        build = args.use_build
     binary = os.path.join(VERIF, EXPERIMENT, build, "mitgcmuv")
     if not os.path.isfile(binary):
         print(f"MISSING {case['name']}: no binary at {binary}")
-        if build == NOATM_BUILD:
-            code = write_noatm_code()
-            print(f"     the code directory is written at {code}; build "
-                  f"it from {VERIF} with")
-            print(f"       {compile_command(code)}")
+        code = (write_noatm_code() if build == NOATM_BUILD
+                else write_roft_code())
+        print(f"     the code directory is written at {code}; build "
+              f"it from {VERIF} with")
+        print(f"       {compile_command(code, build)}")
         print("     or rerun this check with --build, which compiles "
               "what it needs")
         return None
@@ -1536,7 +1657,16 @@ def main(argv=None):
                              "sources; without it a missing binary is "
                              "reported with its compile command and the "
                              "run exits 2")
+    parser.add_argument("--use-build", default=None, metavar="NAME",
+                        help="run every selected case on this lab_sea "
+                             "build instead of its own: for the must-fail "
+                             "demonstrations on mutant binaries, which "
+                             "are never compiled into the builds this "
+                             "check reuses")
     args = parser.parse_args(argv)
+    if args.use_build and args.build:
+        parser.error("--use-build names a binary built elsewhere; it does "
+                     "not combine with --build")
 
     selected = CASES
     if args.case:
@@ -1550,7 +1680,7 @@ def main(argv=None):
     if args.build:
         # Only the builds the selection actually needs, in a fixed
         # order, so that --case does not pay for the other binary.
-        wanted = [(BUILD, None)]
+        wanted = [(BUILD, write_roft_code)]
         if any(not c.get("atm_temp", True) for c in selected):
             wanted.append((NOATM_BUILD, write_noatm_code))
         for build, writer in wanted:
