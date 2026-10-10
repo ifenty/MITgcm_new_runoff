@@ -1,0 +1,301 @@
+{
+  "retrospective": {
+    "accounting": {
+      "path": "devel-loop/loop_state/accounting/70207cfbc3c5524ba6744c92e367a3921e5057874bfb7b2475145733c7059711.json",
+      "sha256": "70207cfbc3c5524ba6744c92e367a3921e5057874bfb7b2475145733c7059711"
+    },
+    "carry_forward": [
+      "Before classifying a fix as harness_change at --prepare time, check whether its target files fall under test_paths but outside framework_test_paths (esx/project.json) -- any edit to tests/rnf/*.py (the oracle instruments themselves) is scientific_change regardless of how small or test-only the fix is.",
+      "Owner's design decision 2026-10-10: generalized multi-level runoff injection (addMass + per-level interior tendency, modeled on pkg/icefront and pkg/steep_icecavity precedents) becomes the default; today's surface/exf route survives as a global runtime switch, RNF_applyAsRain, valid only when every target in the file is the surface cell. Plan approved, saved at /home/ifenty/.claude/plans/quirky-squishing-lollipop.md. To be delivered as one issue (owner's choice, to avoid coordination overhead), absorbing RUNOFF-025 and most of RUNOFF-020, and narrowing RUNOFF-024/RUNOFF-037 to legacy-route-only.",
+      "isomip cannot run pkg/rnf at all today (no exf in any of its three packages.conf variants, no data.exf in any input directory) -- confirmed from source, not inherited from the RUNOFF-020 record; out of scope for the new design issue."
+    ],
+    "closes_timestamp": "2026-10-10T18:20:43.536301+00:00",
+    "confirmations": [
+      {
+        "category": "gate_caught_misclassification",
+        "summary": "The closeout gate's scope check (comparing the live scientific-source signature against the declared workflow kind) caught Arch's own classification mistake before an under-reviewed change could close, exactly as designed",
+        "evidence": "'scientific source/tests/configuration changed: amend workflow kind' refusal at --check-done, before any evidence was accepted"
+      },
+      {
+        "category": "independent_check",
+        "summary": "Once correctly reviewed as scientific_change, Richard reproduced every one of Bob's figures himself from scratch and ran one boundary (--use-build while the ordinary binary was simultaneously stale) that neither Bob nor the original brief had tried",
+        "evidence": "Richard's evidence: own stale-binary demonstration and restoration on all three scripts, own --use-build-while-stale boundary, own reproduction of 74/74, 1/1, 1/1"
+      }
+    ],
+    "id": "RUNOFF-038",
+    "iteration": 1,
+    "measured": {
+      "billing_status": "provider_reported_not_invoice_reconciled",
+      "coordinator": {
+        "provider_reported_usd": null,
+        "self_reported_minutes": null,
+        "self_reported_usd": null,
+        "tool_measured_minutes": 113.0
+      },
+      "coordinator_coverage": "missing",
+      "cost_scope": "cost_usd and span-based figures describe dispatched agents only; coordinator (Arch) cost is NOT included: no Arch accounting record exists for this iteration (record one with team_accounting.py record-arch)",
+      "cost_usd": {
+        "bob": 0.0,
+        "richard": 0.0
+      },
+      "dispatches": {
+        "bob": 1,
+        "richard": 1
+      },
+      "rounds": {
+        "bob": 1,
+        "richard": 1
+      },
+      "span_minutes": 207,
+      "unknown_cost_event_ids": [
+        "9a500e82378e431297245da9829e6f4e",
+        "25d237021f3d427cbfc937c7713e787a"
+      ]
+    },
+    "no_problem_reason": "",
+    "problems": [
+      {
+        "category": "workflow_kind_misclassification",
+        "summary": "Arch prepared RUNOFF-038 as harness_change (0 reviewers, structural-only final verification), but the fix edits tests/rnf/refusal_check.py, applied_field_check.py and timing_field_check.py, which are inside the project's scientific signature scope (test_paths includes tests/rnf, not in framework_test_paths); the closeout gate correctly refused and the issue had to be amended to scientific_change after Bob's work was already done, adding a full review round and the ~2h scientific suite that a correct classification at --prepare time would have run once anyway",
+        "evidence": "loop_gate.py --check-done: 'scientific source/tests/configuration changed: amend workflow kind'; workflow amendment recorded in packets/runoff-038-final.json citing project.py's selected()/test_paths/framework_test_paths definitions",
+        "minutes_lost": 15
+      }
+    ],
+    "schema_version": 3,
+    "solutions": [
+      {
+        "problem": 0,
+        "action": "fixed",
+        "reference": "devel-loop/loop_state/packets/runoff-038-final.json",
+        "reason": "Amended via workflow_amendment (previous=start workflow, reason citing project.json's test_paths/framework_test_paths split) before final verification ran, so no work was discarded; Richard's review and the full scientific suite both ran under the corrected classification."
+      }
+    ],
+    "timestamp": "2026-10-10T21:49:48Z"
+  },
+  "accounting": {
+    "billing_status": "provider_reported_not_invoice_reconciled",
+    "by_phase": {
+      "closeout": {
+        "effort_seconds": 27.08892822265625,
+        "elapsed_seconds": 27.08892822265625,
+        "events": 2
+      },
+      "orientation": {
+        "effort_seconds": 1.376373052597046,
+        "elapsed_seconds": 1.376373052597046,
+        "events": 6
+      },
+      "verification": {
+        "effort_seconds": 7893.183062791824,
+        "elapsed_seconds": 7893.183062791824,
+        "events": 5
+      }
+    },
+    "by_role": {
+      "bob": {
+        "dispatches": 1,
+        "reported_usd": 0.0,
+        "rounds": 1,
+        "seconds": 0.0,
+        "tool_calls": 0,
+        "unknown_cost_events": 1,
+        "unknown_tool_call_events": 1,
+        "usage": {}
+      },
+      "richard": {
+        "dispatches": 1,
+        "reported_usd": 0.0,
+        "rounds": 1,
+        "seconds": 0.0,
+        "tool_calls": 0,
+        "unknown_cost_events": 1,
+        "unknown_tool_call_events": 1,
+        "usage": {}
+      }
+    },
+    "child_elapsed_seconds": 0,
+    "components": [
+      {
+        "event_id": "9a500e82378e431297245da9829e6f4e",
+        "kind": "unmetered_native",
+        "parent_event_id": "9a500e82378e431297245da9829e6f4e",
+        "reported_usd": null,
+        "role": "bob",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "25d237021f3d427cbfc937c7713e787a",
+        "kind": "unmetered_native",
+        "parent_event_id": "25d237021f3d427cbfc937c7713e787a",
+        "reported_usd": null,
+        "role": "richard",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      }
+    ],
+    "coordinator": {
+      "coverage": "missing",
+      "included_in_reported_usd": "no",
+      "provider_reported_usd": null,
+      "self_reported": {
+        "minutes": null,
+        "records": [],
+        "records_without_usd": 0,
+        "usd": null
+      },
+      "tool_measured": {
+        "basis": "wall time of gate commands run as arch; excludes interactive session time",
+        "effort_seconds": 6778.3797488212585,
+        "elapsed_seconds": 6778.3797488212585,
+        "events": 7
+      }
+    },
+    "coordinator_coverage": "missing",
+    "end": "2026-10-10T21:48:02.708985+00:00",
+    "issue_id": "RUNOFF-038",
+    "missing_timing_event_ids": [
+      "9a500e82378e431297245da9829e6f4e",
+      "25d237021f3d427cbfc937c7713e787a"
+    ],
+    "outside_child_intervals_seconds": 12439.172684192657,
+    "phase_events": [
+      {
+        "event_id": "8160c99b66ab4cbea29470df5b5d5553",
+        "finished_at": "2026-10-10T18:20:43.999724+00:00",
+        "issue_id": "RUNOFF-038",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.3379270164296031,
+        "started_at": "2026-10-10T18:20:43.661797+00:00"
+      },
+      {
+        "event_id": "c3a50269746e44498f180d49114379fa",
+        "finished_at": "2026-10-10T18:21:35.208074+00:00",
+        "issue_id": "RUNOFF-038",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.19097943790256977,
+        "started_at": "2026-10-10T18:21:35.017084+00:00"
+      },
+      {
+        "event_id": "7ee33eabe09c446cbc6e529b9c904e2f",
+        "finished_at": "2026-10-10T18:34:06.642889+00:00",
+        "issue_id": "RUNOFF-038",
+        "phase": "verification",
+        "reason": null,
+        "role": "ab4ad290359480126",
+        "seconds": 66.5372025789693,
+        "started_at": "2026-10-10T18:33:00.105684+00:00"
+      },
+      {
+        "event_id": "4c6bde20aef8415db91486a8aa8a63b2",
+        "finished_at": "2026-10-10T18:42:16.354015+00:00",
+        "issue_id": "RUNOFF-038",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.19424830749630928,
+        "started_at": "2026-10-10T18:42:16.159769+00:00"
+      },
+      {
+        "event_id": "8a75bd0f39e04deb956cbeb62d5e7a63",
+        "finished_at": "2026-10-10T18:43:40.417501+00:00",
+        "issue_id": "RUNOFF-038",
+        "phase": "verification",
+        "reason": null,
+        "role": "ab4ad290359480126",
+        "seconds": 67.74796858802438,
+        "started_at": "2026-10-10T18:42:32.669538+00:00"
+      },
+      {
+        "event_id": "de05ee9497424b278f389f6bf6b23960",
+        "finished_at": "2026-10-10T18:46:31.686579+00:00",
+        "issue_id": "RUNOFF-038",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.2050351668149233,
+        "started_at": "2026-10-10T18:46:31.481541+00:00"
+      },
+      {
+        "event_id": "8de539ae1ab24db892029662a12b1bdf",
+        "finished_at": "2026-10-10T18:47:59.719119+00:00",
+        "issue_id": "RUNOFF-038",
+        "phase": "closeout",
+        "reason": null,
+        "role": "arch",
+        "seconds": 11.369814907200634,
+        "started_at": "2026-10-10T18:47:48.349317+00:00"
+      },
+      {
+        "event_id": "c32bba0840394827b258bd0949c782b9",
+        "finished_at": "2026-10-10T18:50:07.878080+00:00",
+        "issue_id": "RUNOFF-038",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.22124300245195627,
+        "started_at": "2026-10-10T18:50:07.656830+00:00"
+      },
+      {
+        "event_id": "e4f6175cccbf4045820a2db6dcbaf356",
+        "finished_at": "2026-10-10T19:14:17.089822+00:00",
+        "issue_id": "RUNOFF-038",
+        "phase": "verification",
+        "reason": null,
+        "role": "ad7dd3fab4c8e2736",
+        "seconds": 1008.3712936704978,
+        "started_at": "2026-10-10T18:57:28.718533+00:00"
+      },
+      {
+        "event_id": "b815f72366ba433e9bb276dac232af1f",
+        "finished_at": "2026-10-10T19:15:56.471077+00:00",
+        "issue_id": "RUNOFF-038",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.22692061867564917,
+        "started_at": "2026-10-10T19:15:56.244155+00:00"
+      },
+      {
+        "event_id": "dfe6a9ccef764369b56f935a17c2d2ac",
+        "finished_at": "2026-10-10T21:12:04.133897+00:00",
+        "issue_id": "RUNOFF-038",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 6682.0667432053015,
+        "started_at": "2026-10-10T19:20:42.067150+00:00"
+      },
+      {
+        "event_id": "7dba872b9cfb42afb007bd05a2ab5099",
+        "finished_at": "2026-10-10T21:45:04.389763+00:00",
+        "issue_id": "RUNOFF-038",
+        "phase": "closeout",
+        "reason": null,
+        "role": "arch",
+        "seconds": 15.719167307019234,
+        "started_at": "2026-10-10T21:44:48.670637+00:00"
+      },
+      {
+        "event_id": "018d40c9d9184be89e1412a133900abe",
+        "finished_at": "2026-10-10T21:47:28.529711+00:00",
+        "issue_id": "RUNOFF-038",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 68.45986629463732,
+        "started_at": "2026-10-10T21:46:20.069852+00:00"
+      }
+    ],
+    "reported_usd": 0,
+    "schema_version": 2,
+    "span_seconds": 12439.172684192657,
+    "start": "2026-10-10T18:20:43.536301+00:00",
+    "unknown_cost_event_ids": [
+      "9a500e82378e431297245da9829e6f4e",
+      "25d237021f3d427cbfc937c7713e787a"
+    ]
+  }
+}
