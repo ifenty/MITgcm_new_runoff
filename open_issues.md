@@ -589,65 +589,6 @@ Low and purely navigational, but of exactly the kind this project keeps paying f
 ### Proposed action and acceptance
 Add `brief.py` to the Framework-routes table with its inputs (the issue's orientation, the sealed report, the design file, `--sweep-symbol`), its refusal condition (an unknown ESX command or flag, introspected from argparse including subcommands), and its output. Acceptance: `audit.py` still PASS, the map names the refusal so a blocked agent can find it, and the change is made when no review is in flight so it does not strand a seal. Pairs naturally with RUNOFF-026 (documentation) or with the next issue that edits the map for its own reasons.
 
-## UNRESOLVED: RNF_SUMMARY does not report a dTtracerLev/deltaTFreeSurf mismatch
-
-**Date Identified**: 2026-10-07T02:10:00Z
-**Status**: Unresolved
-**UUID**: RUNOFF-041
-**Anchors**: MITgcm/pkg/rnf/rnf_summary.F::<module>; tests/rnf/refusal_check.py::cases
-
-### Issue or research question
-`RNF_cellVolMax` bounds `|RNF_vflx|·deltaTFreeSurf / (drF(ks)·hFacC(ks))`. Under a
-linear free surface that quantity is also read as the fractional freshwater
-dilution the surface tracer forcing applies in a step — but only where
-`dTtracerLev(ks) = deltaTFreeSurf`. `deltaTFreeSurf` defaults to `deltaTMom`,
-not `deltaTtracer` (`ini_parms.F:1068`, whose own comment calls that default
-"inappropriate" and advises `deltaTFreeSurf = deltaTtracer` under asynchronous
-stepping). Where they differ, the dilution per tracer step exceeds the bounded
-`f` by `dTtracerLev/deltaTFreeSurf`, so the bound is that much looser **on that
-reading only** — the volume reading, which is primary, stays exact.
-
-RUNOFF-040 qualified the records and deliberately did not change the bound.
-
-### Evidence
-RUNOFF-040 review A, round 1, measured and confirmed by review B and by the
-implementer. This project's `global_ocean.cs32x15` has `deltaTMom` = 1200
-against `deltaTtracer` = 86400 — a ratio of **72** — and escapes the trap only
-because its `data` sets `deltaTFreeSurf = 86400` explicitly; `lab_sea` has them
-equal. So **no enrolled case can see a mismatch**, which is why the exposure is
-documented rather than tested.
-
-### Scientific or engineering impact
-Missed detection, never a false refusal: the exposure is one-sided (only
-looser). A user in an asynchronous set-up that leaves `deltaTFreeSurf` at its
-default gets a dilution-reading bound up to ~72× weaker than the record implies,
-with nothing saying so in the run's own output.
-
-### Proposed action and acceptance
-**Both reviewers recommended against bounding with
-`MAX(deltaTFreeSurf, dTtracerLev(ks))`, and Arch accepted.** Reasons on the
-record: `deltaTFreeSurf` is the step `integr_continuity.F:221` integrates the
-free surface with, which is the bound's primary reading, so `MAX()` would make
-one constant stop having one physical meaning across configurations — the very
-property that justified a fixed header constant over a `data.rnf` parameter; the
-failure mode is missed detection in a self-announcing set-up, never a blocked
-user; and it would change a guard just approved on measured evidence for a case
-no test covers.
-
-The agreed action is a **report, not a bound change**: have `RNF_SUMMARY` print
-at `nIter0`, when `dTtracerLev(1) ≠ deltaTFreeSurf`, a line naming both steps
-and their ratio and stating that the dilution reading of `RNF_cellVolMax` is
-looser by that factor while the volume reading is unaffected. One `WRITE` in a
-routine that already prints the bound lines, no numerical change, visible in
-every `STDOUT`.
-
-Acceptance: the line appears in a run where the two differ and is absent where
-they are equal; it is enrolled in `refusal_check.py`'s existing `bounds_report`
-assertions, which every normal-end case receives, so it cannot go inert (LL-014);
-and the no-change experiments still match their references, since nothing
-numerical moves.
-
-
 ## UNRESOLVED: runoff tracer term is mis-sampled in time under pkg/longstep with LS_nIter > 1
 
 **Date Identified**: 2026-10-09T07:50:00Z

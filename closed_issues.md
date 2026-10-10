@@ -1060,3 +1060,66 @@ Records updated: `docs/package_design.md` decision 3 (the "two rows without `ALL
 ### Gate acceptance
 
 Accepted by `loop_gate.py --check-done` at 2026-10-10T14:41:51.446447+00:00 for iteration 2026-10-10T11:10:19.685883+00:00. Owner decision 2026-10-09 option (b) implemented: RNF_CHECK refuses a runoff temperature (RNF_applyT) with temp_EvPrRn set in a build without ALLOW_ATM_TEMP (rnf_check.F:227-252), the pre-existing dense-path heat defect sparse runoff inherited since RUNOFF-031. Enrolled refusal_check.py case evprrn_runoff_temp with must-run controls evprrn_unset (temp_EvPrRn unset) and evprrn_no_runoff_temp (no runoff temperature in file), on build_esx_noatm. Consequential retirement of tendency_term_check.py's L_set_noatm/U_set_noatm cases and rows T3/T6, which built exactly the now-refused combination to measure it; 6/6 remaining cases, 12/12 rows still pass, with each row the retired cases also covered confirmed still covered by a surviving case. Upstream report on the dense-path defect written for the owner. Review A (Richard ad7dd3fab4c8e2736) APPROVE, empty must-fix, with his own additional check confirming the message's second remedy (RNF_useTemp=.FALSE.) is genuinely actionable. Final verification EXECUTED PASS (receipt 3a25fc15).
+
+## 🟢 RESOLVED: RNF_SUMMARY does not report a dTtracerLev/deltaTFreeSurf mismatch
+
+**Date Identified**: 2026-10-07T02:10:00Z
+**Date Resolved**: 2026-10-10T18:16:47.922067+00:00
+**Status**: Resolved
+**UUID**: RUNOFF-041
+**Anchors**: MITgcm/pkg/rnf/rnf_summary.F::<module>; tests/rnf/refusal_check.py::cases
+
+### Issue or research question
+`RNF_cellVolMax` bounds `|RNF_vflx|·deltaTFreeSurf / (drF(ks)·hFacC(ks))`. Under a
+linear free surface that quantity is also read as the fractional freshwater
+dilution the surface tracer forcing applies in a step — but only where
+`dTtracerLev(ks) = deltaTFreeSurf`. `deltaTFreeSurf` defaults to `deltaTMom`,
+not `deltaTtracer` (`ini_parms.F:1068`, whose own comment calls that default
+"inappropriate" and advises `deltaTFreeSurf = deltaTtracer` under asynchronous
+stepping). Where they differ, the dilution per tracer step exceeds the bounded
+`f` by `dTtracerLev/deltaTFreeSurf`, so the bound is that much looser **on that
+reading only** — the volume reading, which is primary, stays exact.
+
+RUNOFF-040 qualified the records and deliberately did not change the bound.
+
+### Evidence
+RUNOFF-040 review A, round 1, measured and confirmed by review B and by the
+implementer. This project's `global_ocean.cs32x15` has `deltaTMom` = 1200
+against `deltaTtracer` = 86400 — a ratio of **72** — and escapes the trap only
+because its `data` sets `deltaTFreeSurf = 86400` explicitly; `lab_sea` has them
+equal. So **no enrolled case can see a mismatch**, which is why the exposure is
+documented rather than tested.
+
+### Scientific or engineering impact
+Missed detection, never a false refusal: the exposure is one-sided (only
+looser). A user in an asynchronous set-up that leaves `deltaTFreeSurf` at its
+default gets a dilution-reading bound up to ~72× weaker than the record implies,
+with nothing saying so in the run's own output.
+
+### Proposed action and acceptance
+**Both reviewers recommended against bounding with
+`MAX(deltaTFreeSurf, dTtracerLev(ks))`, and Arch accepted.** Reasons on the
+record: `deltaTFreeSurf` is the step `integr_continuity.F:221` integrates the
+free surface with, which is the bound's primary reading, so `MAX()` would make
+one constant stop having one physical meaning across configurations — the very
+property that justified a fixed header constant over a `data.rnf` parameter; the
+failure mode is missed detection in a self-announcing set-up, never a blocked
+user; and it would change a guard just approved on measured evidence for a case
+no test covers.
+
+The agreed action is a **report, not a bound change**: have `RNF_SUMMARY` print
+at `nIter0`, when `dTtracerLev(1) ≠ deltaTFreeSurf`, a line naming both steps
+and their ratio and stating that the dilution reading of `RNF_cellVolMax` is
+looser by that factor while the volume reading is unaffected. One `WRITE` in a
+routine that already prints the bound lines, no numerical change, visible in
+every `STDOUT`.
+
+Acceptance: the line appears in a run where the two differ and is absent where
+they are equal; it is enrolled in `refusal_check.py`'s existing `bounds_report`
+assertions, which every normal-end case receives, so it cannot go inert (LL-014);
+and the no-change experiments still match their references, since nothing
+numerical moves.
+
+### Gate acceptance
+
+Accepted by `loop_gate.py --check-done` at 2026-10-10T18:16:47.922067+00:00 for iteration 2026-10-10T14:45:44.372255+00:00. Already-agreed action from RUNOFF-040 implemented: RNF_SUMMARY now prints one conditional line, only when dTtracerLev(1) differs from deltaTFreeSurf, naming both steps and their ratio and stating that RNF_cellVolMax's dilution reading (not its primary volume reading) is looser by that factor. No numerical bound changed. Enrolled a presence/absence case pair (mismatched_timesteps / positive_control) in refusal_check.py, 74/74 cases; both must-fail directions demonstrated. Bob also fixed a wrong premise in the design (a missing #include PARAMS.h, following rnf_exf_runoff.F's precedent) rather than stopping, flagged and confirmed correct by review. Review A (Richard ad7dd3fab4c8e2736) APPROVE, empty must-fix; his own additional checks included the opposite-ratio boundary (ratio<1) and a fresh -mpi 2 rebuild/run that closed a gap in Bob's own stated limits. Final verification EXECUTED PASS (receipt da276f31).
