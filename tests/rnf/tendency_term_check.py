@@ -94,7 +94,10 @@ concentrations are all distinct (:data:`TRC0`), and :func:`judge_tracer`
 requires the measured package term to be at least ``RTOL *
 DISCRIMINATION`` away from the term every *other* reference would have
 given (the other arms, the initial tracer, zero): measured, the
-smallest such margin over the eight cases is 8.3e-2. Both columns were
+smallest such margin over the six cases is 8.3e-2 (``U_unset`` against
+``zero``; re-measured after RUNOFF-045 removed ``L_set_noatm`` and
+``U_set_noatm``, unchanged because neither of those two held the
+minimum). Both columns were
 also measured failing on mutant binaries, first on the tendency route
 (RUNOFF-008) and again on the surface route (RUNOFF-031, mutants built
 into separate binaries and run with ``--use-build``): with the branch-L
@@ -111,7 +114,7 @@ to what was applied.
 
 Adding pkg/ptracers to these runs changes nothing for T and S: every
 measured and expected T and S figure, and the theta and salt the
-measured step starts from, are bitwise identical to the same eight cases
+measured step starts from, are bitwise identical to the same six cases
 run without it (RUNOFF-008).
 
 Why the oracle is analytic
@@ -144,32 +147,46 @@ area from its ``RAC.data``, the layer thickness from ``delR`` of its own
 the tracer, ``PTRACERS_ref`` and ``PTRACERS_EvPrRn`` -- so that a case
 cannot pass against a setting it did not actually run.
 
-The two rows without ``ALLOW_ATM_TEMP``
--------------------------------------------
+The two rows without ``ALLOW_ATM_TEMP`` are retired (RUNOFF-045)
+------------------------------------------------------------------
 
-Since RUNOFF-031 the totals of rows T3 and T6 are the dense
-``runoftempfile`` path's: nothing cancels the model's own
-``temp_EvPrRn`` term for the runoff in that build, and the exf
-``runoftemp`` term assumes the water arrives at ``theta``, so the total
-is ``[(mT) - m*theta]*mu*D`` plus the model's ``m*(temp_EvPrRn -
-theta)*mu*D`` (L) or ``m*(temp_EvPrRn - tRef)*mu*D`` (U). The tendency
-route delivered the source heat there by using ``T_ref = temp_EvPrRn``;
-following the exf convention gives that up, which is recorded in
-decision 3 of the package design. :func:`expected` sums the three
-columns as before, so these rows measure the new algebra rather than
-assume it.
+Rows T3 and T6 used to measure the dense ``runoftempfile`` path's
+total in a build without ``ALLOW_ATM_TEMP`` that sets ``temp_EvPrRn``:
+nothing cancels the model's own ``temp_EvPrRn`` term for the runoff in
+that build, and the exf ``runoftemp`` term assumes the water arrives
+at ``theta``, so the total was ``[(mT) - m*theta]*mu*D`` plus the
+model's ``m*(temp_EvPrRn - theta)*mu*D`` (L) or ``m*(temp_EvPrRn -
+tRef)*mu*D`` (U), i.e. the water counted twice. RUNOFF-031 carried that
+pre-existing dense-path defect onto the sparse path and recorded it as
+measured here (``L_set_noatm``, ``U_set_noatm``) rather than refused,
+with a refusal as one of three options for the owner. The owner's
+decision on RUNOFF-045 (2026-10-09, option b) was the refusal:
+``RNF_CHECK`` now stops a run with ``RNF_applyT`` (a file carrying
+``runoff_temperature``) together with ``temp_EvPrRn`` set, in a build
+without ``ALLOW_ATM_TEMP`` (``pkg/rnf/rnf_check.F``). That is exactly
+the combination ``L_set_noatm``/``U_set_noatm`` built in order to
+measure, so the model now refuses to reach the state these two cases
+needed and they are removed, with ``T3-NL-set-noatm`` and
+``T6-U-set-noatm`` removed from :data:`T_ROWS` so the coverage check
+below does not fail on a row nothing can pass any more. The refusal
+itself is measured by ``tests/rnf/refusal_check.py`` instead (its own
+case, with two must-run controls), which is where this algebra's
+coverage now lives. The build infrastructure for a model without
+``ALLOW_ATM_TEMP`` (:data:`NOATM_BUILD`, :func:`write_noatm_code`, the
+``atm_temp`` parameter of :func:`exf_options`) is left in place: no
+case here sets ``atm_temp`` false any more, so it is currently unused,
+but nothing about it was wrong and a future case unrelated to
+``temp_EvPrRn`` could still need such a build.
 
 Coverage, and what a passing run does not establish
 ---------------------------------------------------
 
 The ``rows`` field of each case names the table rows it covers, and
 :func:`main` fails if any row of :data:`T_ROWS`, :data:`S_ROWS` or
-:data:`C_ROWS` is left uncovered, so the set cannot silently shrink. Every case needs a build with
-``ALLOW_RUNOFTEMP`` defined, which the runoff heat goes through, and two
-rows need one with ``ALLOW_ATM_TEMP`` undefined as well, where pkg/exf
-does not cancel the model's own term: they are the cases with
-``atm_temp`` false. ``--build``
-compiles that binary, and the ordinary one, when either is missing or
+:data:`C_ROWS` is left uncovered, so the set cannot silently shrink.
+Every case needs a build with ``ALLOW_RUNOFTEMP`` defined, which the
+runoff heat goes through. ``--build``
+compiles that binary when it is missing or
 older than its sources (:func:`build_if_stale`); without ``--build`` a
 missing binary is reported with its compile command and the run exits
 2. There is no flag that lets a run
@@ -198,11 +215,14 @@ Usage
 
 The second form needs the binaries to exist already, from ``--build``.
 ``--use-build NAME`` runs every selected case on another lab_sea build,
-for the must-fail demonstrations on mutant binaries.
+for the must-fail demonstrations on mutant binaries. ``--build-noatm-only``
+compiles the no-``ALLOW_ATM_TEMP`` binary and exits, running no case: no
+case here needs it any more (RUNOFF-045), but
+``tests/rnf/refusal_check.py`` does, for its ``ALLOW_ATM_TEMP`` refusal.
 
 Exit status: 0 if every case passes, 1 if one fails or a table row has
 no passing case, 2 if a binary is missing or could not be built, or a
-selection does not exist.
+selection does not exist. ``--build-noatm-only`` returns 0 or 2 only.
 """
 import argparse
 import json
@@ -292,8 +312,12 @@ FLOOR = 1.0e-9
 DISCRIMINATION = 1.0e3
 
 #: Table rows of decision 3 that this check has to cover, by name.
-T_ROWS = ("T1-NL-unset", "T2-NL-set-atm", "T3-NL-set-noatm",
-          "T4-U-unset", "T5-U-set-atm", "T6-U-set-noatm")
+#: T3-NL-set-noatm and T6-U-set-noatm (a build without ALLOW_ATM_TEMP
+#: with temp_EvPrRn set) are retired as of RUNOFF-045: RNF_CHECK now
+#: refuses that exact combination, so the sparse path can no longer
+#: reach the state those two rows measured. See "The two rows without
+#: ALLOW_ATM_TEMP are retired" above.
+T_ROWS = ("T1-NL-unset", "T2-NL-set-atm", "T4-U-unset", "T5-U-set-atm")
 S_ROWS = ("S1-NL-set", "S2-NL-unset", "S3-U-set", "S4-U-unset")
 #: Rows of the passive-tracer term (decision 4, RUNOFF-008): one per
 #: reference arm of ``RNF_FORCING_SURF_PTR`` that a linear free surface
@@ -433,17 +457,13 @@ CASES = (
      "temp_EvPrRn": None, "salt_EvPrRn": 0.0, "ptr_EvPrRn": None,
      "sources": ((0.75, None, 5.0, 3.0), (0.25, -1.0, 20.0, 0.5)),
      "rows": ("T1-NL-unset", "S1-NL-set", "C2-L-unset")},
-    # The two rows where pkg/exf does not cancel the model's own term,
-    # because the cancellation is inside #ifdef ALLOW_ATM_TEMP. They
-    # need the binary of a build with that option undefined.
-    {"name": "L_set_noatm", "branch": "L", "atm_temp": False,
-     "temp_EvPrRn": 1.5, "salt_EvPrRn": 0.0, "ptr_EvPrRn": TRC_EVPRRN,
-     "sources": ((1.0, 30.0, 5.0, 3.0),),
-     "rows": ("T3-NL-set-noatm", "S1-NL-set", "C1-L-set")},
-    {"name": "U_set_noatm", "branch": "U", "atm_temp": False,
-     "temp_EvPrRn": 1.5, "salt_EvPrRn": None, "ptr_EvPrRn": TRC_EVPRRN,
-     "sources": ((1.0, 30.0, 5.0, 3.0),),
-     "rows": ("T6-U-set-noatm", "S4-U-unset", "C3-U-set")},
+    # RUNOFF-045 retired the two rows that used to be measured here
+    # (L_set_noatm, U_set_noatm: a build without ALLOW_ATM_TEMP with
+    # temp_EvPrRn set and a runoff temperature in the file). RNF_CHECK
+    # now refuses exactly that combination, so a case built to reach it
+    # would be refused at init rather than measured; see "The two rows
+    # without ALLOW_ATM_TEMP are retired" above and
+    # tests/rnf/refusal_check.py for the refusal and its controls.
 )
 
 UNSET_RL = 1.234567e5
@@ -1663,10 +1683,26 @@ def main(argv=None):
                              "demonstrations on mutant binaries, which "
                              "are never compiled into the builds this "
                              "check reuses")
+    parser.add_argument("--build-noatm-only", action="store_true",
+                        help="compile " + NOATM_BUILD + " (ALLOW_RUNOFTEMP "
+                             "defined, ALLOW_ATM_TEMP undefined) if it is "
+                             "missing or stale, then exit without running "
+                             "any case. No case here needs this build since "
+                             "RUNOFF-045 retired L_set_noatm/U_set_noatm, "
+                             "but tests/rnf/refusal_check.py reuses the "
+                             "binary for its ALLOW_ATM_TEMP refusal case, "
+                             "so this is how a suite ensures it exists "
+                             "without reviving a case that would now be "
+                             "refused at init.")
     args = parser.parse_args(argv)
     if args.use_build and args.build:
         parser.error("--use-build names a binary built elsewhere; it does "
                      "not combine with --build")
+    if args.build_noatm_only:
+        timeout = args.timeout*2
+        ok = report_build(build_if_stale(NOATM_BUILD, write_noatm_code,
+                                         timeout=timeout))
+        return 0 if ok else 2
 
     selected = CASES
     if args.case:

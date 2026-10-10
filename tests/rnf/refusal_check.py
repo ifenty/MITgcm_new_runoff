@@ -197,6 +197,14 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 VERIF = os.path.join(ROOT, "MITgcm", "verification")
 EXPERIMENT = "lab_sea"
 BUILD = "build_esx"
+# The lab_sea build without ALLOW_ATM_TEMP (ALLOW_RUNOFTEMP defined),
+# already built for tests/rnf/tendency_term_check.py's own cases
+# (its NOATM_BUILD; duplicated as a string here rather than imported,
+# to avoid a circular import -- that script imports from this one at
+# its own top level). The RUNOFF-045 cases below carry
+# ``"needs_build": NOATM_BUILD`` so the default (no --case) run of
+# this script's cases, which uses BUILD or BUILD_mpiN, skips them.
+NOATM_BUILD = "build_esx_noatm"
 PREFIX = "input.rnfchk_"
 # The valid sparse file (four sources, seven targets) and its dense reference.
 SPARSE = os.path.join(VERIF, EXPERIMENT, "input.rnof_const", "runoff_sparse.nc")
@@ -287,6 +295,20 @@ DATA_LONGSTEP_2 = """# A long step of two dynamics steps (RUNOFF-043)
 DATA_PTRACERS_ITER0 = DATA_PTRACERS.replace(" PTRACERS_Iter0 = 1,",
                                             " PTRACERS_Iter0 = 0,")
 assert DATA_PTRACERS_ITER0 != DATA_PTRACERS
+
+# For the ALLOW_ATM_TEMP cases of RUNOFF-045 (build_esx_noatm): the
+# committed data.diagnostics requests EXFatemp (ALLOW_ATM_TEMP only)
+# and the SI* fields of pkg/seaice, which this build either does not
+# have (EXFatemp) or does not use here (useSEAICE=.FALSE., above), so
+# DIAGNOSTICS_SET_POINTERS stops the run before RNF_CHECK ever runs.
+# No field here is needed for these cases.
+DATA_DIAG_NOATM = """# No fields: a build without ALLOW_ATM_TEMP cannot
+# register EXFatemp, which the committed data.diagnostics requests
+ &DIAGNOSTICS_LIST
+ &
+ &DIAG_STATIS_PARMS
+ &
+"""
 
 # Lines printed only after every configuration check has passed.
 PASSED = "RNF_CHECK: configuration checks passed"
@@ -809,6 +831,29 @@ def sparse_file(path, edit=None, skip=(), retype=None, many_sources=0,
             edit(dst)
 
 
+def noatm_exf(text):
+    """Return ``data.exf`` text usable on a build without ``ALLOW_ATM_TEMP``.
+
+    Drops the ``atemp``/``aqh``/``precip``/``snowprecip`` namelist
+    variables, which do not exist in such a build (``EXF_READPARMS``
+    would stop the run on an unknown namelist name before ``RNF_CHECK``
+    ever runs), and blanks ``lwdownfile``/``swdownfile``, which
+    ``EXF_CHECK`` refuses to read in without ``ALLOW_ATM_TEMP``
+    ("Cannot read-in field lwdown with #undef ALLOW_ATM_TEMP"). Mirrors
+    ``tests/rnf/tendency_term_check.py``'s ``write_input``, which has
+    the same need for its own no-``ALLOW_ATM_TEMP`` cases; duplicated
+    here in miniature rather than imported, to avoid a circular import
+    between the two scripts (``tendency_term_check`` already imports
+    from this module at its own top level).
+    """
+    lines = [ln for ln in text.splitlines()
+             if not re.match(r"\s*(atemp|aqh|precip|snowprecip)\w*\s*=", ln)]
+    text = "\n".join(lines) + "\n"
+    for name in ("lwdownfile", "swdownfile"):
+        text = replace_line(text, name, f" {name}        = ' ',")
+    return text
+
+
 def cases(data_pkg, data_exf, info=None):
     """Return the test cases as a list of dictionaries.
 
@@ -843,6 +888,15 @@ def cases(data_pkg, data_exf, info=None):
     # the "ptracers is not in use" one are reachable with the one binary.
     pkg_ptr = set_package_flags(data_pkg, {"useRNF": ".TRUE.",
                                            "usePTRACERS": ".TRUE."})
+    # For the ALLOW_ATM_TEMP cases of RUNOFF-045, which run on
+    # build_esx_noatm: pkg/seaice and pkg/kpp need ALLOW_ATM_TEMP (or
+    # EXF_READ_EVAP/ALLOW_BULKFORMULAE) themselves and SEAICE_CHECK
+    # refuses first otherwise, before RNF_CHECK ever runs -- measured,
+    # the same reason tests/rnf/tendency_term_check.py switches both
+    # off for its own no-ALLOW_ATM_TEMP cases.
+    pkg_noatm = set_package_flags(data_pkg, {"useRNF": ".TRUE.",
+                                             "useSEAICE": ".FALSE.",
+                                             "useKPP": ".FALSE."})
     rnf_ok = DATA_RNF.format(SPARSE_REL)
     rnf_bad = DATA_RNF.format("bad.nc")
     # Without exf the model must still reach PACKAGES_CHECK: sea ice needs
@@ -1764,6 +1818,66 @@ def cases(data_pkg, data_exf, info=None):
          "summary": {"RNF_hasTemp": "F", "RNF_useTemp": "F"},
          "flux_sum": info["flux_sum"], "stop": "ABNORMAL END",
          "forbid": no_error},
+        # RUNOFF-045, owner decision 2026-10-09, option b: a runoff
+        # temperature without ALLOW_ATM_TEMP when temp_EvPrRn is set.
+        # Confirmed pre-existing dense-path heat inconsistency
+        # (external_forcing_surf.F:299-305 gives runoff water the
+        # temperature temp_EvPrRn; exf cancels that for runoff only
+        # under ALLOW_ATM_TEMP, exf_mapfields.F:136-197; the runoff-heat
+        # block that follows adds the term either way, :199-210), now
+        # also inherited by the sparse path since RUNOFF-031 moved its
+        # heat onto the same exf code. These three cases run on
+        # build_esx_noatm (ALLOW_RUNOFTEMP defined, ALLOW_ATM_TEMP
+        # undefined; --use-build), the one lab_sea build already built
+        # without ALLOW_ATM_TEMP (tests/rnf/tendency_term_check.py's
+        # NOATM_BUILD) and the only one on which the file's temperature
+        # can pass the ALLOW_RUNOFTEMP guard above and reach this one:
+        # on the committed build_esx, ALLOW_ATM_TEMP is defined and
+        # ALLOW_RUNOFTEMP is not, so temperature_no_runoftemp fires
+        # first and this refusal can never be isolated there.
+        {"name": "evprrn_runoff_temp", "needs_build": NOATM_BUILD,
+         "files": {"data.pkg": pkg_noatm, "data.rnf": rnf_bad,
+                   "data": add_to_namelist(data_t0, "PARM01",
+                                           "  temp_EvPrRn = 10.0,"),
+                   "data.exf": noatm_exf(data_exf),
+                   "data.diagnostics": DATA_DIAG_NOATM},
+         "nc": {"bad.nc": {"edit": add_temperature(5.0)}},
+         "stderr": ["RNF_CHECK: the file has runoff_temperature and"
+                    " temp_EvPrRn is set, which needs",
+                    "RNF_CHECK: or temp_EvPrRn = UNSET_RL (the default)"
+                    " in data, or RNF_useTemp=.FALSE. in data.rnf",
+                    one_error],
+         "stdout": [], "stop": stop_check, "forbid": after_checks},
+        # Must-run control A: the same file and build, temp_EvPrRn left
+        # at its default (UNSET_RL), which must not refuse.
+        {"name": "evprrn_unset", "needs_build": NOATM_BUILD,
+         "files": {"data.pkg": pkg_noatm, "data.rnf": rnf_bad,
+                   "data": data_t0, "data.exf": noatm_exf(data_exf),
+                   "data.diagnostics": DATA_DIAG_NOATM},
+         "nc": {"bad.nc": {"edit": add_temperature(5.0)}},
+         "normal_end": True, "stderr": [], "stdout": stdout_ok,
+         "summary": {"RNF_hasTemp": "T"},
+         "flux_sum": info["flux_sum"], "stop": "ABNORMAL END",
+         "forbid": no_error + [
+             "runoff_temperature and temp_EvPrRn is set",
+             '"#define ALLOW_ATM_TEMP"']},
+        # Must-run control B: the same build and temp_EvPrRn = 10.0,
+        # with a file that carries no runoff_temperature at all, which
+        # must not refuse either -- the second leg that the refusal
+        # fires only on the exact combination of both.
+        {"name": "evprrn_no_runoff_temp", "needs_build": NOATM_BUILD,
+         "files": {"data.pkg": pkg_noatm, "data.rnf": rnf_bad,
+                   "data": add_to_namelist(data_t0, "PARM01",
+                                           "  temp_EvPrRn = 10.0,"),
+                   "data.exf": noatm_exf(data_exf),
+                   "data.diagnostics": DATA_DIAG_NOATM},
+         "nc": {"bad.nc": {}},
+         "normal_end": True, "stderr": [], "stdout": stdout_ok,
+         "summary": {"RNF_hasTemp": "F"},
+         "flux_sum": info["flux_sum"], "stop": "ABNORMAL END",
+         "forbid": no_error + [
+             "runoff_temperature and temp_EvPrRn is set",
+             '"#define ALLOW_ATM_TEMP"']},
         # The at-the-bound companion of flux_above_source_max, and the
         # acceptance of RUNOFF-030 as a whole. The first source carries
         # exactly RNF_srcFluxMax, so:
@@ -2188,6 +2302,17 @@ def main(argv=None):
             print(f"unknown case(s): {sorted(unknown)}", file=sys.stderr)
             return 2
         selected = [c for c in selected if c["name"] in args.case]
+    else:
+        # A case naming "needs_build" (RUNOFF-045's ALLOW_ATM_TEMP
+        # cases, which need build_esx_noatm) is excluded from the full
+        # default set, which otherwise runs on build_esx or
+        # build_esx_mpiN and would see the wrong refusal fire instead
+        # of the one the case is about. Name it with --case and its
+        # build with --use-build, as the scientific/focused suite
+        # commands do for it.
+        active = build_name(args.mpi)
+        selected = [c for c in selected
+                   if c.get("needs_build", active) == active]
 
     results = [run_case(case, args.keep, args.mpi, args.timeout)
                for case in selected]

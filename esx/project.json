@@ -169,6 +169,23 @@
         "tests/rnf/refusal_check.py"
       ],
       [
+        "{python}",
+        "tests/rnf/tendency_term_check.py",
+        "--build-noatm-only"
+      ],
+      [
+        "{python}",
+        "tests/rnf/refusal_check.py",
+        "--case",
+        "evprrn_runoff_temp",
+        "--case",
+        "evprrn_unset",
+        "--case",
+        "evprrn_no_runoff_temp",
+        "--use-build",
+        "build_esx_noatm"
+      ],
+      [
         "tests/mitgcm_oracle.sh",
         "lab_sea",
         "input.rnof_sp_const"
@@ -316,6 +333,23 @@
       [
         "{python}",
         "tests/rnf/refusal_check.py"
+      ],
+      [
+        "{python}",
+        "tests/rnf/tendency_term_check.py",
+        "--build-noatm-only"
+      ],
+      [
+        "{python}",
+        "tests/rnf/refusal_check.py",
+        "--case",
+        "evprrn_runoff_temp",
+        "--case",
+        "evprrn_unset",
+        "--case",
+        "evprrn_no_runoff_temp",
+        "--use-build",
+        "build_esx_noatm"
       ],
       [
         "tests/mitgcm_oracle.sh",

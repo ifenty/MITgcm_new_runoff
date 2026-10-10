@@ -871,7 +871,9 @@ without NetCDF. `RNF_READPARMS`, called from `PACKAGES_READPARMS`
   it does now measure is that the **dense** path is still held to both exf
   bounds in full, since it runs with `useRNF` false. Both are re-measured
   unchanged with the check at its default: 8 of 8 cases over 10 of 10
-  decision-3 rows, and 7 cells at 3.559·10⁻¹⁶ with the control at
+  decision-3 rows (RUNOFF-030, before the tracer rows existed; RUNOFF-045
+  later retired two of the eight, see "The two rows without `ALLOW_ATM_TEMP`
+  are dense-only" above), and 7 cells at 3.559·10⁻¹⁶ with the control at
   3.446·10⁻².
 
   **Why the bound is enforced at the record read and not in `RNF_CHECK`.**
@@ -1039,27 +1041,39 @@ dense `runoftempfile` path as well, so this table is that path's table too.
 |---|---|---|---|---|
 | N or L, `temp_EvPrRn` unset | 0 | 0 | `[(mT) − mθ]μ` | `[(mT) − mθ]μ` |
 | N or L, set, `ALLOW_ATM_TEMP` | `m(temp_EvPrRn − θ)μ` | `m(θ − temp_EvPrRn)μ` | `[(mT) − mθ]μ` | `[(mT) − mθ]μ` |
-| N or L, set, no `ALLOW_ATM_TEMP` | `m(temp_EvPrRn − θ)μ` | 0 | `[(mT) − mθ]μ` | `[(mT) − mθ]μ + m(temp_EvPrRn − θ)μ` |
+| N or L, set, no `ALLOW_ATM_TEMP` (dense only, RUNOFF-045 refuses it for sparse) | `m(temp_EvPrRn − θ)μ` | 0 | `[(mT) − mθ]μ` | `[(mT) − mθ]μ + m(temp_EvPrRn − θ)μ` |
 | U, `temp_EvPrRn` unset | 0 | 0 | `[(mT) − mθ]μ` | `[(mT) − mθ]μ` |
 | U, set, `ALLOW_ATM_TEMP` | `m(temp_EvPrRn − tRef)μ` | `m(θ − temp_EvPrRn)μ` | `[(mT) − mθ]μ` | `[(mT) − m·tRef]μ` |
-| U, set, no `ALLOW_ATM_TEMP` | `m(temp_EvPrRn − tRef)μ` | 0 | `[(mT) − mθ]μ` | `[(mT) − mθ]μ + m(temp_EvPrRn − tRef)μ` |
+| U, set, no `ALLOW_ATM_TEMP` (dense only, RUNOFF-045 refuses it for sparse) | `m(temp_EvPrRn − tRef)μ` | 0 | `[(mT) − mθ]μ` | `[(mT) − mθ]μ + m(temp_EvPrRn − tRef)μ` |
 
 In branch U with `temp_EvPrRn` set and `ALLOW_ATM_TEMP`, the total is
 `[(mT) − m·tRef]μ`, because the model writes its term against `tRef(ks)`: the
 mix of `θ` and `tRef(ks)` exf already has in that branch.
 
-**The two rows without `ALLOW_ATM_TEMP` changed with RUNOFF-031.** Nothing
-cancels the model's own `temp_EvPrRn` term for the runoff there, and the exf
-`runoftemp` term assumes the water arrives at `θ`, so the water is counted at
-`temp_EvPrRn` and again from `θ` to its own temperature. That is the dense
-`runoftempfile` path's total in such a build (point 5 of the superseded
-comparison below), and the sparse path, which now shares the code, has it
-too. The tendency route delivered the source heat in those two rows by using
-`T_ref = temp_EvPrRn`; following the existing convention gives that up. It is
-measured (`tests/rnf/tendency_term_check.py`, rows T3 and T6) and reported to
-the owner with the RUNOFF-031 result; the alternatives are a refusal of a
-runoff temperature with `temp_EvPrRn` set and `ALLOW_ATM_TEMP` undefined, or
-leaving it as the dense path has it.
+**The two rows without `ALLOW_ATM_TEMP` are dense-only since RUNOFF-045.**
+Nothing cancels the model's own `temp_EvPrRn` term for the runoff there, and
+the exf `runoftemp` term assumes the water arrives at `θ`, so the water is
+counted at `temp_EvPrRn` and again from `θ` to its own temperature. That is
+the dense `runoftempfile` path's total in such a build (point 5 of the
+superseded comparison below) and is **not changed here** (option c of
+RUNOFF-045, declined; reported upstream instead, not a code change to
+`pkg/exf`). RUNOFF-031 initially carried the same total onto the sparse path
+and measured it (`tests/rnf/tendency_term_check.py`, rows T3 and T6, now
+retired) rather than refusing it, reporting the choice to the owner with
+three options: keep the convention (a), refuse it (b), or fix exf for both
+paths (c, declined as an upstream behaviour change). **The owner's decision
+on RUNOFF-045 (2026-10-09) was (b):** `RNF_CHECK` now stops a run with
+`RNF_applyT` (`useRNF` and a file carrying `runoff_temperature`) together
+with `temp_EvPrRn` set, in a build without `ALLOW_ATM_TEMP`
+(`pkg/rnf/rnf_check.F:227-252`), naming the condition and both remedies
+(`temp_EvPrRn = UNSET_RL`, the default, or `RNF_useTemp=.FALSE.`). The sparse
+path can therefore no longer reach the state these two rows describe; they
+remain true of the dense path only, which this project does not touch.
+Measured by execution (`tests/rnf/refusal_check.py`, case `evprrn_runoff_temp`
+on `build_esx_noatm` -- the lab_sea build already built without
+`ALLOW_ATM_TEMP` for `tendency_term_check.py`'s own retired cases -- with
+`evprrn_unset` and `evprrn_no_runoff_temp` as the two must-run controls that
+show the refusal fires only on the exact combination of both conditions).
 
 The exf and package columns are both part of `Qnet`, so under sea ice both are
 scaled like the other heat terms, by the open-water fraction `1 − A`

@@ -191,6 +191,15 @@ record is one contiguous hyperslab. Stored as float (32-bit) or double.
   for temperature and salinity, decision 4 for tracers).
   `RNF_INIT_FIXED` reports which series it found, and which ptracer each
   runoff tracer feeds, in the package summary.
+- **`runoff_temperature` needs `ALLOW_ATM_TEMP` when `temp_EvPrRn` is set**
+  (RUNOFF-045, owner decision 2026-10-09, option b). exf's cancellation of
+  the model's own `temp_EvPrRn` term for runoff exists only under that CPP
+  option (`pkg/exf/exf_mapfields.F:136-197`); without it the runoff would
+  enter at the wrong temperature with no message, as it does on the dense
+  `runoftempfile` path (a pre-existing defect, reported upstream and not
+  fixed here). `RNF_CHECK` refuses the combination instead of applying it
+  silently. `temp_EvPrRn = UNSET_RL` (the default), or
+  `RNF_useTemp=.FALSE.`, avoids it.
 - **Switching a series off:** `RNF_useTemp`, `RNF_useSalt` and
   `RNF_usePtracers` of `data.rnf` (all default true) make the reader treat the
   corresponding variables as absent. It says so per variable in the log, and

@@ -255,8 +255,11 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
     `X_c = Σ_s flux_s·frac_{s,c}·X_s / F_c`. This conserves heat content, salt
     and tracer mass.
   - A source without a temperature contributes at the surface water
-    temperature, except in a build without exf `ALLOW_ATM_TEMP` that sets
-    `temp_EvPrRn`, where it enters at `temp_EvPrRn`
+    temperature. A build without exf `ALLOW_ATM_TEMP` that sets
+    `temp_EvPrRn` cannot reach that case at all: `RNF_CHECK` refuses a file
+    carrying `runoff_temperature` together with `temp_EvPrRn` set in such a
+    build (RUNOFF-045), naming the condition, regardless of which
+    individual source's value is missing in a given record
     ([package design](package_design.md), decision 3, "Missing temperature").
   - A source without a salinity contributes S = 0.
   - Where `F_c = 0`, `X_c` is unused.
@@ -328,12 +331,16 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
     nonlinear free surface always has it, because the model stops otherwise
     (`model/src/config_check.F`, the `nonlinFreeSurf` test).
 - **Inherited from the dense `runoftemp` path:** under sea ice the heat is
-  scaled by the open-water fraction like the rest of `Qnet`; and in a build
-  without `ALLOW_ATM_TEMP` that sets `temp_EvPrRn`, nothing cancels the model's
-  own term for the runoff, so the water is counted at `temp_EvPrRn` and again
-  from `θ` to its own temperature. Until RUNOFF-031 the package's tendency
-  term delivered the source heat there; following the convention gives that up
-  (package design, decision 3).
+  scaled by the open-water fraction like the rest of `Qnet`. A build without
+  `ALLOW_ATM_TEMP` that sets `temp_EvPrRn` is a *dense-only* case of the same
+  inheritance: nothing there cancels the model's own term for the runoff, so
+  the water would be counted at `temp_EvPrRn` and again from `θ` to its own
+  temperature. Until RUNOFF-031 the package's deleted tendency term delivered
+  the source heat there instead; RUNOFF-031 gave that up to follow the exf
+  convention and measured the resulting total, and RUNOFF-045 (owner decision
+  2026-10-09, option b) then had `RNF_CHECK` refuse the combination outright
+  rather than carry it, so the sparse path can no longer reach this state at
+  all (package design, decision 3).
 
 ### Invariants
 
