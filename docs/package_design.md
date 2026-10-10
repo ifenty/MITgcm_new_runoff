@@ -1600,21 +1600,48 @@ tendency terms.
 
 `RNFqnet`, `RNFsflx` and `RNFtfNN` are registered and filled (RUNOFF-031);
 `RNFvflx`, `RNFmflx`, `RNFtemp`, `RNFsaln`, `RNFnsrc` and the monitor are
-RUNOFF-015's. All are two-dimensional.
+RUNOFF-015's, implemented in `RNF_DIAGNOSTICS_FILL`
+(`pkg/rnf/rnf_diagnostics_fill.F`), called unconditionally at the end of
+`RNF_FIELDS_LOAD`, as `EXF_GETFORCING` calls `EXF_DIAGNOSTICS_FILL`. All are
+two-dimensional. `RNFvflx` and `RNFmflx` are `RNF_vflx`/`RNF_mflx`
+themselves; `RNFtemp` and `RNFsaln` report **0** at a cell this package's
+own convention calls undefined — no runoff at all, or (`RNFtemp` only)
+runoff present but every source feeding the cell missing its temperature in
+the record used — a deliberate, stated value and not an accident of the
+division it would otherwise be; `RNFnsrc` counts the target entries owning
+the cell, which schema rule T03 (no duplicate `(source, cell)` pair) makes
+the number of distinct sources too.
 
 **Monitor** (`RNF_MONITOR`, at `monitorFreq`, in the style of
-`pkg/exf/exf_monitor.F:189-198`):
+`pkg/exf/exf_monitor.F:189-198`), implemented in `pkg/rnf/rnf_monitor.F`,
+called unconditionally alongside `RNF_DIAGNOSTICS_FILL`:
 
 - `MON_WRITESTATS_RL` statistics of the volume-flux field;
 - the global sums `Σ m·rA/rhoConstFresh` (m³/s), `Σ Cp·(mT)·rA` (W) and
-  `Σ (mS)·rA` (g/s), which the budget checks compare with the file;
-- the number of sources and target entries in use.
+  `Σ (mS)·rA` (g/s), plus one per runoff tracer in use (`Σ (mC_n)·rA`),
+  which the budget checks compare with the file. Each is a
+  `GLOBAL_SUM_TILE_RL` over a per-tile sum built identically whichever
+  process owns a tile, so a 1- and a 2-process run reduce the same values
+  in the same fixed tile order and print the same line
+  (`tests/rnf/diagnostics_check.py`, which checks exactly that: the printed
+  `%MON rnf_*` text itself, not only the value parsed from it);
+- the number of sources and target entries in use, `RNF_nSrcFile` and
+  `RNF_nTgtOwned`: both are set once by the static read of the file, so
+  they need no reduction and are already the same on every process.
 
 exf keeps writing its own `runoff` statistics only when `runofffile` is set
 (`pkg/exf/exf_monitor.F:189-192`), so the package monitor is the only runoff
 output in the monitor block.
 
-**Consequence for issues.** RUNOFF-015 implements the rest of this list.
+**Consequence for issues.** RUNOFF-015 implements the rest of this list, with
+its own direct oracle, `tests/rnf/diagnostics_check.py`: a per-cell
+reconstruction of the five input-field diagnostics from the file, the run's
+own `RNF_FIELDS_LOAD` trace and its grid (1e-12 relative, `RNFnsrc` exact,
+`RNFvflx` bitwise against `EXFroff`), the monitor sums against the file's
+own source sums, and two must-fail mutants (`RNFtemp` divided by the whole
+mass flux instead of the valid-temperature share, caught only where a
+target cell has two sources and one lacks a temperature; a monitor sum
+missing its `rA` weight).
 RUNOFF-016 reads the **diagnostics** of the applied terms (`RNFqnet`,
 `RNFsflx`, `RNFtfNN` since RUNOFF-031) and the exf `EXFroff`; it does **not**
 read the monitor sums, which do not exist yet, and it did not need them.

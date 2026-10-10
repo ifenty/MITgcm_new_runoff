@@ -244,6 +244,13 @@
         "tests/mitgcm_oracle.sh",
         "global_ocean.cs32x15",
         "input.rnof_sp_icedyn"
+      ],
+      [
+        "{python}",
+        "tests/rnf/diagnostics_check.py",
+        "--build",
+        "--mpi",
+        "0"
       ]
     ],
     "scientific": [
@@ -634,6 +641,25 @@
         "tests/runoff/lab_sea_runoff_timing_check.py",
         "--mpi",
         "2"
+      ],
+      [
+        "{python}",
+        "tests/rnf/diagnostics_check.py",
+        "--build"
+      ],
+      [
+        "{python}",
+        "tests/rnf/diagnostics_check.py",
+        "--mutant",
+        "temp",
+        "--build"
+      ],
+      [
+        "{python}",
+        "tests/rnf/diagnostics_check.py",
+        "--mutant",
+        "monitor",
+        "--build"
       ],
       [
         "tests/mitgcm_oracle.sh",
