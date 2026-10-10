@@ -983,3 +983,31 @@ What this means for the package (Arch's reading; the mechanism is for the implem
 ### Gate acceptance
 
 Accepted by `loop_gate.py --check-done` at 2026-10-10T02:12:32.581668+00:00 for iteration 2026-10-09T19:14:29.456954+00:00. Owner decision 2026-10-09 implemented for surface targets: runoff heat through the exf runoftemp/Qnet convention (RNF_EXF_RUNOFF fills runoftemp, exf_mapfields applies it), salt into surfaceForcingS and tracers into surfaceForcingPTr via new RNF_FORCING_SURF (plus a pkg/longstep re-add), RNF_TENDENCY_APPLY_* deleted, diagnostics RNFqnet/RNFsflx/RNFtfNN, refusals for runoff temperature without ALLOW_RUNOFTEMP and RUNOFF-043 option C. Fork 46684c3af, cf583d6b7, 37e77601f; project c8cae1a2. Oracles at unchanged tolerances: sparse vs dense heat 5.834e-16 (TFLUX bitwise 320/320); tendency_term_check 14/14 rows; budget_check 10/10 runs <=2.170e-16; kpp_heat_check dTFLUX = analytic; no-property runs byte-identical; mutants caught. Review A (Richard ad7dd3fab4c8e2736) REJECT on records in round 0, APPROVE_WITH_FIXES with empty must-fix in round 1 after the sea-ice exception was recorded. Final verification EXECUTED PASS (receipt 4ffaa5a9).
+
+## 🟢 RESOLVED: Runoff diagnostics and monitor output
+
+**Date Identified**: 2026-10-02T22:30:00Z
+**Date Resolved**: 2026-10-10T11:05:52.657424+00:00
+**Status**: Resolved
+**UUID**: RUNOFF-015
+**Anchors**: MITgcm/pkg/exf/exf_diagnostics_fill.F::<module>
+
+### Issue or research question
+Diagnostics for applied runoff volume flux, heat and salt tendencies, tracer tendencies, per-cell source counts; monitor statistics for the runoff fields.
+
+### Evidence
+Owner direction 2026-10-02 (owner away for several days): develop and test the new runoff program across many MITgcm configurations, with and without T, S and tracer contributions, in every time mode, as a robust, documented MITgcm package following MITgcm coding standards; T/S fluxes follow the shelfice/icefront tendency pattern.
+
+### Scientific or engineering impact
+Needed for every verification check and for users.
+
+### Proposed action and acceptance
+Acceptance: diagnostics listed in available_diagnostics, filled each step, values equal the applied fields (direct check).
+
+Scope decision from RUNOFF-012: the skeleton has no `rnf_diagnostics_init.F`. Decision 1 has `RNF_INIT_FIXED` call it, so RUNOFF-015 adds both the routine and the call.
+
+Unblocked 2026-10-03: RUNOFF-012 closed (pkg/rnf skeleton, fork ac33291aa).
+
+### Gate acceptance
+
+Accepted by `loop_gate.py --check-done` at 2026-10-10T11:05:52.657424+00:00 for iteration 2026-10-10T02:18:52.204131+00:00. Implemented the rest of decision 8: input-field diagnostics RNFvflx/RNFmflx/RNFtemp/RNFsaln/RNFnsrc via a new RNF_DIAGNOSTICS_FILL (RNF_FIELDS_LOAD split into RNF_FIELDS_BUILD plus the diagnostics/monitor call), and RNF_MONITOR with global volume/heat/salt sums and source/target counts, GLOBAL_SUM_TILE_RL for tiling/process independence. New direct oracle tests/rnf/diagnostics_check.py: three lab_sea cases (including one with two sources on one cell), two must-fail mutants, monitor-line equality on 1 and 2 processes, and pkg/seaice compiled and used throughout (inherited from input.rnof_sp_const), satisfying the RUNOFF-031 retrospective carry-forward. Review A (Richard ad7dd3fab4c8e2736) REJECT in round 0 on two documentation defects only (a stale docstring claim and a false 'ice-free' coverage statement), no code defect; both fixed in correction round 1 and review A then APPROVE_WITH_FIXES with empty must-fix. Final verification EXECUTED PASS (receipt 39016b55).

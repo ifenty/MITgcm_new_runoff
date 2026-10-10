@@ -71,29 +71,6 @@ Acceptance: test cases in at least one lat-lon and one cs32 configuration for ea
 
 Unblocked 2026-10-04: RUNOFF-004 closed (sparse reader, per-tile lists, placement by the `mdsio_read_field.F` arithmetic, `GLOBAL_SUM` fraction check and the exf volume flux; fork `610d4cbaf`, final verification receipt `2e11b06d`, all 33 scientific commands passing). Note the reader accepts **one constant record only**: `rnf_init_fixed.F:199-217` stops the run for `RNF_useYearlyFiles` or any `RNF_period` other than 0, naming RUNOFF-005.
 
-## UNRESOLVED: Runoff diagnostics and monitor output
-
-**Date Identified**: 2026-10-02T22:30:00Z
-**Status**: Unresolved
-**UUID**: RUNOFF-015
-**Anchors**: MITgcm/pkg/exf/exf_diagnostics_fill.F::<module>
-
-### Issue or research question
-Diagnostics for applied runoff volume flux, heat and salt tendencies, tracer tendencies, per-cell source counts; monitor statistics for the runoff fields.
-
-### Evidence
-Owner direction 2026-10-02 (owner away for several days): develop and test the new runoff program across many MITgcm configurations, with and without T, S and tracer contributions, in every time mode, as a robust, documented MITgcm package following MITgcm coding standards; T/S fluxes follow the shelfice/icefront tendency pattern.
-
-### Scientific or engineering impact
-Needed for every verification check and for users.
-
-### Proposed action and acceptance
-Acceptance: diagnostics listed in available_diagnostics, filled each step, values equal the applied fields (direct check).
-
-Scope decision from RUNOFF-012: the skeleton has no `rnf_diagnostics_init.F`. Decision 1 has `RNF_INIT_FIXED` call it, so RUNOFF-015 adds both the routine and the call.
-
-Unblocked 2026-10-03: RUNOFF-012 closed (pkg/rnf skeleton, fork ac33291aa).
-
 ## UNRESOLVED: Refusal and negative tests for invalid runoff input
 
 **Date Identified**: 2026-10-02T22:30:00Z

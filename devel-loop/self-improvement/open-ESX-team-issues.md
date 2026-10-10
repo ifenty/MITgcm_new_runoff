@@ -1518,3 +1518,31 @@ Coordinator time spent on every scientific closeout, worst after a re-prepared i
 
 ### Expected Effect
 Zero structural refusals at a scientific closeout once the judgment fields are filled.
+
+## 🔴 PROPOSED: a "failed" task-notification can arrive for a turn the agent's own session already completed
+
+**Date Identified**: 2026-10-10  04:05
+**Status**: Proposed
+**UUID**: TEAM-FALSE-FAILURE-NOTIFICATION-001
+**Category**: dispatch_reliability
+**Severity**: Low
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-10-provider-interruption-recurrence/assessment.md
+**Anchors**: devel-loop/loop_state/dispatch_log.jsonl
+
+### Issue
+A dispatched agent's turn is sometimes reported to the coordinator as `status: failed` with a provider API error ("the response stopped arriving"), when the agent's own session had already finished its work in full before the notification arrived. Resuming it then costs a redundant, idempotent re-run rather than real recovery. Separately, a genuine mid-turn interruption (missing footer, missing evidence) does need a resume, and the two cases are indistinguishable from the notification summary alone.
+
+### Evidence
+RUNOFF-015 round 0, Richard (`ad7dd3fab4c8e2736`): notification said `status: failed`, summary "Suite passed. Now the audit and final orientation/signature." Richard's own next turn: "nothing in my own session shows an interruption... all completed and recorded." Re-running the audit/orientation/signature cost about 25 minutes with no new information. Occurred alongside two genuine interruptions in the same project (RUNOFF-008 Bob, RUNOFF-031 Bob), which did need a resume, showing both failure modes are live.
+
+### Potential Impact
+Repeated small time losses per occurrence (5-25 minutes measured so far); larger if a false failure prompts a correction round that was never warranted, or if a genuine interruption is wrongly treated as a false alarm and work is lost.
+
+### Proposed Fix
+Before sending a resume message after a `failed` dispatch notification, check `dispatch_log.jsonl` for a `completed` event from the same `agent_id` with a non-null footer at or after the notification's timestamp. If one exists, treat the notification as advisory: do not resume, cite the existing completion event in the review packet instead.
+
+### Acceptance Criteria
+A `tests/esx` guard shows the coordinator takes the advisory path (no resume message sent, existing completion cited) when a completed-with-footer event already covers the failed notification, and the normal resume path when it does not.
+
+### Expected Effect
+Zero redundant re-runs for notification-layer false failures; genuine interruptions still resume as before.
