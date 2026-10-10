@@ -740,8 +740,7 @@ Kind: scientific_change, risk supported_semantics (two Richards). Size: comparab
 ## UNRESOLVED: runoff heat enters at temp_EvPrRn + T_r − θ without ALLOW_ATM_TEMP when temp_EvPrRn is set (dense and sparse)
 
 **Date Identified**: 2026-10-09T22:00:00Z
-**Status**: Blocked
-**Blocked-By**: OWNER-DECISION — keep the dense exf convention, refuse that build for a runoff temperature, or fix exf for both paths
+**Status**: Unresolved
 **UUID**: RUNOFF-045
 **Anchors**: MITgcm/pkg/exf/exf_mapfields.F::<module>; MITgcm/model/src/external_forcing_surf.F::<module>
 
@@ -771,3 +770,5 @@ Owner decision, with three options:
 - (c) Fix exf for both paths by moving the runoff cancellation out of `ALLOW_ATM_TEMP`. That is an upstream behaviour change to dense runoff.
 
 Arch recommends (b). RUNOFF-031 is closed on (a), the dense convention, pending this decision.
+
+**Owner decision, 2026-10-09: option (b).** Refuse a runoff temperature without `ALLOW_ATM_TEMP` when `temp_EvPrRn` is set, with an enrolled refused case and a must-run control. Report the dense-path inconsistency upstream as well. No longer `Blocked`.
