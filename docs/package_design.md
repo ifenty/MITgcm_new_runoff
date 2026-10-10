@@ -588,10 +588,22 @@ without NetCDF. `RNF_READPARMS`, called from `PACKAGES_READPARMS`
     `deltaTtracer` = 86400 and escapes the trap only by setting
     `deltaTFreeSurf` = 86400 explicitly; on that ratio an asynchronously
     stepped set-up that left the default would make the **dilution** reading
-    wrong by 72× while the **volume** reading stayed right. No enrolled case
-    can see a mismatch. Whether to bound with
-    `MAX(deltaTFreeSurf, dTtracerLev(ks))` is an open design question and is
-    deliberately not settled here. Being dimensionless
+    wrong by 72× while the **volume** reading stayed right.
+    **RUNOFF-041 settled this as a report, not a bound change** (both
+    reviewers recommended against bounding, Arch accepted): `RNF_SUMMARY`
+    prints, only when `dTtracerLev(1)` differs from `deltaTFreeSurf`, a line
+    naming both steps and their ratio and stating that the dilution reading
+    is looser by that factor while the volume reading is unaffected
+    (`rnf_summary.F`). `MAX(deltaTFreeSurf, dTtracerLev(ks))` was rejected
+    because `deltaTFreeSurf` is the step `integr_continuity.F:221` actually
+    integrates the free surface with — the bound's **primary** reading — so
+    `MAX()` would make one constant stop having one physical meaning across
+    configurations, to fix a failure mode that is missed detection in a
+    self-announcing set-up and never a blocked user.
+    `tests/rnf/refusal_check.py`'s `mismatched_timesteps` case now sets
+    `deltaTFreeSurf` unequal to `dTtracerLev(1)` on purpose, so this is no
+    longer a mismatch no enrolled case can see (lab_sea and cs32's own
+    committed `data` still leave them equal). Being dimensionless
     is the whole point: **one** number serves every grid, resolution and time
     step, which is precisely what the exf rate bound of 10⁻⁶ m/s could not do.
     It belongs in `RNF_EXF_RUNOFF` because that is where `rA` (through

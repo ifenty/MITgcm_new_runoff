@@ -297,7 +297,12 @@ This is the scientific contract agents read. Executable paths and commands are i
     **only where `dTtracerLev(ks)` = `deltaTFreeSurf`**, which both test
     experiments satisfy but which is not the default, `deltaTFreeSurf`
     falling back to `deltaTMom` (`model/src/ini_parms.F:1068`); cs32's own
-    ratio of the two is 72.
+    ratio of the two is 72. **RUNOFF-041** settled the mismatch as a report
+    rather than a bound change: `RNF_SUMMARY` now prints both steps and
+    their ratio whenever they differ, naming the dilution reading as the
+    one that is looser (the volume reading is unaffected), and
+    `refusal_check.py`'s `mismatched_timesteps` case sets them unequal on
+    purpose so the condition is exercised rather than only documented.
     The number 0.2 is a deliberate share with two legs, both properties of
     the ratio itself: it is exactly the Courant number of the top-layer
     outflow the injection requires, so 0.2 is a standard advective-CFL safety

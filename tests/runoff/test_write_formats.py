@@ -22,7 +22,9 @@ How the item type is found: the declarations of the routine the statement is
 in, then those of the package headers ``RNF.h`` and ``RNF_SIZE.h``, then the
 model headers a message actually takes items from (``MODEL_HEADERS``: the grid
 and the run-time parameters, for the cell coordinates and the time step that
-``RNF_EXF_RUNOFF`` prints when it refuses a cell, and the pkg/longstep
+``RNF_EXF_RUNOFF`` prints when it refuses a cell, and -- since RUNOFF-041 --
+for ``dTtracerLev`` and ``deltaTFreeSurf`` that ``RNF_SUMMARY`` prints when
+they differ; and the pkg/longstep
 parameters, for the ``LS_nIter`` of ``RNF_CHECK``), then literals and a small
 table of intrinsics (``LEN``, ``ILNBLNK``, ``ABS`` and so on). Scoping is per routine, which matters: ``attVal`` is ``_RL`` in
 ``RNF_NC_ATT_REAL`` and ``CHARACTER*(*)`` in ``RNF_NC_ATT_TEXT``. An item the
@@ -50,7 +52,9 @@ PKG = os.path.join(MITGCM, "pkg", "rnf")
 #: not every header the package includes: it is the ones that actually supply
 #: items to a ``WRITE(msgBuf,...)``, which today means the grid
 #: (``XC``, ``YC``, ``drF``) and the run-time parameters (``deltaTFreeSurf``)
-#: that ``RNF_EXF_RUNOFF`` names when it refuses a cell. Adding a message that
+#: that ``RNF_EXF_RUNOFF`` names when it refuses a cell, plus
+#: (``dTtracerLev``, again ``deltaTFreeSurf``) that ``RNF_SUMMARY`` names
+#: when they differ (RUNOFF-041). Adding a message that
 #: prints a variable from an unlisted header does not pass quietly -- it fails
 #: :func:`test_every_write_item_of_pkg_rnf_is_classified` with "has no known
 #: type", which is how this list came to exist (RUNOFF-040). Extend it there

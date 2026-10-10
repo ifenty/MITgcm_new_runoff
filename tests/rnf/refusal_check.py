@@ -106,11 +106,16 @@ There are three kinds of case.
   ``two_sources_one_cell`` (each cell fed by two sources carrying a
   third and two thirds of its flux must reproduce the same dense reference,
   which is the case that makes the model add two contributions into one
-  cell), and ``three_sources_one_cell`` (the same with three sources,
+  cell), ``three_sources_one_cell`` (the same with three sources,
   sized by ``ulp_shares`` so that the three-term sum is sensitive to the
   order it is added in; what tests the order itself is the bitwise case
   ``order_sensitive_sum`` of ``tests/rnf/applied_field_check.py``, which
-  uses the same generator).
+  uses the same generator), and ``mismatched_timesteps`` (RUNOFF-041: one
+  lab_sea step with ``deltaTFreeSurf`` set unequal to ``dTtracerLev(1)``,
+  on which ``RNF_SUMMARY`` must print the conditional mismatch line with
+  the correct ratio -- the positive half of a presence/absence pair whose
+  negative half is ``positive_control`` asserting the line's absence
+  when the two are equal, as lab_sea's default ``data`` leaves them).
 
 Every process is judged on its own files. A single-process run writes its
 standard output and its ``STOP`` line to ``output.txt`` and its error messages
@@ -1710,6 +1715,16 @@ def cases(data_pkg, data_exf, info=None):
         "RNF_SUMMARY: RNF_EXF_RUNOFF refuses a cell above"
         " RNF_cellVolMax ="]
     stdout_ok = stdout_ok + bounds_report
+    # RUNOFF-041: the conditional dTtracerLev(1)/deltaTFreeSurf mismatch
+    # report. Unlike bounds_report above, this one is NOT unconditional:
+    # RNF_SUMMARY prints it only when the two differ, which lab_sea's
+    # default data does not (deltaTtracer = deltaTmom = 3600, so
+    # dTtracerLev(1) = deltaTFreeSurf = 3600). It must therefore be
+    # asserted ABSENT on an equal-timestep case (positive_control, below)
+    # and PRESENT, with the correct ratio, on one that sets them unequal
+    # (mismatched_timesteps, below) -- the presence/absence pair that a
+    # version printing the line unconditionally or never cannot pass.
+    mismatch_report = "RNF_SUMMARY: dTtracerLev(1) ="
     dense = {name: None for name in ("data", "data.exf")}
     out += [
         {"name": "positive_control",
@@ -1722,7 +1737,12 @@ def cases(data_pkg, data_exf, info=None):
                      # run on this control rather than be skipped
                      "RNF_lonLatChk": "T"},
          "flux_sum": info["flux_sum"], "stop": "ABNORMAL END",
-         "forbid": no_error},
+         # RUNOFF-041: lab_sea's default data has dTtracerLev(1) =
+         # deltaTFreeSurf (both 3600 s), so the conditional mismatch
+         # report must stay silent here -- the negative half of the
+         # presence/absence pair, with mismatched_timesteps below as
+         # the positive half.
+         "forbid": no_error + [mismatch_report]},
         # The control of the two runoff-tracer refusals above: the same
         # file, with the name the ptracer really has. It must run, report
         # the match, and apply the term (RNF_FORCING_SURF_PTR; the
@@ -1965,6 +1985,37 @@ def cases(data_pkg, data_exf, info=None):
          "stop": "ABNORMAL END",
          "forbid": no_error + ["out of range", "m/s not m/yr",
                                "too much runoff"]},
+        # RUNOFF-041: the positive half of the presence/absence pair.
+        # lab_sea's default data leaves deltaTFreeSurf at its fallback
+        # (deltaTMom, ini_parms.F:1068), which equals deltaTtracer here,
+        # so no committed case ever sets dTtracerLev(1) != deltaTFreeSurf
+        # on its own -- that is the exposure RUNOFF-040 recorded as
+        # "no enrolled case can see a mismatch". This case sets
+        # deltaTFreeSurf = 1800 explicitly (deltaTMom, deltaTtracer stay
+        # at lab_sea's 3600), which does not change dTtracerLev(1) (it
+        # takes deltaTtracer, ini_parms.F:1061) but does change the
+        # fallback deltaTFreeSurf would otherwise have taken, giving
+        # dTtracerLev(1)/deltaTFreeSurf = 3600./1800. = 2. The run must
+        # still end normally (nothing about applying the record changes:
+        # RNF_EXF_RUNOFF's own bound is read directly off deltaTFreeSurf,
+        # not off this report) and must print the mismatch line with
+        # that exact ratio -- a version that computed the ratio the
+        # other way round, or stated the wrong one of the two steps as
+        # the looser reading, would be caught by the explicit values
+        # here, not just by the line's presence.
+        {"name": "mismatched_timesteps",
+         "files": {"data.pkg": pkg_on, "data.rnf": rnf_ok,
+                   "data": add_to_namelist(
+                       data_one_step, "PARM03",
+                       "  deltaTFreeSurf = 1800.0,")},
+         "normal_end": True, "stderr": [], "stdout": stdout_ok + [
+             mismatch_report + "  3.60000000E+03 differs from"
+             " deltaTFreeSurf =  1.80000000E+03: RNF_cellVolMax"
+             " dilution reading is looser by their ratio  2.00000000E+00"
+             "; the volume reading is unaffected"],
+         "summary": {"RNF_file": f"'{SPARSE_REL}'"},
+         "flux_sum": info["flux_sum"], "stop": "ABNORMAL END",
+         "forbid": no_error},
         {"name": "cells_equal_dense",
          "copy_from": DENSE_INPUT, "copy": dense,
          "files": {"data.pkg": pkg_on, "data.rnf": DATA_RNF.format(CELLS_REL)},
