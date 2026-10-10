@@ -1011,3 +1011,52 @@ Unblocked 2026-10-03: RUNOFF-012 closed (pkg/rnf skeleton, fork ac33291aa).
 ### Gate acceptance
 
 Accepted by `loop_gate.py --check-done` at 2026-10-10T11:05:52.657424+00:00 for iteration 2026-10-10T02:18:52.204131+00:00. Implemented the rest of decision 8: input-field diagnostics RNFvflx/RNFmflx/RNFtemp/RNFsaln/RNFnsrc via a new RNF_DIAGNOSTICS_FILL (RNF_FIELDS_LOAD split into RNF_FIELDS_BUILD plus the diagnostics/monitor call), and RNF_MONITOR with global volume/heat/salt sums and source/target counts, GLOBAL_SUM_TILE_RL for tiling/process independence. New direct oracle tests/rnf/diagnostics_check.py: three lab_sea cases (including one with two sources on one cell), two must-fail mutants, monitor-line equality on 1 and 2 processes, and pkg/seaice compiled and used throughout (inherited from input.rnof_sp_const), satisfying the RUNOFF-031 retrospective carry-forward. Review A (Richard ad7dd3fab4c8e2736) REJECT in round 0 on two documentation defects only (a stale docstring claim and a false 'ice-free' coverage statement), no code defect; both fixed in correction round 1 and review A then APPROVE_WITH_FIXES with empty must-fix. Final verification EXECUTED PASS (receipt 39016b55).
+
+## 🟢 RESOLVED: runoff heat enters at temp_EvPrRn + T_r − θ without ALLOW_ATM_TEMP when temp_EvPrRn is set (dense and sparse)
+
+**Date Identified**: 2026-10-09T22:00:00Z
+**Date Resolved**: 2026-10-10T14:41:51.446447+00:00
+**Status**: Resolved
+**UUID**: RUNOFF-045
+**Anchors**: MITgcm/pkg/exf/exf_mapfields.F::<module>; MITgcm/model/src/external_forcing_surf.F::<module>
+
+### Issue or research question
+Found by Bob in RUNOFF-031 round 0. Confirmed from source by Arch, and by review A (Richard `ad7dd3fab4c8e2736`).
+- The model gives runoff water the temperature `temp_EvPrRn` when that is set (`external_forcing_surf.F:299-305`).
+- exf cancels that assumption for runoff only inside `#ifdef ALLOW_ATM_TEMP` (`exf_mapfields.F:136-197`).
+- exf's runoff-temperature block (`exf_mapfields.F:199-210`) then adds `Cp·(θ − runoftemp)·runoff·ρ_fresh` either way.
+
+So in a build without `ALLOW_ATM_TEMP` that sets `temp_EvPrRn`, runoff enters with heat at:
+- `temp_EvPrRn + T_r − θ` in branches N and L;
+- `T_r − θ + temp_EvPrRn − tRef` in branch U;
+
+instead of at `T_r`. This is pre-existing in upstream's dense `runoftempfile` path. Since RUNOFF-031, sparse runoff takes the same route and inherits it (tendency-table rows T3/T6). The deleted tendency route gave `T_r`.
+
+### Evidence
+- RUNOFF-031 round 0: Bob's T3/T6 rows pass on the dense algebra.
+- Review A answered question 4 from `exf_mapfields.F:136-219` and `external_forcing_surf.F:258-349`.
+
+### Scientific or engineering impact
+Wrong runoff heat in that one build combination, on both paths, with no message. `temp_EvPrRn` is unset by default, and most exf configurations define `ALLOW_ATM_TEMP`.
+
+### Proposed action and acceptance
+Owner decision, with three options:
+- (a) Keep the dense convention and document it.
+- (b) Have `RNF_CHECK` refuse a runoff temperature without `ALLOW_ATM_TEMP` when `temp_EvPrRn` is set, with an enrolled refused case and a must-run control. Report the dense-path inconsistency upstream as well.
+- (c) Fix exf for both paths by moving the runoff cancellation out of `ALLOW_ATM_TEMP`. That is an upstream behaviour change to dense runoff.
+
+Arch recommends (b). RUNOFF-031 is closed on (a), the dense convention, pending this decision.
+
+**Owner decision, 2026-10-09: option (b).** Refuse a runoff temperature without `ALLOW_ATM_TEMP` when `temp_EvPrRn` is set, with an enrolled refused case and a must-run control. Report the dense-path inconsistency upstream as well. No longer `Blocked`.
+
+**Implemented 2026-10-10 (Bob, RUNOFF-045, correction round 0).** `RNF_CHECK` now stops when `RNF_applyT .AND. temp_EvPrRn .NE. UNSET_RL` and `ALLOW_ATM_TEMP` is not defined (`MITgcm/pkg/rnf/rnf_check.F:227-252`), guarded by `#if defined(ALLOW_EXF) && defined(ALLOW_RUNOFF)` / `#ifndef ALLOW_ATM_TEMP` to match the convention of the other `#ifdef`-guarded refusals in that routine. `temp_EvPrRn` and `UNSET_RL` turned out to need no new header: both are the model's own (`model/inc/PARAMS.h`, `eesupp/inc/EEPARAMS.h`), already included unconditionally by `rnf_check.F` -- the brief's premise that they are exf's own (`EXF_PARAM.h`) does not hold, though it changes nothing about where the guard lives, since `EXF_OPTIONS.h` (which defines `ALLOW_ATM_TEMP`) was already conditionally included there for other reasons. The call-order premise (`RNF_applyT` set by `RNF_INIT_FIXED`, called before `RNF_CHECK` from `PACKAGES_CHECK`) is confirmed from source (`model/src/initialise_fixed.F:211,267`; `rnf_init_fixed.F:494` sets `RNF_applyT = RNF_hasTemp`).
+
+Enrolled in `tests/rnf/refusal_check.py`: case `evprrn_runoff_temp` (refused) with must-run controls `evprrn_unset` (`temp_EvPrRn` unset) and `evprrn_no_runoff_temp` (no `runoff_temperature` in the file), all three on `build_esx_noatm` (`ALLOW_RUNOFTEMP` defined, `ALLOW_ATM_TEMP` undefined) via `--use-build`, the one lab_sea build already built without `ALLOW_ATM_TEMP` for `tests/rnf/tendency_term_check.py`'s own cases -- the only build on which this refusal can be isolated from the pre-existing `ALLOW_RUNOFTEMP` one. Measured passing (all three), and the full default `refusal_check.py` suite (73 cases, serial and `--mpi 2`) measured passing unchanged, because the three new cases carry `needs_build` and are excluded from that default selection.
+
+**Consequence for RUNOFF-031's T3/T6 rows.** `tests/rnf/tendency_term_check.py`'s cases `L_set_noatm`/`U_set_noatm` built exactly the combination this issue now refuses, to measure its algebra; a run built to reach that state is refused at init instead, so they are retired, with `T3-NL-set-noatm`/`T6-U-set-noatm` removed from `T_ROWS`. Re-measured on the remaining 6 cases (was 8): 6 of 6 passing, 12 of 12 rows (T, S, C) covered; the smallest tracer discrimination margin is still 8.3e-2, from `U_unset` against `zero` (unchanged, since neither retired case held it). Added `tendency_term_check.py --build-noatm-only`, which compiles `build_esx_noatm` alone with no case run, since no case needs it there any more but `refusal_check.py` still does.
+
+Records updated: `docs/package_design.md` decision 3 (the "two rows without `ALLOW_ATM_TEMP`" paragraph and both table rows, now marked dense-only); `docs/runoff_schema.md` §3.5 (new bullet); `docs/model_contract.md` (the "Missing temperature" bullet and the "Inherited from the dense path" bullet); `docs/verification_matrix.md` (the configuration-refusals row and the tendency-term row, with a dated "Retired 2026-10-10" note rather than rewriting the RUNOFF-031-era measurements); `docs/code_map.md` (the tendency-term and refusal-check rows). Upstream report of the dense-path inconsistency: `devel-loop/loop_state/scratch/ae145bbc4daf5729f/upstream-report-exf-runoff-heat.md`.
+
+### Gate acceptance
+
+Accepted by `loop_gate.py --check-done` at 2026-10-10T14:41:51.446447+00:00 for iteration 2026-10-10T11:10:19.685883+00:00. Owner decision 2026-10-09 option (b) implemented: RNF_CHECK refuses a runoff temperature (RNF_applyT) with temp_EvPrRn set in a build without ALLOW_ATM_TEMP (rnf_check.F:227-252), the pre-existing dense-path heat defect sparse runoff inherited since RUNOFF-031. Enrolled refusal_check.py case evprrn_runoff_temp with must-run controls evprrn_unset (temp_EvPrRn unset) and evprrn_no_runoff_temp (no runoff temperature in file), on build_esx_noatm. Consequential retirement of tendency_term_check.py's L_set_noatm/U_set_noatm cases and rows T3/T6, which built exactly the now-refused combination to measure it; 6/6 remaining cases, 12/12 rows still pass, with each row the retired cases also covered confirmed still covered by a surviving case. Upstream report on the dense-path defect written for the owner. Review A (Richard ad7dd3fab4c8e2736) APPROVE, empty must-fix, with his own additional check confirming the message's second remedy (RNF_useTemp=.FALSE.) is genuinely actionable. Final verification EXECUTED PASS (receipt 3a25fc15).
