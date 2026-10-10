@@ -11,12 +11,13 @@ input-field diagnostics (``RNFvflx``, ``RNFmflx``, ``RNFtemp``,
 reconstruction from the file and the grid, not an inversion of a term
 that depends on them.
 
-Two lab_sea sparse cases
-=========================
+Three lab_sea sparse cases
+===========================
 
-Both reuse the committed target table of ``lab_sea/input.rnof_const``
-(4 sources, 7 target cells; ``tests/rnf/budget_check.read_table``), with
-their own short, interpolated flux series (``tests/rnf/budget_check.series``):
+``lab_sea_ts`` and ``lab_sea_novar`` reuse the committed target table of
+``lab_sea/input.rnof_const`` (4 sources, 7 target cells, one source per
+cell; ``tests/rnf/budget_check.read_table``), with their own short,
+interpolated flux series (``tests/rnf/budget_check.series``):
 
 * ``lab_sea_ts`` carries a runoff temperature and salinity, so
   ``RNFtemp``/``RNFsaln`` are exercised at a defined (non-zero) value
@@ -29,9 +30,19 @@ their own short, interpolated flux series (``tests/rnf/budget_check.series``):
   are numerically the same (0) but mean different things, which is
   exactly why a single case could not stand for the other.
 
-Every other cell of the grid (313 of 320) has no runoff at all, so both
-cases also exercise the "no runoff" undefined case on every dump, for
-free.
+``lab_sea_mixed`` (:func:`mixed_table`) is a table built for this check
+alone: two sources, ``mixedA`` and ``mixedB``, sharing **one** target
+cell, with ``mixedA`` missing its temperature in every record. Every
+cell of the two committed cases above has at most one source, so
+``RNF_mflxT`` there is either exactly 0 or exactly ``RNF_mflx`` and the
+two can never be told apart; at ``lab_sea_mixed``'s shared cell
+``0 < RNF_mflxT < RNF_mflx``, which is the one configuration the "temp"
+mutant below needs.
+
+Every other cell of the grid (313 of 320, or 319 of 320 for
+``lab_sea_mixed``'s one-target-cell table) has no runoff at all, so all
+three cases also exercise the "no runoff" undefined case on every dump,
+for free.
 
 What is compared, and to what tolerance
 ========================================
@@ -56,7 +67,7 @@ built from the file's own source series combined with the weight
   tolerance, because it is a count.
 
 The monitor is compared at every dump (``RNF_monFreq`` is left at its
-default, ``monitorFreq``, which both cases set equal to the time step,
+default, ``monitorFreq``, which every case sets equal to the time step,
 so the monitor fires at every step the diagnostics are dumped at)
 against the same file's source sums, built the same way
 (:func:`tests/rnf/budget_check.source_series`), to 1e-12 relative. On 1
@@ -76,21 +87,27 @@ mutant cannot silently fail to compile the fault in:
 
 * ``--mutant temp``: ``RNF_DIAGNOSTICS_FILL`` divides ``(mT)`` by
   ``RNF_mflx`` (the whole mass flux) instead of ``RNF_mflxT`` (the
-  valid-temperature share), i.e. the issue's own example. On
-  ``lab_sea_ts`` every source has a temperature, so ``RNF_mflxT`` equals
-  ``RNF_mflx`` there and the mutant is invisible; on ``lab_sea_novar``
-  ``RNF_mflxT`` is 0 while ``RNF_mflx`` is not, so the mutant divides by
-  the wrong, non-zero denominator at every target cell and must be
-  caught.
+  valid-temperature share), i.e. the issue's own example. The fill
+  routine only reaches that statement at all where
+  ``RNF_mflxT .GT. 0`` (its own guard), so the mutant is invisible on
+  both of the single-source-per-cell cases: on ``lab_sea_ts`` every
+  source has a temperature, so ``RNF_mflxT`` equals ``RNF_mflx`` and
+  the two denominators are the same number; on ``lab_sea_novar``
+  ``RNF_mflxT`` is 0 everywhere (``RNF_applyT`` is false for the whole
+  file), so the guard never reaches the mutated line and both the
+  correct and the mutant code leave ``RNFtemp`` at the undefined-cell
+  0. It is caught only on ``lab_sea_mixed``, where the shared cell has
+  ``0 < RNF_mflxT < RNF_mflx``: measured ``temp_max_rel`` 5.000e-01.
 * ``--mutant monitor``: ``RNF_MONITOR`` drops the ``rA`` weight from the
   salt sum (``Sum (mS)`` instead of ``Sum (mS)*rA``), which is wrong
   whenever ``rA`` is not uniformly 1 -- true on every target cell of
   lab_sea's lat-lon grid -- and must be caught by the monitor-sum
-  comparison.
+  comparison. Caught on ``lab_sea_ts``.
 
-Each mutant is run on exactly one case (``lab_sea_novar`` for ``temp``,
-``lab_sea_ts`` for ``monitor``) through ``--use-build``-style binary
-substitution and must fail the comparison the plain run passes.
+Each mutant is run on exactly one case (``lab_sea_mixed`` for ``temp``,
+``lab_sea_ts`` for ``monitor``, :data:`MUTANT_CASE`) through
+``--use-build``-style binary substitution and must fail the comparison
+the plain run passes.
 
 No-change
 =========
