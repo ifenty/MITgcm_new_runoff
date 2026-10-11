@@ -400,3 +400,14 @@ it green.
 Corollary for deriving a claim rather than listing it: derive it **by calling
 the function**, not by reading the source that defines it. The whole defect is
 the distance between those two.
+
+## LESSON: A hand-built documentation seal that omits created_at always loses to the original [LL-020]
+
+### Lesson and applicability
+`doc_contract.latest_seal()` identifies "the current sealed report for an issue" by comparing each candidate's `created_at` string and keeping the greatest. A documentation plan reconstructed by hand (rather than produced fresh by `doc_contract.py draft`) that omits `created_at` reads back as `None`, and the comparison's `record.get('created_at', '')` default (`''`) never beats a real ISO timestamp. The seal is otherwise valid, content-correct and even independently diffed byte-for-byte by a reviewer as matching intent — and still invisible to every later capture, forever, because `latest_seal()` keeps returning the original.
+
+### Evidence
+RUNOFF-046, 2026-10-10/11. A late finding (the KPP visibility gap) required a documentation-only addendum after both reviewers had already approved. Three successive reseals, each produced by hand-merging a fresh `doc_contract.py draft --previous` output with the prior sealed report's text (to avoid re-deriving 97 unaffected dispositions), omitted `created_at` because the hand-built dict was built from scratch rather than by mutating `draft()`'s own output in place. Six consecutive native-subagent dispatch captures (`4fa5141a`, `44f7c1d4`, `fc57ff9a`, `f7bde800`, `98ba7f6a`, `111213b0`) were flagged `incomplete`, each citing a correctly-updated, correctly-confirmed documentation report as "superseded" against Bob's original seal — because `footer_contract.reference_errors` calls `latest_seal()` directly, with no packet or dispatcher-side override able to change what it returns. Both reviewers lost real turns to each false "superseded" flag, verifying by independent byte-diff each time that the cited report was in fact newer and content-correct, before the true cause (a missing field, not a stale citation) was found. Fixed only once a resealed plan carried a real `created_at`; `latest_seal()` then returned it immediately, and the very next capture succeeded.
+
+### Correction
+Add `created_at` (a real ISO timestamp, strictly later than the previous seal's) to any hand-built documentation plan before calling `doc_contract.py seal`. Prefer building the plan by mutating the output of `doc_contract.py draft --previous` in place (which sets `created_at` itself) over reconstructing the dict's keys by hand, which silently drops whichever fields the author doesn't know are load-bearing.

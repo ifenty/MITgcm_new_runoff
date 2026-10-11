@@ -1546,3 +1546,31 @@ A `tests/esx` guard shows the coordinator takes the advisory path (no resume mes
 
 ### Expected Effect
 Zero redundant re-runs for notification-layer false failures; genuine interruptions still resume as before.
+
+## 🔴 PROPOSED: final_verification.py run did not reuse a matching scientific execution
+
+**Date Identified**: 2026-10-11  03:29
+**Status**: Investigating
+**UUID**: TEAM-FINALVERIFY-FINGERPRINT-REUSE-001
+**Category**: verification_reuse
+**Severity**: Medium
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-11-final-verification-reuse/assessment.md
+**Anchors**: tools/esx/final_verification.py::run; tools/esx/final_verification.py::_reissue; tools/esx/final_verification.py::check_receipt
+
+### Issue
+`final_verification.py run --review <packet> --owner <owner>` (without `--fresh`) re-executed the full scientific suite from scratch rather than reusing an already-passing execution, even though `check`'s printed `scientific_fingerprint` for the new packet exactly matched the fingerprint of a scientific execution that had passed roughly two hours earlier with no intervening source/test/configuration/toolchain change (only documentation prose changed between the two runs).
+
+### Evidence
+RUNOFF-046 closeout, 2026-10-11. First scientific execution: started 00:44:05Z, finished 02:46:43Z, 71/71 commands, signature `8572c195...`. After a documentation-only reseal, `final_verification.py check` on the rebuilt packet printed the identical `scientific_fingerprint: 8572c195...`. `final_verification.py run` (no `--fresh`) was then observed, via `ps aux`, running `experiment_compile.sh global_ocean.cs32x15` within 15 seconds — a fresh compile, not a reuse — and finished a full second 71/71 execution 6760 seconds later at 05:22:17Z, same signature. `run()`'s own code has two silent `except (ValueError, OSError, KeyError, TypeError): pass` branches (the `check_receipt` attempt and the `_reissue` attempt) before falling through to a fresh `verify.run(..., fresh=True, ...)`; which branch's exception caused the fallthrough was not captured.
+
+### Potential Impact
+A full scientific suite re-run costs roughly two hours of wall-clock per occurrence, serializing the closeout behind it; at the project's current pace (RUNOFF-046 alone needed two full scientific executions) this is a material, recurring cost if later closeouts hit the same path after any documentation-only correction round. Not a correctness risk — the re-executed suite produced a valid, matching result both times.
+
+### Proposed Fix
+Reproduce in isolation (two consecutive `run` calls, first `--fresh`, second not, no tree changes between them) with a temporary diagnostic in `run()`'s two except blocks to capture the actual exception from `check_receipt`/`_reissue`, then fix whichever check is too strict (likely binding reuse to a closeout-fields-inclusive `review_signature` rather than the narrower `scientific_fingerprint`/source-dependency set the docstring describes).
+
+### Acceptance Criteria
+Two consecutive `final_verification.py run` calls against packets with an identical `scientific_fingerprint` and no intervening source/test/configuration/toolchain change: the second returns `REUSED EVIDENCE` near-instantly rather than re-executing the suite.
+
+### Expected Effect
+Zero redundant full-suite re-executions when only non-dependency fields (documentation content, closeout bookkeeping) changed between two final-verification runs for the same issue.
