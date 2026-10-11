@@ -1227,3 +1227,29 @@ Acceptance: schema 1.1 and checker update, analytic interior-cell tests, budget 
 ### Gate acceptance
 
 Accepted by `loop_gate.py --check-done` alongside RUNOFF-046's own closeout, iteration 2026-10-10T21:51:57.987524Z — see that entry for the full review, verification and KPP-visibility-gap record. Final verification EXECUTED PASS (receipt `a2606c64`).
+
+## 🟢 RESOLVED: the code map routes no brief.py, which now refuses briefs
+
+**Date Identified**: 2026-10-06T10:05:00Z
+**Date Resolved**: 2026-10-11T05:52:24.923379+00:00
+**Status**: Resolved
+**UUID**: RUNOFF-039
+**Anchors**: docs/code_map.md::<module>; tools/esx/brief.py::build
+
+### Issue or research question
+`docs/code_map.md`'s Framework-routes table names `project.py`, `loop_gate.py`, `verify.py`, `doc_contract.py`, `records.py` and `hooks.py`, and the map mentions `brief.py` nowhere. The omission predates this project's work, but it stopped being harmless on 2026-10-06: `brief.build` now **refuses** a brief that names an ESX command or flag which does not exist, so it is a gate an agent can be blocked by, with no route in the map that would lead anyone to it.
+
+### Evidence
+Found by the implementer during RUNOFF-030's third re-seal (2026-10-06) while writing the disposition for `tools/esx/brief.py::<module>`, and deliberately **not** fixed there: `docs/` is inside the candidate signature, so editing the map would have moved the candidate a fourth time mid-review. Recorded in that seal's `map_delta` reason instead. That restraint was the right call and is why this is a filed issue rather than a fourth churn.
+
+The gate is real and fired twice on RUNOFF-030, both times on a true defect in the brief: once for `loop_gate.py --check-start --issue X --agent bob`, whose flags do not exist, and once as a false positive whose boundary bug is fixed in `ffca56b`.
+
+### Scientific or engineering impact
+Low and purely navigational, but of exactly the kind this project keeps paying for: a mechanism that can block work and is absent from the document agents are told to read first. An agent refused by `brief.build` has no map route explaining what refused it or why.
+
+### Proposed action and acceptance
+Add `brief.py` to the Framework-routes table with its inputs (the issue's orientation, the sealed report, the design file, `--sweep-symbol`), its refusal condition (an unknown ESX command or flag, introspected from argparse including subcommands), and its output. Acceptance: `audit.py` still PASS, the map names the refusal so a blocked agent can find it, and the change is made when no review is in flight so it does not strand a seal. Pairs naturally with RUNOFF-026 (documentation) or with the next issue that edits the map for its own reasons.
+
+### Gate acceptance
+
+Accepted by `loop_gate.py --check-done` at 2026-10-11T05:52:24.923379+00:00 for iteration 2026-10-11T05:42:28.386576+00:00. Added brief.py to docs/code_map.md's Framework-routes table: its inputs, its refusal condition (an unknown ESX command/flag named in the brief text, introspected from the tool's own --help), and its output. While preparing this, discovered and filed a related but out-of-scope defect in the process ledger (TEAM-BRIEF-ORIENTATION-SELFCOLLISION-001): brief.build's own interface-checker misattributes trailing flags in Arch's reconstructed orientation command to whichever tools/esx/*.py script was named last among the orientation's own targets, refusing a brief for a flag no one actually wrote. Worked around for this issue by orienting through tests/esx/ instead of tools/esx/ directly.

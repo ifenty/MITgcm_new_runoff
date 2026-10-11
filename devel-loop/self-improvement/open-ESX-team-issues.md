@@ -1574,3 +1574,31 @@ Two consecutive `final_verification.py run` calls against packets with an identi
 
 ### Expected Effect
 Zero redundant full-suite re-executions when only non-dependency fields (documentation content, closeout bookkeeping) changed between two final-verification runs for the same issue.
+
+## 🔴 PROPOSED: brief.py refuses any brief whose orientation targets an ESX tool script, regardless of which flag actually follows it
+
+**Date Identified**: 2026-10-11  05:48
+**Status**: Proposed
+**UUID**: TEAM-BRIEF-ORIENTATION-SELFCOLLISION-001
+**Category**: brief_interface_check_false_positive
+**Severity**: Medium
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-11-brief-orientation-self-collision/assessment.md
+**Anchors**: tools/esx/brief.py::interface_errors; tools/esx/brief.py::tool_flags; tools/esx/brief.py::build
+
+### Issue
+`brief.build` renders Arch's orientation as a "re-run this command" line, reconstructing `doc_contract.py navigate --issue ... --target <t1> --target <t2> ... --doc ... --use ...` from the orientation's own stored targets. `interface_errors`'s `COMMAND_PATTERN` matches `tools/esx/<script>.py` anywhere in the full brief text and captures everything up to the next backtick/quote/newline as `rest`, then checks every `--flag` found in `rest` against that script's own `--help`. When an orientation target is itself under `tools/esx/`, the regex matches that target's own script name and swallows every flag that follows it in the reconstructed command line -- a second `--target`, `--doc`, or `--use` -- misattributing them to whichever `tools/esx/*.py` script was named last, and refusing a brief for a flag no one actually wrote as an instruction to the dispatched agent.
+
+### Evidence
+Found while preparing RUNOFF-039 (2026-10-11): orientation `--target tools/esx/brief.py::build --target tools/esx/brief.py::<module>` produced `brief.py does not accept --target`; retargeting to a single `tools/esx/project.py::source_signature` produced `project.py does not accept --doc; project.py does not accept --use` instead -- same mechanism, different victim script. Retargeting to two targets both outside `tools/esx/` (`tests/esx/test_framework_fixes.py::<module>`, `tests/esx/test_instrument_claims.py::<module>`) avoided the false refusal entirely. `tests/esx/test_framework_fixes.py::test_generated_brief_states_the_required_footer_identity` and `::test_brief_checks_instructions_not_the_quoted_packet` both reproduce it directly against any active issue whose orientation targets a `tools/esx/*.py` file.
+
+### Potential Impact
+Silently removes a whole class of otherwise-legitimate orientation choices -- any issue whose natural evidence trail runs through Arch's own ESX tooling (as opposed to `MITgcm/` or `tests/rnf/`) risks a false refusal indistinguishable, from the error message alone, from a real bad flag genuinely written in the brief's instructions. Measured cost so far: about 15 minutes (two failed structural-suite diagnoses before the mechanism was identified).
+
+### Proposed Fix
+Exclude the orientation's own reconstructed command block from `interface_errors`'s scan (it is Arch's generated evidence trail, not an instruction to the dispatched agent), or terminate `COMMAND_PATTERN`'s `rest` capture at the next recognized flag token (`--\w+`) rather than only at a quote/backtick/newline, so a second script's flags are never folded into the first script's checked span.
+
+### Acceptance Criteria
+An orientation with two or more `--target` entries under `tools/esx/` builds a brief without refusal; `tests/esx/test_framework_fixes.py`'s existing refusal cases (a genuinely bad flag written in the brief's own instructions) still refuse.
+
+### Expected Effect
+Zero false refusals when Arch's own orientation targets ESX tooling; the refusal still fires for a real bad flag in the brief's instructions.

@@ -1,0 +1,187 @@
+{
+  "retrospective": {
+    "accounting": {
+      "path": "devel-loop/loop_state/accounting/a2469157905a04303f77927801b5bc8525be64bc1251237f58fcc50437468daf.json",
+      "sha256": "a2469157905a04303f77927801b5bc8525be64bc1251237f58fcc50437468daf"
+    },
+    "carry_forward": [
+      "Any orientation Arch builds that targets a tools/esx/*.py file risks brief.build's self-referential false positive (TEAM-BRIEF-ORIENTATION-SELFCOLLISION-001, open); orient through tests/esx/ or MITgcm/ paths instead until it is fixed."
+    ],
+    "closes_timestamp": "2026-10-11T05:42:28.386576+00:00",
+    "confirmations": [
+      {
+        "category": "scope_discipline",
+        "summary": "A newly-discovered defect encountered mid-issue was filed separately rather than fixed inline, keeping this documentation-only issue's scope and workflow kind unchanged",
+        "evidence": "RUNOFF-047 filed in open_issues.md; RUNOFF-039 closed as documentation kind with no code touched"
+      }
+    ],
+    "id": "RUNOFF-039",
+    "iteration": 1,
+    "measured": {
+      "billing_status": "provider_reported_not_invoice_reconciled",
+      "coordinator": {
+        "provider_reported_usd": null,
+        "self_reported_minutes": null,
+        "self_reported_usd": null,
+        "tool_measured_minutes": 3.6
+      },
+      "coordinator_coverage": "missing",
+      "cost_scope": "cost_usd and span-based figures describe dispatched agents only; coordinator (Arch) cost is NOT included: no Arch accounting record exists for this iteration (record one with team_accounting.py record-arch)",
+      "cost_usd": {},
+      "dispatches": {},
+      "rounds": {},
+      "span_minutes": 10,
+      "unknown_cost_event_ids": []
+    },
+    "no_problem_reason": "",
+    "problems": [
+      {
+        "category": "framework_tooling_false_positive",
+        "summary": "brief.build's interface-checker false-refused a brief twice, misattributing trailing flags in Arch's own reconstructed orientation command to whichever tools/esx/*.py script was targeted",
+        "evidence": "Two failed structural-suite runs: 'brief.py does not accept --target' (orientation targeted tools/esx/brief.py twice), then 'project.py does not accept --doc; project.py does not accept --use' (orientation targeted tools/esx/project.py once) -- fixed by orienting through tests/esx/ instead of any tools/esx/*.py path",
+        "minutes_lost": 15
+      }
+    ],
+    "schema_version": 3,
+    "solutions": [
+      {
+        "problem": 0,
+        "action": "filed",
+        "issue": "TEAM-BRIEF-ORIENTATION-SELFCOLLISION-001"
+      }
+    ],
+    "timestamp": "2026-10-11T05:53:39Z"
+  },
+  "accounting": {
+    "billing_status": "provider_reported_not_invoice_reconciled",
+    "by_phase": {
+      "closeout": {
+        "effort_seconds": 11.79311490058899,
+        "elapsed_seconds": 11.79311490058899,
+        "events": 1
+      },
+      "orientation": {
+        "effort_seconds": 0.9588418006896973,
+        "elapsed_seconds": 0.9588418006896973,
+        "events": 4
+      },
+      "verification": {
+        "effort_seconds": 204.47033524513245,
+        "elapsed_seconds": 204.47033524513245,
+        "events": 3
+      }
+    },
+    "by_role": {},
+    "child_elapsed_seconds": 0,
+    "components": [],
+    "coordinator": {
+      "coverage": "missing",
+      "included_in_reported_usd": "no",
+      "provider_reported_usd": null,
+      "self_reported": {
+        "minutes": null,
+        "records": [],
+        "records_without_usd": 0,
+        "usd": null
+      },
+      "tool_measured": {
+        "basis": "wall time of gate commands run as arch; excludes interactive session time",
+        "effort_seconds": 217.22229194641113,
+        "elapsed_seconds": 217.22229194641113,
+        "events": 8
+      }
+    },
+    "coordinator_coverage": "missing",
+    "end": "2026-10-11T05:52:24.923379+00:00",
+    "issue_id": "RUNOFF-039",
+    "missing_timing_event_ids": [],
+    "outside_child_intervals_seconds": 596.5368030071259,
+    "phase_events": [
+      {
+        "event_id": "40792edfd66b41a0b445d8f19d242fdc",
+        "finished_at": "2026-10-11T05:42:35.278146+00:00",
+        "issue_id": "RUNOFF-039",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.3280276618897915,
+        "started_at": "2026-10-11T05:42:34.950114+00:00"
+      },
+      {
+        "event_id": "9c6cbcfc4ce2450aa647b52269b91332",
+        "finished_at": "2026-10-11T05:44:59.952851+00:00",
+        "issue_id": "RUNOFF-039",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 67.32628966215998,
+        "started_at": "2026-10-11T05:43:52.626567+00:00"
+      },
+      {
+        "event_id": "959be81b5da24174b1cf2b4af9a917e8",
+        "finished_at": "2026-10-11T05:47:31.618957+00:00",
+        "issue_id": "RUNOFF-039",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.17706443835049868,
+        "started_at": "2026-10-11T05:47:31.441890+00:00"
+      },
+      {
+        "event_id": "9b31c3d074a84683b15e948f65d4a31c",
+        "finished_at": "2026-10-11T05:48:46.923992+00:00",
+        "issue_id": "RUNOFF-039",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 67.45283396076411,
+        "started_at": "2026-10-11T05:47:39.471165+00:00"
+      },
+      {
+        "event_id": "ae570f6958ed4c89a9b82155fb4b7122",
+        "finished_at": "2026-10-11T05:49:07.378600+00:00",
+        "issue_id": "RUNOFF-039",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.15558869671076536,
+        "started_at": "2026-10-11T05:49:07.223009+00:00"
+      },
+      {
+        "event_id": "b673dedec3e34f899a20c699708aed6f",
+        "finished_at": "2026-10-11T05:50:24.580101+00:00",
+        "issue_id": "RUNOFF-039",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 69.69122970942408,
+        "started_at": "2026-10-11T05:49:14.888877+00:00"
+      },
+      {
+        "event_id": "67e7fc0c99844578aaf27ef85649e8a4",
+        "finished_at": "2026-10-11T05:51:38.688252+00:00",
+        "issue_id": "RUNOFF-039",
+        "phase": "closeout",
+        "reason": null,
+        "role": "arch",
+        "seconds": 11.793122231960297,
+        "started_at": "2026-10-11T05:51:26.895137+00:00"
+      },
+      {
+        "event_id": "d602ad15ba4942d5b4adbb0734f40c04",
+        "finished_at": "2026-10-11T05:52:24.828264+00:00",
+        "issue_id": "RUNOFF-039",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.29814030788838863,
+        "started_at": "2026-10-11T05:52:24.530112+00:00"
+      }
+    ],
+    "reported_usd": 0,
+    "schema_version": 2,
+    "span_seconds": 596.5368030071259,
+    "start": "2026-10-11T05:42:28.386576+00:00",
+    "unknown_cost_event_ids": []
+  }
+}

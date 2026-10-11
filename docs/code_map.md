@@ -294,6 +294,7 @@ its routines and its hooks are specified in
 | Map navigation and documentation coverage | `tools/esx/doc_contract.py::navigate`, `tools/esx/doc_contract.py::validate_report` |
 | Commit, notification and iteration history | `tools/esx/records.py::save_history` |
 | Hook completion receipts | `tools/esx/hooks.py::capture` |
+| Role brief generation | `tools/esx/brief.py::build`. Inputs: the issue's orientation, the sealed documentation report, the design file, and (for Richard) a distinct review question and the review packet; `--sweep-symbol`/`--sweep-figure` name a default/symbol or a superseded figure to list every citing line for. **Refuses** a brief whose text names an ESX command or flag that does not exist, introspected from the named tool's own `--help` (top-level and subcommand parsers both checked, a flag accepted by either; `tools/esx/brief.py::interface_errors`/`tool_flags`) — an agent blocked by this refusal has no other route to it in this table before now (RUNOFF-039). Output: a role-bound Markdown brief file. |
 
 ## Maintenance
 
