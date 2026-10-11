@@ -447,27 +447,6 @@ Phase 1 default: every process reads the full record. Owner to decide whether a 
 
 From RUNOFF-002 (review A): this issue owns the measured chunking read benchmark (docs/runoff_schema.md §8, docs/model_contract.md scale requirement). The converter writes the §8 default layout: one record per chunk, deflate, about 4 MB pieces along `source`.
 
-## UNRESOLVED: test_write_formats cannot type a WRITE item declared in a model header
-
-**Date Identified**: 2026-10-05T08:30:00Z
-**Status**: Unresolved
-**UUID**: RUNOFF-034
-**Anchors**: tests/runoff/test_write_formats.py::<module>; MITgcm/pkg/rnf/rnf_init_fixed.F::<module>
-
-### Issue or research question
-`tests/runoff/test_write_formats.py` builds its item-type table from `RNF_SIZE.h` and `RNF.h` only, so a `WRITE(msgBuf,...)` item declared in a *model* header — `GRID.h`'s `xC`, `yC`, `dxF`, `dyF`, for instance — is unclassifiable. It fails loudly rather than silently (the coverage test refuses any item it cannot type), so this is not a correctness hole, but it makes the checker an obstacle instead of a guard the moment a message quotes a grid quantity.
-
-### Evidence
-Found by the implementer during RUNOFF-033 (2026-10-05). Writing the new cell-centre refusal message, `test_write_formats.py` reported `XC(...)` as "no known type". The implementer worked around it by holding the values in typed `_RL` locals rather than extending the checker — a reasonable local choice that leaves the limitation in place for the next message. The checker itself was created in RUNOFF-004 after two real Fortran runtime format bugs reached the tree on refusal-only paths, so weakening its reach is a direct loss of what it was built for.
-
-### Scientific or engineering impact
-Bounded and visible, not silent. The risk is behavioural: an implementer facing a loud refusal will route around the checker, as happened here, so messages that quote model state drift outside its coverage exactly where new refusals are being added.
-
-### Proposed action and acceptance
-Extend the symbol table to the model headers `pkg/rnf` actually includes (`GRID.h`, `SIZE.h`, `PARAMS.h`, `EEPARAMS.h`), or give it a declared-type override table for named externals. Acceptance: a `WRITE(msgBuf,...)` quoting `xC` or `dxF` directly is typed correctly rather than refused; the existing 140-statement/0-finding result is unchanged; and the negative controls still detect both historical bugs plus an `I` descriptor with a `_RL` item.
-
-Carry forward from RUNOFF-013 (review B, correction round 1, 2026-10-05): **a `diagTitle` length guard, filed here as diagnosability and explicitly not as a detection gap.** `rnf_diagnostics_init.F` writes fixed-width diagnostic names and titles, and `test_write_formats.py` does not check that a title fits its field. Review B measured that the *class* is already caught loudly rather than silently: every runoff experiment sets `useDiagnostics=.TRUE.`, so an overflow aborts all of them, which is the opposite of a silent pass. What is missing is **diagnosability** — the abort does not say which title overflowed — so the value of a guard here is a better message, not new detection. Low priority; size it accordingly, and keep the distinction, because recording it as a detection gap would overstate the risk.
-
 ## UNRESOLVED: doc_contract rejects a Fortran header as a documentation reference
 
 **Date Identified**: 2026-10-05T08:30:00Z
@@ -575,3 +554,22 @@ Acceptance:
 
 Kind: scientific_change, risk supported_semantics (two Richards). Size: comparable to RUNOFF-008.
 
+
+## UNRESOLVED: no diagnosability for a diagTitle fixed-width overflow in rnf_diagnostics_init.F
+
+**Date Identified**: 2026-10-05T08:30:00Z
+**Status**: Unresolved
+**UUID**: RUNOFF-047
+**Anchors**: MITgcm/pkg/rnf/rnf_diagnostics_init.F::<module>; tests/runoff/test_write_formats.py::<module>
+
+### Issue or research question
+Split out of RUNOFF-034 (carry forward from RUNOFF-013 review B, correction round 1, 2026-10-05) so it is not lost when that issue closes. `rnf_diagnostics_init.F` writes fixed-width diagnostic names and titles, and `test_write_formats.py` does not check that a title fits its field.
+
+### Evidence
+Review B (RUNOFF-013, correction round 1) measured that the *class* is already caught loudly rather than silently: every runoff experiment sets `useDiagnostics=.TRUE.`, so an overflow aborts all of them, which is the opposite of a silent pass. What is missing is **diagnosability** — the abort does not say which title overflowed.
+
+### Scientific or engineering impact
+Low. This is explicitly not a detection gap (the class is already caught); the value of a fix is a better message, not new coverage. Keep the distinction, because recording it as a detection gap would overstate the risk.
+
+### Proposed action and acceptance
+Give `RNF_DIAGNOSTICS_INIT` (or the surrounding diagnostics setup) a message naming which `diagTitle`/`diagName` overflowed its fixed field, on the existing abort path. Acceptance: a deliberately-oversized title aborts with a message naming it; the existing abort-on-overflow behavior for every other title is unchanged.

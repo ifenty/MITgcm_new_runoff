@@ -1281,3 +1281,29 @@ Make a missing entry fail loudly, or treat the build as unconditionally stale. A
 ### Gate acceptance
 
 Accepted by `loop_gate.py --check-done` at 2026-10-11T09:03:08.191897+00:00 for iteration 2026-10-11T06:09:57.661952+00:00. Fixed newest_source_time (tests/rnf/tendency_term_check.py) so a BUILD_SOURCES or extra path that is neither an existing file nor an existing directory raises FileNotFoundError naming the entry and its source, instead of silently contributing 0.0 to the staleness maximum via an empty os.walk. The existing os.path.isfile branch and its OSError tolerance for a transient stat race are unchanged; an existing-but-empty directory does not raise. refusal_check.py:2305 (check_build_fresh) needed no separate edit -- it calls the same shared function and inherits the fix automatically, independently confirmed by both Bob and Richard. Behavior preservation for the unperturbed case was independently confirmed bit-identical before and after the fix by both Bob (own reconstruction) and Richard (separate reconstruction from git HEAD).
+
+## 🟢 RESOLVED: test_write_formats cannot type a WRITE item declared in a model header
+
+**Date Identified**: 2026-10-05T08:30:00Z
+**Date Resolved**: 2026-10-11T09:10:43.194925+00:00
+**Status**: Resolved
+**UUID**: RUNOFF-034
+**Anchors**: tests/runoff/test_write_formats.py::<module>; MITgcm/pkg/rnf/rnf_init_fixed.F::<module>
+
+### Issue or research question
+`tests/runoff/test_write_formats.py` builds its item-type table from `RNF_SIZE.h` and `RNF.h` only, so a `WRITE(msgBuf,...)` item declared in a *model* header — `GRID.h`'s `xC`, `yC`, `dxF`, `dyF`, for instance — is unclassifiable. It fails loudly rather than silently (the coverage test refuses any item it cannot type), so this is not a correctness hole, but it makes the checker an obstacle instead of a guard the moment a message quotes a grid quantity.
+
+### Evidence
+Found by the implementer during RUNOFF-033 (2026-10-05). Writing the new cell-centre refusal message, `test_write_formats.py` reported `XC(...)` as "no known type". The implementer worked around it by holding the values in typed `_RL` locals rather than extending the checker — a reasonable local choice that leaves the limitation in place for the next message. The checker itself was created in RUNOFF-004 after two real Fortran runtime format bugs reached the tree on refusal-only paths, so weakening its reach is a direct loss of what it was built for.
+
+### Scientific or engineering impact
+Bounded and visible, not silent. The risk is behavioural: an implementer facing a loud refusal will route around the checker, as happened here, so messages that quote model state drift outside its coverage exactly where new refusals are being added.
+
+### Proposed action and acceptance
+Extend the symbol table to the model headers `pkg/rnf` actually includes (`GRID.h`, `SIZE.h`, `PARAMS.h`, `EEPARAMS.h`), or give it a declared-type override table for named externals. Acceptance: a `WRITE(msgBuf,...)` quoting `xC` or `dxF` directly is typed correctly rather than refused; the existing 140-statement/0-finding result is unchanged; and the negative controls still detect both historical bugs plus an `I` descriptor with a `_RL` item.
+
+**Measured already delivered, 2026-10-11.** `tests/runoff/test_write_formats.py`'s `MODEL_HEADERS` already lists `EEPARAMS.h`, `PARAMS.h`, `GRID.h` and `LONGSTEP_PARAMS.h` — added as side effects of RUNOFF-040 (`4a4add7`, the per-cell runoff bound's own refusal message) and RUNOFF-031 (`c8cae1a`, the `pkg/longstep` tracer refusal), neither of which cross-referenced this issue when closing. Directly measured: `symbols_of_headers()["XC"]`/`["YC"]`/`["DXF"]`/`["DYF"]` are all `"r"`; all 5 tests in the module pass, including `test_every_write_item_of_pkg_rnf_is_classified`. The diagTitle carry-forward below is a separate, still-open finding, moved to its own entry (RUNOFF-047) so closing this issue does not lose it.
+
+### Gate acceptance
+
+Accepted by `loop_gate.py --check-done` at 2026-10-11T09:10:43.194925+00:00 for iteration 2026-10-11T09:07:25.764154+00:00. Measured, not implemented: RUNOFF-034's proposed fix was already delivered as a side effect of two other closed issues. tests/runoff/test_write_formats.py's MODEL_HEADERS already lists EEPARAMS.h, PARAMS.h, GRID.h and LONGSTEP_PARAMS.h, added by RUNOFF-040 (4a4add7) and RUNOFF-031 (c8cae1a), neither of which cross-referenced this issue when closing. Directly measured: symbols_of_headers()['XC']/['YC']/['DXF']/['DYF'] are all 'r'; all 5 tests in the module pass. The still-open diagTitle diagnosability carry-forward was split out to its own entry (RUNOFF-047) so it is not lost when this issue closes.

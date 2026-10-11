@@ -1,0 +1,107 @@
+{
+  "retrospective": {
+    "accounting": {
+      "path": "devel-loop/loop_state/accounting/8bd1ed2830d8f04962e09e7267c0a11eef06419d454fef9f06bd21016957944d.json",
+      "sha256": "8bd1ed2830d8f04962e09e7267c0a11eef06419d454fef9f06bd21016957944d"
+    },
+    "carry_forward": [],
+    "closes_timestamp": "2026-10-11T09:07:25.764154+00:00",
+    "confirmations": [
+      {
+        "category": "measurement_before_implementation",
+        "summary": "Checked whether the issue was already resolved before dispatching an implementer, avoiding a wasted Bob/Richard cycle for work already done",
+        "evidence": "MODEL_HEADERS already contained GRID.h/PARAMS.h/EEPARAMS.h/LONGSTEP_PARAMS.h (added by RUNOFF-040/031); confirmed by direct measurement (symbols_of_headers(), full test run) before preparing the issue as investigation kind rather than scientific_change"
+      }
+    ],
+    "id": "RUNOFF-034",
+    "iteration": 1,
+    "measured": {
+      "billing_status": "provider_reported_not_invoice_reconciled",
+      "coordinator": {
+        "provider_reported_usd": null,
+        "self_reported_minutes": null,
+        "self_reported_usd": null,
+        "tool_measured_minutes": 1.1
+      },
+      "coordinator_coverage": "missing",
+      "cost_scope": "cost_usd and span-based figures describe dispatched agents only; coordinator (Arch) cost is NOT included: no Arch accounting record exists for this iteration (record one with team_accounting.py record-arch)",
+      "cost_usd": {},
+      "dispatches": {},
+      "rounds": {},
+      "span_minutes": 3,
+      "unknown_cost_event_ids": []
+    },
+    "no_problem_reason": "A measurement issue with a clean, already-satisfied acceptance criterion; the only real action was splitting the still-open diagTitle sub-finding into its own entry (RUNOFF-047) so it wasn't lost.",
+    "problems": [],
+    "schema_version": 3,
+    "solutions": [],
+    "timestamp": "2026-10-11T09:11:47Z"
+  },
+  "accounting": {
+    "billing_status": "provider_reported_not_invoice_reconciled",
+    "by_phase": {
+      "orientation": {
+        "effort_seconds": 0.27424097061157227,
+        "elapsed_seconds": 0.27424097061157227,
+        "events": 1
+      },
+      "verification": {
+        "effort_seconds": 67.37000179290771,
+        "elapsed_seconds": 67.37000179290771,
+        "events": 1
+      }
+    },
+    "by_role": {},
+    "child_elapsed_seconds": 0,
+    "components": [],
+    "coordinator": {
+      "coverage": "missing",
+      "included_in_reported_usd": "no",
+      "provider_reported_usd": null,
+      "self_reported": {
+        "minutes": null,
+        "records": [],
+        "records_without_usd": 0,
+        "usd": null
+      },
+      "tool_measured": {
+        "basis": "wall time of gate commands run as arch; excludes interactive session time",
+        "effort_seconds": 67.64424276351929,
+        "elapsed_seconds": 67.64424276351929,
+        "events": 2
+      }
+    },
+    "coordinator_coverage": "missing",
+    "end": "2026-10-11T09:10:43.194925+00:00",
+    "issue_id": "RUNOFF-034",
+    "missing_timing_event_ids": [],
+    "outside_child_intervals_seconds": 197.43077111244202,
+    "phase_events": [
+      {
+        "event_id": "0860b52543ad4c6a9756585931c03ded",
+        "finished_at": "2026-10-11T09:07:31.076043+00:00",
+        "issue_id": "RUNOFF-034",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.27423788607120514,
+        "started_at": "2026-10-11T09:07:30.801802+00:00"
+      },
+      {
+        "event_id": "57bf7cb1030a4d61b2f95dfe89fdca8b",
+        "finished_at": "2026-10-11T09:08:55.943488+00:00",
+        "issue_id": "RUNOFF-034",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 67.3700108146295,
+        "started_at": "2026-10-11T09:07:48.573486+00:00"
+      }
+    ],
+    "reported_usd": 0,
+    "schema_version": 2,
+    "span_seconds": 197.43077111244202,
+    "start": "2026-10-11T09:07:25.764154+00:00",
+    "unknown_cost_event_ids": []
+  }
+}
