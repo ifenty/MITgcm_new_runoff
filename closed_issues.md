@@ -1307,3 +1307,27 @@ Extend the symbol table to the model headers `pkg/rnf` actually includes (`GRID.
 ### Gate acceptance
 
 Accepted by `loop_gate.py --check-done` at 2026-10-11T09:10:43.194925+00:00 for iteration 2026-10-11T09:07:25.764154+00:00. Measured, not implemented: RUNOFF-034's proposed fix was already delivered as a side effect of two other closed issues. tests/runoff/test_write_formats.py's MODEL_HEADERS already lists EEPARAMS.h, PARAMS.h, GRID.h and LONGSTEP_PARAMS.h, added by RUNOFF-040 (4a4add7) and RUNOFF-031 (c8cae1a), neither of which cross-referenced this issue when closing. Directly measured: symbols_of_headers()['XC']/['YC']/['DXF']/['DYF'] are all 'r'; all 5 tests in the module pass. The still-open diagTitle diagnosability carry-forward was split out to its own entry (RUNOFF-047) so it is not lost when this issue closes.
+
+## 🟢 RESOLVED: doc_contract rejects a Fortran header as a documentation reference
+
+**Date Identified**: 2026-10-05T08:30:00Z
+**Date Resolved**: 2026-10-11T09:20:01.598853+00:00
+**Status**: Resolved
+**UUID**: RUNOFF-035
+**Anchors**: tools/esx/doc_contract.py::validate_report; MITgcm/pkg/rnf/RNF.h::<module>
+
+### Issue or research question
+`doc_contract.py seal` accepts `MITgcm/pkg/rnf/RNF.h::<module>` as a disposition *target* but rejects it as a disposition *reference*, with "contains no inventoried documentation". A Fortran header is where `pkg/rnf` documents its parameters and their tolerances, so it is a legitimate thing for a judgment to cite.
+
+### Evidence
+Found by the implementer during RUNOFF-033 correction round 1 (2026-10-05): two dispositions that cited `RNF.h` were refused at seal and had to cite the verification-matrix and schema headings instead. The reason those dispositions existed was the `RNF_lonLatTol` comment block, which lives in `RNF.h` — so the citation was redirected away from the text it was actually about.
+
+### Scientific or engineering impact
+Minor and framework-side. It pushes a judgment's citation away from the prose it concerns, which makes the sealed record slightly less useful to the next reader, and it is asymmetric in a way that is not obvious from the error text.
+
+### Proposed action and acceptance
+Decide whether this is intended. If a reference must resolve to inventoried Markdown, say so in the error message and in the documentation contract. If a commented Fortran header should be citable, treat `path::<module>` the way a disposition target already does. Acceptance: either the refusal names the rule it enforces, or a `RNF.h` citation seals.
+
+### Gate acceptance
+
+Accepted by `loop_gate.py --check-done` at 2026-10-11T09:20:01.598853+00:00 for iteration 2026-10-11T09:13:34.394895+00:00. Decided RUNOFF-035's open question: the refusal was unintended. Root cause: doc_inventory.py::measure's Fortran-comment-prose extension tuple omitted .h, so every .h header (RNF.h, GRID.h, etc.) always measured has_docs=False regardless of content, which is exactly why doc_contract.py's reference check refused it with 'contains no inventoried documentation'. MITgcm's .h files use the identical column-1 C/c/*/! comment convention as .inc files already covered. Added .h to the tuple with an inline comment explaining why. Demonstrated the actual harness failure mode directly: MITgcm/pkg/rnf/RNF.h::<module> now measures has_docs=True via docs_measure, the exact check validate_report performs on a disposition reference -- it would no longer be refused. tools/esx is outside source_paths/test_paths/configuration_paths entirely, so this carries no scientific-signature or review-reason implications; harness_change, 0 reviewers.

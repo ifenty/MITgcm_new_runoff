@@ -447,25 +447,6 @@ Phase 1 default: every process reads the full record. Owner to decide whether a 
 
 From RUNOFF-002 (review A): this issue owns the measured chunking read benchmark (docs/runoff_schema.md §8, docs/model_contract.md scale requirement). The converter writes the §8 default layout: one record per chunk, deflate, about 4 MB pieces along `source`.
 
-## UNRESOLVED: doc_contract rejects a Fortran header as a documentation reference
-
-**Date Identified**: 2026-10-05T08:30:00Z
-**Status**: Unresolved
-**UUID**: RUNOFF-035
-**Anchors**: tools/esx/doc_contract.py::validate_report; MITgcm/pkg/rnf/RNF.h::<module>
-
-### Issue or research question
-`doc_contract.py seal` accepts `MITgcm/pkg/rnf/RNF.h::<module>` as a disposition *target* but rejects it as a disposition *reference*, with "contains no inventoried documentation". A Fortran header is where `pkg/rnf` documents its parameters and their tolerances, so it is a legitimate thing for a judgment to cite.
-
-### Evidence
-Found by the implementer during RUNOFF-033 correction round 1 (2026-10-05): two dispositions that cited `RNF.h` were refused at seal and had to cite the verification-matrix and schema headings instead. The reason those dispositions existed was the `RNF_lonLatTol` comment block, which lives in `RNF.h` — so the citation was redirected away from the text it was actually about.
-
-### Scientific or engineering impact
-Minor and framework-side. It pushes a judgment's citation away from the prose it concerns, which makes the sealed record slightly less useful to the next reader, and it is asymmetric in a way that is not obvious from the error text.
-
-### Proposed action and acceptance
-Decide whether this is intended. If a reference must resolve to inventoried Markdown, say so in the error message and in the documentation contract. If a commented Fortran header should be citable, treat `path::<module>` the way a disposition target already does. Acceptance: either the refusal names the rule it enforces, or a `RNF.h` citation seals.
-
 ## UNRESOLVED: exf runoff-temperature range check tests the wrong array
 
 **Date Identified**: 2026-10-06T07:20:00Z

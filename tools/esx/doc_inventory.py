@@ -123,10 +123,13 @@ def measure(data, filename):
     else:
         # Recognize full-line source comments. For languages without a comment
         # extractor, an owning Markdown contract provides reviewable prose.
+        # `.h` is a Fortran include in this project (MITgcm headers such as
+        # RNF.h), using the identical column-1 C/c/*/! convention as `.inc`,
+        # not a C header -- RUNOFF-035.
         prose = '\n'.join(line for line in text.splitlines() if
                           (suffix == '.sh' and line.lstrip().startswith('#')
                            and not line.startswith('#!')) or
-                          (suffix in ('.f', '.for', '.inc') and line[:1] in ('c', 'C', '*', '!')) or
+                          (suffix in ('.f', '.for', '.inc', '.h') and line[:1] in ('c', 'C', '*', '!')) or
                           (suffix == '.f90' and line.lstrip().startswith('!')))
     return {'<module>': {'sha256': sha, 'docs': digest(prose), 'has_docs': bool(prose),
                          'spans': [[1, data.count(b'\n') + 1]]}}
