@@ -680,9 +680,22 @@ def newest_source_time(extra=()):
     file yields nothing at all, so a file entry (``pkg/pkg_depend``) is
     stat'ed directly. Without that, adding such a path would look like
     coverage and measure nothing.
+
+    A ``path`` that resolves to neither an existing file nor an existing
+    directory raises :class:`FileNotFoundError` naming the path and
+    whether it came from :data:`BUILD_SOURCES` or ``extra``, rather than
+    falling through to ``os.walk``: ``os.walk`` of a nonexistent root
+    silently yields no entries at all, exactly as it would for an
+    existing-but-empty directory, so without this check a renamed,
+    moved or mistyped entry (or an ``extra`` code directory that was
+    never written) would contribute 0.0 to the staleness maximum instead
+    of being detected (RUNOFF-036).
     """
     newest = 0.0
-    for path in tuple(BUILD_SOURCES) + tuple(extra):
+    for collection, path in (
+        [("BUILD_SOURCES", p) for p in BUILD_SOURCES]
+        + [("extra", p) for p in extra]
+    ):
         root = path if os.path.isabs(path) else os.path.join(ROOT, path)
         if os.path.isfile(root):
             try:
@@ -690,6 +703,12 @@ def newest_source_time(extra=()):
             except OSError:
                 pass
             continue
+        if not os.path.isdir(root):
+            raise FileNotFoundError(
+                "newest_source_time: {} entry {!r} resolves to {!r}, "
+                "which is neither an existing file nor an existing "
+                "directory".format(collection, path, root)
+            )
         for dirpath, _, names in os.walk(root):
             for name in names:
                 try:

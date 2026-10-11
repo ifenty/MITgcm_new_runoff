@@ -487,29 +487,6 @@ Minor and framework-side. It pushes a judgment's citation away from the prose it
 ### Proposed action and acceptance
 Decide whether this is intended. If a reference must resolve to inventoried Markdown, say so in the error message and in the documentation contract. If a commented Fortran header should be citable, treat `path::<module>` the way a disposition target already does. Acceptance: either the refusal names the rule it enforces, or a `RNF.h` citation seals.
 
-## UNRESOLVED: a BUILD_SOURCES entry that does not exist silently narrows the staleness guard
-
-**Date Identified**: 2026-10-06T02:10:00Z
-**Status**: Unresolved
-**UUID**: RUNOFF-036
-**Anchors**: tests/rnf/tendency_term_check.py::newest_source_time; tests/rnf/tendency_term_check.py::build_if_stale
-
-### Issue or research question
-`newest_source_time` walks each `BUILD_SOURCES` entry to decide whether a `--build` binary may be reused. An entry that does not exist contributes nothing and raises nothing: `os.path.isfile` is false and `os.walk` yields `[]`, so the maximum is simply taken over the remaining entries and the build is reported `reused`. A renamed, moved or mistyped path therefore narrows the staleness reference silently, which is the exact LL-011 failure `build_if_stale` exists to prevent.
-
-### Evidence
-RUNOFF-013 correction round 2 (2026-10-05). This is the **third** instance of one class in the same function, each found by a different agent. The first: `os.walk` of a plain file yields nothing, so `MITgcm/pkg/pkg_depend` would have looked like coverage and measured nothing — found by the implementer while fixing review A's finding, and fixed by stat-ing a plain-file entry. The second: `MITgcm/model/inc`, `MITgcm/pkg/ptracers` and `pkg_depend` were absent from the list altogether, so an edit to `PARAMS.h` — where `temp_EvPrRn`, `salt_EvPrRn`, `convertFW2Salt` and `UNSET_RL` are declared, all read by the tendency routines — could not mark any binary stale; found and quantified by review A, fixed in round 2. This third one is review A's: `newest_source_time(extra=<nonexistent path>)` returns the unchanged maximum, `delta 0.000`, with no error.
-
-Review B then supplied the figure that makes it legible: per-entry maxima are `MITgcm/pkg/rnf` at 2026-10-05T16:13:57 and every other entry at 2026-10-04T07:38:32, so **`pkg/rnf` is the entry that sets the maximum.** Losing it to a rename would move the staleness reference back **117 326 s (1 d 8 h 35 m)** and stop the guard from guarding the one directory under active development, while still printing `reused`.
-
-### Scientific or engineering impact
-No current defect: all six entries exist, and both reviewers judged this optional for RUNOFF-013's closure on that basis. The impact is scheduled rather than hypothetical — this package is to be rebased on upstream MITgcm before the PR, and a rebase is exactly when a path is renamed or moved. The failure mode is silent and the tool keeps reporting success, so it would be discovered through a wrong figure rather than through an error.
-
-### Proposed action and acceptance
-Make a missing entry fail loudly, or treat the build as unconditionally stale. Acceptance: `newest_source_time` with a nonexistent entry raises or forces a rebuild rather than returning a smaller maximum; the six current entries still resolve and still produce today's reference (`pkg/rnf/rnf_nc_utils.F`); and the existing plain-file and directory branches are unchanged. Add a negative control that a nonexistent entry is detected, since all three instances of this class were found by perturbing the mechanism and none by inspecting the list.
-
-**The generalisable lesson, worth carrying beyond this function:** a listed entry that looks like coverage and measures nothing is invisible to inspection. Check such a list by measuring the output change when an entry is perturbed, never by reading it.
-
 ## UNRESOLVED: exf runoff-temperature range check tests the wrong array
 
 **Date Identified**: 2026-10-06T07:20:00Z

@@ -1,0 +1,278 @@
+{
+  "retrospective": {
+    "accounting": {
+      "path": "devel-loop/loop_state/accounting/c851c504c4b17f000b43221f5d499bf09a513bea8a5cf6184c4f16da7da4105c.json",
+      "sha256": "c851c504c4b17f000b43221f5d499bf09a513bea8a5cf6184c4f16da7da4105c"
+    },
+    "carry_forward": [],
+    "closes_timestamp": "2026-10-11T06:09:57.661952+00:00",
+    "confirmations": [
+      {
+        "category": "independent_reconstruction",
+        "summary": "Both Bob and Richard independently reconstructed the pre-fix function from git history and confirmed bit-identical behavior for the unperturbed case, rather than one trusting the other's reported figure",
+        "evidence": "Bob reconstructed tests/rnf/tendency_term_check.py::newest_source_time verbatim from git HEAD in a standalone module; Richard did the same independently via a separate scratch reconstruction; both got 1791674078.2362535, bit-identical to the post-fix function"
+      }
+    ],
+    "id": "RUNOFF-036",
+    "iteration": 1,
+    "measured": {
+      "billing_status": "provider_reported_not_invoice_reconciled",
+      "coordinator": {
+        "provider_reported_usd": null,
+        "self_reported_minutes": null,
+        "self_reported_usd": null,
+        "tool_measured_minutes": 115.4
+      },
+      "coordinator_coverage": "missing",
+      "cost_scope": "cost_usd and span-based figures describe dispatched agents only; coordinator (Arch) cost is NOT included: no Arch accounting record exists for this iteration (record one with team_accounting.py record-arch)",
+      "cost_usd": {
+        "bob": 0.0,
+        "richard": 0.0
+      },
+      "dispatches": {
+        "bob": 1,
+        "richard": 1
+      },
+      "rounds": {
+        "bob": 1,
+        "richard": 1
+      },
+      "span_minutes": 173,
+      "unknown_cost_event_ids": [
+        "1145b18926ad4e73b55db2ccf7349006",
+        "ff66ce91efd84a7baca947fb6241b091"
+      ]
+    },
+    "no_problem_reason": "A small, well-scoped fix with a clear acceptance criterion already written into the issue; one correction-free round from Bob, one APPROVE from Richard with no must-fix, final verification passed on first attempt.",
+    "problems": [],
+    "schema_version": 3,
+    "solutions": [],
+    "timestamp": "2026-10-11T09:04:57Z"
+  },
+  "accounting": {
+    "billing_status": "provider_reported_not_invoice_reconciled",
+    "by_phase": {
+      "closeout": {
+        "effort_seconds": 56.33252692222595,
+        "elapsed_seconds": 56.33252692222595,
+        "events": 2
+      },
+      "orientation": {
+        "effort_seconds": 1.3252837657928467,
+        "elapsed_seconds": 1.3252837657928467,
+        "events": 6
+      },
+      "verification": {
+        "effort_seconds": 8964.648449659348,
+        "elapsed_seconds": 8964.648449659348,
+        "events": 5
+      }
+    },
+    "by_role": {
+      "bob": {
+        "dispatches": 1,
+        "reported_usd": 0.0,
+        "rounds": 1,
+        "seconds": 0.0,
+        "tool_calls": 0,
+        "unknown_cost_events": 1,
+        "unknown_tool_call_events": 1,
+        "usage": {}
+      },
+      "richard": {
+        "dispatches": 1,
+        "reported_usd": 0.0,
+        "rounds": 1,
+        "seconds": 0.0,
+        "tool_calls": 0,
+        "unknown_cost_events": 1,
+        "unknown_tool_call_events": 1,
+        "usage": {}
+      }
+    },
+    "child_elapsed_seconds": 0,
+    "components": [
+      {
+        "event_id": "1145b18926ad4e73b55db2ccf7349006",
+        "kind": "unmetered_native",
+        "parent_event_id": "1145b18926ad4e73b55db2ccf7349006",
+        "reported_usd": null,
+        "role": "bob",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "ff66ce91efd84a7baca947fb6241b091",
+        "kind": "unmetered_native",
+        "parent_event_id": "ff66ce91efd84a7baca947fb6241b091",
+        "reported_usd": null,
+        "role": "richard",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      }
+    ],
+    "coordinator": {
+      "coverage": "missing",
+      "included_in_reported_usd": "no",
+      "provider_reported_usd": null,
+      "self_reported": {
+        "minutes": null,
+        "records": [],
+        "records_without_usd": 0,
+        "usd": null
+      },
+      "tool_measured": {
+        "basis": "wall time of gate commands run as arch; excludes interactive session time",
+        "effort_seconds": 6926.158722400665,
+        "elapsed_seconds": 6926.158722400665,
+        "events": 7
+      }
+    },
+    "coordinator_coverage": "missing",
+    "end": "2026-10-11T09:03:08.191897+00:00",
+    "issue_id": "RUNOFF-036",
+    "missing_timing_event_ids": [
+      "1145b18926ad4e73b55db2ccf7349006",
+      "ff66ce91efd84a7baca947fb6241b091"
+    ],
+    "outside_child_intervals_seconds": 10390.529944896698,
+    "phase_events": [
+      {
+        "event_id": "d82a33c084364974b388358df2c56de9",
+        "finished_at": "2026-10-11T06:10:03.804648+00:00",
+        "issue_id": "RUNOFF-036",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.3408801779150963,
+        "started_at": "2026-10-11T06:10:03.463765+00:00"
+      },
+      {
+        "event_id": "3d924cfd90054085844829c75eb400a7",
+        "finished_at": "2026-10-11T06:11:14.952874+00:00",
+        "issue_id": "RUNOFF-036",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.18522824347019196,
+        "started_at": "2026-10-11T06:11:14.767634+00:00"
+      },
+      {
+        "event_id": "72cad7dec7ee49a49e1f3dc6a1e3ef21",
+        "finished_at": "2026-10-11T06:11:32.571684+00:00",
+        "issue_id": "RUNOFF-036",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.18148075137287378,
+        "started_at": "2026-10-11T06:11:32.390201+00:00"
+      },
+      {
+        "event_id": "26c2f05a051943148e747b380017d628",
+        "finished_at": "2026-10-11T06:32:21.625359+00:00",
+        "issue_id": "RUNOFF-036",
+        "phase": "verification",
+        "reason": null,
+        "role": "a0b89aa690f916ffb",
+        "seconds": 1047.116405889392,
+        "started_at": "2026-10-11T06:14:54.508962+00:00"
+      },
+      {
+        "event_id": "9eed2ccfd88f4c72951e5a42e09afd86",
+        "finished_at": "2026-10-11T06:34:48.024953+00:00",
+        "issue_id": "RUNOFF-036",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.1858572494238615,
+        "started_at": "2026-10-11T06:34:47.839092+00:00"
+      },
+      {
+        "event_id": "7d2a1126c37e4f22a00cbe5e7b777948",
+        "finished_at": "2026-10-11T06:39:20.251194+00:00",
+        "issue_id": "RUNOFF-036",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 70.98667368572205,
+        "started_at": "2026-10-11T06:38:09.264519+00:00"
+      },
+      {
+        "event_id": "0265fec3793c47d793c5da8faa912dfb",
+        "finished_at": "2026-10-11T06:39:41.036632+00:00",
+        "issue_id": "RUNOFF-036",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.21114158909767866,
+        "started_at": "2026-10-11T06:39:40.825487+00:00"
+      },
+      {
+        "event_id": "817ed8732dfa44a8b348cee8af8e53b8",
+        "finished_at": "2026-10-11T06:59:13.456226+00:00",
+        "issue_id": "RUNOFF-036",
+        "phase": "verification",
+        "reason": null,
+        "role": "a6593ea3ab4151479",
+        "seconds": 1048.2578892158344,
+        "started_at": "2026-10-11T06:41:45.198341+00:00"
+      },
+      {
+        "event_id": "a39f9387283c425f9cd2ed3f4d66f967",
+        "finished_at": "2026-10-11T06:59:46.154173+00:00",
+        "issue_id": "RUNOFF-036",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.22066101897507906,
+        "started_at": "2026-10-11T06:59:45.933501+00:00"
+      },
+      {
+        "event_id": "fe73ef96f0324923a8a2de4df8e9ac27",
+        "finished_at": "2026-10-11T07:02:54.724646+00:00",
+        "issue_id": "RUNOFF-036",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 69.97521780338138,
+        "started_at": "2026-10-11T07:01:44.749431+00:00"
+      },
+      {
+        "event_id": "ce2d1a087afc458f82717eb199d4e19b",
+        "finished_at": "2026-10-11T08:57:31.507601+00:00",
+        "issue_id": "RUNOFF-036",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 6728.312259067781,
+        "started_at": "2026-10-11T07:05:23.195324+00:00"
+      },
+      {
+        "event_id": "725fafaed8f44c289bcdebe4c17212f8",
+        "finished_at": "2026-10-11T08:59:24.935107+00:00",
+        "issue_id": "RUNOFF-036",
+        "phase": "closeout",
+        "reason": null,
+        "role": "arch",
+        "seconds": 19.61068928707391,
+        "started_at": "2026-10-11T08:59:05.324428+00:00"
+      },
+      {
+        "event_id": "8749121088834dbea9f093bb6059b41f",
+        "finished_at": "2026-10-11T09:00:55.413801+00:00",
+        "issue_id": "RUNOFF-036",
+        "phase": "closeout",
+        "reason": null,
+        "role": "arch",
+        "seconds": 36.72187048941851,
+        "started_at": "2026-10-11T09:00:18.691953+00:00"
+      }
+    ],
+    "reported_usd": 0,
+    "schema_version": 2,
+    "span_seconds": 10390.529944896698,
+    "start": "2026-10-11T06:09:57.661952+00:00",
+    "unknown_cost_event_ids": [
+      "1145b18926ad4e73b55db2ccf7349006",
+      "ff66ce91efd84a7baca947fb6241b091"
+    ]
+  }
+}

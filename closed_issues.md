@@ -1253,3 +1253,31 @@ Add `brief.py` to the Framework-routes table with its inputs (the issue's orient
 ### Gate acceptance
 
 Accepted by `loop_gate.py --check-done` at 2026-10-11T05:52:24.923379+00:00 for iteration 2026-10-11T05:42:28.386576+00:00. Added brief.py to docs/code_map.md's Framework-routes table: its inputs, its refusal condition (an unknown ESX command/flag named in the brief text, introspected from the tool's own --help), and its output. While preparing this, discovered and filed a related but out-of-scope defect in the process ledger (TEAM-BRIEF-ORIENTATION-SELFCOLLISION-001): brief.build's own interface-checker misattributes trailing flags in Arch's reconstructed orientation command to whichever tools/esx/*.py script was named last among the orientation's own targets, refusing a brief for a flag no one actually wrote. Worked around for this issue by orienting through tests/esx/ instead of tools/esx/ directly.
+
+## 🟢 RESOLVED: a BUILD_SOURCES entry that does not exist silently narrows the staleness guard
+
+**Date Identified**: 2026-10-06T02:10:00Z
+**Date Resolved**: 2026-10-11T09:03:08.191897+00:00
+**Status**: Resolved
+**UUID**: RUNOFF-036
+**Anchors**: tests/rnf/tendency_term_check.py::newest_source_time; tests/rnf/tendency_term_check.py::build_if_stale
+
+### Issue or research question
+`newest_source_time` walks each `BUILD_SOURCES` entry to decide whether a `--build` binary may be reused. An entry that does not exist contributes nothing and raises nothing: `os.path.isfile` is false and `os.walk` yields `[]`, so the maximum is simply taken over the remaining entries and the build is reported `reused`. A renamed, moved or mistyped path therefore narrows the staleness reference silently, which is the exact LL-011 failure `build_if_stale` exists to prevent.
+
+### Evidence
+RUNOFF-013 correction round 2 (2026-10-05). This is the **third** instance of one class in the same function, each found by a different agent. The first: `os.walk` of a plain file yields nothing, so `MITgcm/pkg/pkg_depend` would have looked like coverage and measured nothing — found by the implementer while fixing review A's finding, and fixed by stat-ing a plain-file entry. The second: `MITgcm/model/inc`, `MITgcm/pkg/ptracers` and `pkg_depend` were absent from the list altogether, so an edit to `PARAMS.h` — where `temp_EvPrRn`, `salt_EvPrRn`, `convertFW2Salt` and `UNSET_RL` are declared, all read by the tendency routines — could not mark any binary stale; found and quantified by review A, fixed in round 2. This third one is review A's: `newest_source_time(extra=<nonexistent path>)` returns the unchanged maximum, `delta 0.000`, with no error.
+
+Review B then supplied the figure that makes it legible: per-entry maxima are `MITgcm/pkg/rnf` at 2026-10-05T16:13:57 and every other entry at 2026-10-04T07:38:32, so **`pkg/rnf` is the entry that sets the maximum.** Losing it to a rename would move the staleness reference back **117 326 s (1 d 8 h 35 m)** and stop the guard from guarding the one directory under active development, while still printing `reused`.
+
+### Scientific or engineering impact
+No current defect: all six entries exist, and both reviewers judged this optional for RUNOFF-013's closure on that basis. The impact is scheduled rather than hypothetical — this package is to be rebased on upstream MITgcm before the PR, and a rebase is exactly when a path is renamed or moved. The failure mode is silent and the tool keeps reporting success, so it would be discovered through a wrong figure rather than through an error.
+
+### Proposed action and acceptance
+Make a missing entry fail loudly, or treat the build as unconditionally stale. Acceptance: `newest_source_time` with a nonexistent entry raises or forces a rebuild rather than returning a smaller maximum; the six current entries still resolve and still produce the unperturbed reference's current value, bit-identical before and after the fix (whichever file happens to set the maximum at closeout time — this drifted to `pkg/rnf/rnf_diagnostics_fill.F` by RUNOFF-046's close, from `pkg/rnf/rnf_nc_utils.F` when this issue was written; the fix's correctness does not depend on which file it is); and the existing plain-file and directory branches are unchanged. Add a negative control that a nonexistent entry is detected, since all three instances of this class were found by perturbing the mechanism and none by inspecting the list.
+
+**The generalisable lesson, worth carrying beyond this function:** a listed entry that looks like coverage and measures nothing is invisible to inspection. Check such a list by measuring the output change when an entry is perturbed, never by reading it.
+
+### Gate acceptance
+
+Accepted by `loop_gate.py --check-done` at 2026-10-11T09:03:08.191897+00:00 for iteration 2026-10-11T06:09:57.661952+00:00. Fixed newest_source_time (tests/rnf/tendency_term_check.py) so a BUILD_SOURCES or extra path that is neither an existing file nor an existing directory raises FileNotFoundError naming the entry and its source, instead of silently contributing 0.0 to the staleness maximum via an empty os.walk. The existing os.path.isfile branch and its OSError tolerance for a transient stat race are unchanged; an existing-but-empty directory does not raise. refusal_check.py:2305 (check_build_fresh) needed no separate edit -- it calls the same shared function and inherits the fix automatically, independently confirmed by both Bob and Richard. Behavior preservation for the unperturbed case was independently confirmed bit-identical before and after the fix by both Bob (own reconstruction) and Richard (separate reconstruction from git HEAD).
