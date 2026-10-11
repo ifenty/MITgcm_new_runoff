@@ -24,6 +24,10 @@ skipped when no run directory exists. They cover both committed cs32 files:
 the 12-record file with temperature (``input.rnof_sparse``) and the
 one-record constant file that the sparse = dense oracle reads
 (``input.rnof_sp_icedyn``).
+
+RUNOFF-032: ``_grid``'s ``surface_level`` ("top" vs "bottom") on a synthetic
+column dry at both level 1 and level Nr but wet between them, which
+``dense_to_sparse`` accepts under "top" and refuses as land under "bottom".
 """
 
 import datetime as dt
@@ -749,6 +753,48 @@ def test_runoff_on_land_is_refused(tmp_path):
     assert read(tmp_path / "x.nc")["target_cell"].tolist() == [50 + 192 * 20]
     with pytest.raises(ConvertError, match="zero everywhere"):
         dense_to_sparse(np.zeros((1, 32, 192)), str(tmp_path / "x.nc"), rac=rac, hfac=hfac)
+
+
+# ---------------------------------------------------------------------------
+# Surface-level modes (RUNOFF-032): "top" (default) vs. "bottom".
+
+
+def test_grid_helper_surface_level_modes():
+    """convert._grid reduces a 3D hfac to the model's surface level."""
+    rac = np.ones((2, 2))
+    hfac = np.ones((3, 2, 2))
+    hfac[0, 0, 0] = 0.0    # level 1 dry
+    hfac[1, 0, 0] = 0.6    # level 2 wet (first wet level)
+    hfac[2, 0, 0] = 0.0    # level Nr (= 3) dry
+    top = convert._grid(None, rac, hfac, None, None, surface_level="top")[1]
+    bottom = convert._grid(None, rac, hfac, None, None, surface_level="bottom")[1]
+    assert top[0, 0] == 0.6
+    assert bottom[0, 0] == 0.0
+    # a 2D hfac is unaffected by either mode
+    hfac2d = np.array([[1.0, 0.0], [0.0, 1.0]])
+    assert np.array_equal(
+        convert._grid(None, rac, hfac2d, None, None, surface_level="bottom")[1], hfac2d)
+
+
+def test_dense_to_sparse_bottom_mode_refuses_land_top_mode_would_accept(tmp_path):
+    """A cell dry at level 1 and at level Nr, but wet at a level between
+    them, is land under "bottom" (the model's pressure-coordinate
+    convention checks only level Nr) but accepted under "top" (which keeps
+    scanning past the dry Nr to the shallower wet level) -- so applying the
+    wrong mode to a pressure-coordinate grid would silently accept runoff
+    on a cell the model refuses."""
+    rac = np.full((2, 2), 1.0e10)
+    hfac3 = np.ones((3, 2, 2))
+    hfac3[0, 0, 0] = 0.0    # level 1 dry
+    hfac3[1, 0, 0] = 0.9    # level 2 is the first wet level
+    hfac3[2, 0, 0] = 0.0    # level Nr dry
+    dense = np.zeros((1, 2, 2))
+    dense[0, 0, 0] = 1e-7
+    out = str(tmp_path / "x.nc")
+    dense_to_sparse(dense, out, rac=rac, hfac=hfac3, prec=64, surface_level="top")
+    assert_clean(check_files(out))
+    with pytest.raises(ConvertError, match="on land"):
+        dense_to_sparse(dense, out, rac=rac, hfac=hfac3, prec=64, surface_level="bottom")
 
 
 def test_group_with_time_varying_shares(tmp_path):

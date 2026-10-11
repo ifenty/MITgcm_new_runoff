@@ -13,6 +13,9 @@ exports are exercised in subprocesses, with RuntimeWarning as an error.
 Tables-only mode is checked on a file without time series (clean, with one
 S10 finding), on a table fault (still reported) and a time-series fault (not
 looked at), and on several files (tables compared, time order skipped).
+RUNOFF-032: ``_surface_hfac``'s two modes, R01 under each on a shelfice- and
+a pressure-coordinate-pattern grid, ``_detect_surface_level`` and the CLI's
+auto-detection from a ``data`` file's ``buoyancyRelation``.
 """
 
 import json
@@ -26,7 +29,7 @@ import pytest
 
 from conftest import LAND_CELL, NX, ROOT, modify, write_mds
 from MITgcmutils.runoff import check_files, schema, write_example
-from MITgcmutils.runoff.check import MAX_DETAILS, main
+from MITgcmutils.runoff.check import MAX_DETAILS, _detect_surface_level, _surface_hfac, main
 from MITgcmutils.runoff.example import lab_sea_grid
 
 EX_CELLS = np.array([69, 70, 125, 233, 234])
@@ -1058,6 +1061,118 @@ def test_global_hfacc_file(tmp_path):
         write_mds(str(d / name), a)
     r = check_files(build(tmp_path), grid_dir=str(d))
     assert r.rules() == {"R01"} and r.errors[0].source_id == "jakobshavn"
+
+
+# ---------------------------------------------------------------------------
+# Surface-level modes (RUNOFF-032): "top" (default, z coordinates, with or
+# without shelfice) vs. "bottom" (pressure coordinates).
+
+
+def test_surface_hfac_top_mode_resolves_shelfice_pattern():
+    """"top" is each column's first wet level scanning from level 1 -- the
+    same scan the model uses for kSurfC -- not unconditionally level 1."""
+    hf = np.ones((3, 2, 2))
+    hf[0, 0, 0] = 0.0    # column (0,0): level 1 dry (under an ice shelf)
+    hf[1, 0, 0] = 0.7    # column (0,0): level 2 is the first wet level
+    surf = _surface_hfac(hf, "top")
+    assert surf[0, 0] == 0.7
+    assert (surf[0, 1] == 1.0) and (surf[1, 0] == 1.0) and (surf[1, 1] == 1.0)
+    # a column dry at every level has no wet level: still the land value 0,
+    # exactly as a level-1 hardcode already reported it (must-fail control).
+    hf[:, 1, 1] = 0.0
+    surf = _surface_hfac(hf, "top")
+    assert surf[1, 1] == 0.0
+
+
+def test_surface_hfac_bottom_mode_is_level_nr_unconditionally():
+    """"bottom" is level Nr regardless of the local wetness pattern: it does
+    not fall back to a shallower wet level the way "top" does."""
+    hf = np.ones((3, 2, 2))
+    hf[0, 0, 0] = 1.0
+    hf[2, 0, 0] = 0.0    # level Nr (= 3) dry; level 1 is wet, but irrelevant
+    surf = _surface_hfac(hf, "bottom")
+    assert surf[0, 0] == 0.0
+    assert (surf[0, 1] == 1.0) and (surf[1, 0] == 1.0) and (surf[1, 1] == 1.0)
+
+
+def test_surface_hfac_2d_unchanged_either_mode():
+    hf = np.array([[1.0, 0.0], [0.0, 1.0]])
+    assert np.array_equal(_surface_hfac(hf, "top"), hf)
+    assert np.array_equal(_surface_hfac(hf, "bottom"), hf)
+
+
+def test_surface_hfac_rejects_unknown_mode():
+    with pytest.raises(ValueError):
+        _surface_hfac(np.ones((2, 2, 2)), "middle")
+
+
+def test_r01_top_mode_resolves_shelfice_pattern(tmp_path):
+    """A target cell dry at level 1 but wet at level 2 (a shelfice-pattern
+    column) is not flagged on land under the default "top" mode."""
+    d = tmp_path / "g"
+    d.mkdir()
+    xc, yc, rac = lab_sea_grid()
+    hf = np.ones((2,) + xc.shape)
+    hf[0].ravel()[125] = 0.0    # koksoak's target cell: level 1 dry
+    hf[1].ravel()[125] = 0.6    # level 2 is the first wet level
+    for name, a in (("hFacC", hf), ("RAC", rac), ("XC", xc), ("YC", yc)):
+        write_mds(str(d / name), a)
+    p = build(tmp_path)
+    assert check_files(p, grid_dir=str(d)).findings == []
+    assert main([p, "--grid-dir", str(d)]) == 0
+    # must-fail control: dry at every level is still refused, as before
+    hf[:, 125 // NX, 125 % NX] = 0.0
+    write_mds(str(d / "hFacC"), hf)
+    r = check_files(p, grid_dir=str(d))
+    assert r.rules("E") == {"R01"}, r.format_text()
+
+
+def test_r01_bottom_mode_pressure_coordinates(tmp_path):
+    """"bottom" mode: Nr dry is land regardless of level 1's wetness, and the
+    cs32 input.in_p case is the real-world instance of this pattern: 1011 of
+    1189 cells wrongly flagged dry at level 1 before this fix, 0 of 1189
+    under --surface-level bottom after it (devel-loop/loop_state/
+    figures-RUNOFF-032.tsv)."""
+    d = tmp_path / "g"
+    d.mkdir()
+    xc, yc, rac = lab_sea_grid()
+    hf = np.ones((2,) + xc.shape)
+    hf[0].ravel()[125] = 1.0    # level 1 wet (irrelevant to "bottom")
+    hf[1].ravel()[125] = 0.0    # Nr dry: "bottom" treats this as land
+    for name, a in (("hFacC", hf), ("RAC", rac), ("XC", xc), ("YC", yc)):
+        write_mds(str(d / name), a)
+    p = build(tmp_path)
+    assert check_files(p, grid_dir=str(d)).findings == []           # top: unaffected
+    r = check_files(p, grid_dir=str(d), surface_level="bottom")
+    assert r.rules("E") == {"R01"}, r.format_text()
+    assert main([p, "--grid-dir", str(d), "--surface-level", "bottom"]) == 1
+
+
+def test_detect_surface_level(tmp_path):
+    assert _detect_surface_level(None) is None
+    assert _detect_surface_level(str(tmp_path)) is None   # no data file
+    (tmp_path / "data").write_text("&PARM01\n tRef=1.,\n &\n")
+    assert _detect_surface_level(str(tmp_path)) == "top"  # unset: model default OCEANIC
+    (tmp_path / "data").write_text("&PARM01\n buoyancyRelation='OCEANIC',\n &\n")
+    assert _detect_surface_level(str(tmp_path)) == "top"
+    (tmp_path / "data").write_text("&PARM01\n buoyancyRelation='OCEANICP',\n &\n")
+    assert _detect_surface_level(str(tmp_path)) == "bottom"
+    (tmp_path / "data").write_text("&PARM01\n buoyancyRelation='ATMOSPHERIC',\n &\n")
+    assert _detect_surface_level(str(tmp_path)) == "bottom"
+
+
+def test_cli_surface_level_auto_detects_from_data_file(tmp_path):
+    d = tmp_path / "g"
+    d.mkdir()
+    xc, yc, rac = lab_sea_grid()
+    hf = np.ones((2,) + xc.shape)
+    hf[1].ravel()[125] = 0.0    # Nr dry at koksoak's target cell
+    for name, a in (("hFacC", hf), ("RAC", rac), ("XC", xc), ("YC", yc)):
+        write_mds(str(d / name), a)
+    (d / "data").write_text("&PARM01\n buoyancyRelation='OCEANICP',\n &\n")
+    p = build(tmp_path)
+    assert main([p, "--grid-dir", str(d)]) == 1                      # auto-detected bottom
+    assert main([p, "--grid-dir", str(d), "--surface-level", "top"]) == 0   # explicit override
 
 
 def test_missing_grid_file_is_io_error(tmp_path):

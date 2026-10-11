@@ -364,25 +364,6 @@ Acceptance: lab_sea cases per mode with T/S/tracers; direct timing checks extend
 
 Reconsidered 2026-10-05 on RUNOFF-005's closure. The flux time handling this issue was waiting on is done, but its stated acceptance is "lab_sea cases per mode with T/S/tracers; direct timing checks extended to all series" — and no T, S or tracer series is read or applied yet. The genuine dependency is therefore RUNOFF-013, not RUNOFF-005, and it is re-blocked on that rather than left blocked on a closed issue. What RUNOFF-005 does supply is the pattern to extend: `RNF_GETREC` delegates each mode to its `pkg/exf` routine, so a second series needs the same delegation rather than its own record logic, and `tests/runoff/lab_sea_runoff_timing_check.py` already compares the model's own record trace against the exf conventions at every forcing step — extending it to a second series is the shape of this issue's check.
 
-## UNRESOLVED: Python runoff tools assume level 1 is the surface (pressure coordinates)
-
-**Date Identified**: 2026-10-03T11:00:00Z
-**Status**: Unresolved
-**UUID**: RUNOFF-032
-**Anchors**: MITgcm/utils/python/MITgcmutils/MITgcmutils/runoff/check.py::<module>; MITgcm/utils/python/MITgcmutils/MITgcmutils/runoff/targets.py::<module>; MITgcm/utils/python/MITgcmutils/MITgcmutils/runoff/convert.py::<module>
-
-### Issue or research question
-The checker's grid rules (R01 land target), the target builder's wet mask and the converter's land refusal all read `hFacC` level 1 as the surface. In pressure coordinates the surface is level `Nr` (package design decision 5); under shelfice it is `kSurfC`. With `--grid-dir` on a pressure-coordinate grid the checker would flag valid targets as land.
-
-### Evidence
-RUNOFF-002: on the cs32 `input.in_p` grid, 1011 of the 1189 runoff cells are dry at level 1 and none are dry at level `Nr` (Bob round 1; review B confirmed).
-
-### Scientific or engineering impact
-Users of pressure-coordinate or ice-shelf configurations get false land errors, or wrong spread targets.
-
-### Proposed action and acceptance
-Add a surface-level option to all three tools: `--surface-level top|bottom|kSurfC`, or detect it from `data` (`buoyancyRelation`) when a run directory is given, and document it. Acceptance: the cs32 `input.in_p` grid checks cleanly with the converted cs32 file; a shelfice grid uses `kSurfC`; the existing tests are unchanged.
-
 ## UNRESOLVED: cs32 sparse-runoff oracle (exch2 volume path; runoff temperature cell-by-cell)
 
 **Date Identified**: 2026-09-29T21:30:00Z

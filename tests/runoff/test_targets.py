@@ -26,6 +26,9 @@ the unwrapped span, so longitudes stored in [0, 360) still close. ``exch2``
 refuses a cell that is a triangle (a wet lat-lon row touching a pole, also on a
 rotated block), judged from the cell's geometry only: cs32 rotated to put a
 vertex at the pole, and a cube with perturbed centres, stay exact.
+RUNOFF-032: ``_Geom``/``read_grid``/``build_targets``'s ``surface_level``
+("top" vs "bottom") on a synthetic shelfice- and pressure-coordinate-pattern
+column, including that it changes which cell a source snaps to.
 """
 
 import math
@@ -409,6 +412,66 @@ def test_equidistant_source_goes_to_the_lowest_cell_index(tmp_path, monkeypatch)
     b = build_targets([src], grid)
     assert a.target_cell.tolist() == b.target_cell.tolist() == [2 * 6 + 3]
     write_checked(tmp_path, b, grid, "tie.nc")
+
+
+# ---------------------------------------------------------------------------
+# Surface-level modes (RUNOFF-032): "top" (default) vs. "bottom".
+
+
+def test_geom_top_mode_resolves_shelfice_pattern():
+    """A column dry at level 1 but wet at level 2 (a shelfice-pattern column)
+    is wet under the default "top" mode, which scans for the first wet
+    level, not unconditionally level 1."""
+    grid = latlon_grid(10 + 0.1 * np.arange(3), 20 + 0.1 * np.arange(3), np.ones((2, 2)))
+    hf = np.ones((2, 2, 2))
+    hf[0, 0, 0] = 0.0    # level 1 dry at cell (i=0, j=0)
+    hf[1, 0, 0] = 0.6    # level 2 is the first wet level
+    geom = T._Geom(dict(grid, hFacC=hf), T.EARTH_RADIUS)
+    assert geom.wet[0]
+
+
+def test_geom_bottom_mode_is_level_nr_unconditionally():
+    """"bottom" mode uses level Nr alone and does not fall back to a
+    shallower wet level the way "top" does."""
+    grid = latlon_grid(10 + 0.1 * np.arange(3), 20 + 0.1 * np.arange(3), np.ones((2, 2)))
+    hf = np.ones((2, 2, 2))
+    hf[0, 0, 0] = 1.0    # level 1 wet
+    hf[1, 0, 0] = 0.0    # level Nr dry; irrelevant to "top"
+    top = T._Geom(dict(grid, hFacC=hf), T.EARTH_RADIUS, surface_level="top")
+    bottom = T._Geom(dict(grid, hFacC=hf), T.EARTH_RADIUS, surface_level="bottom")
+    assert top.wet[0] and not bottom.wet[0]
+
+
+def test_build_targets_threads_surface_level():
+    """build_targets' surface_level selects the wet mask snapping sees: a
+    cell wet at level 1 but dry at level Nr is a target under "top" and
+    land -- so the source snaps to its one remaining wet neighbour --
+    under "bottom"."""
+    grid = latlon_grid(10 + 0.1 * np.arange(3), 20 + 0.1 * np.arange(2), np.ones((1, 2)))
+    hf = np.ones((2, 1, 2))
+    hf[1, 0, 0] = 0.0    # cell 0: level 1 wet, level Nr dry; cell 1 wet throughout
+    grid3 = dict(grid, hFacC=hf)
+    src = {"source_id": "s", "lon": float(grid["XC"].ravel()[0]),
+           "lat": float(grid["YC"].ravel()[0])}
+    t_top = build_targets([src], grid3, surface_level="top", max_snap_distance="500km")
+    t_bottom = build_targets([src], grid3, surface_level="bottom", max_snap_distance="500km")
+    assert t_top.target_cell.tolist() == [0]
+    assert t_bottom.target_cell.tolist() == [1]
+
+
+def test_read_grid_threads_surface_level(tmp_path):
+    """read_grid's hFacC is the surface slice chosen by surface_level."""
+    d = tmp_path / "g"
+    d.mkdir()
+    xc, yc, rac = (np.ones((2, 2)) for _ in range(3))
+    hf = np.ones((2, 2, 2))
+    hf[0, 0, 0], hf[1, 0, 0] = 1.0, 0.0   # level 1 wet, level Nr dry at (0, 0)
+    for name, a in (("hFacC", hf), ("RAC", rac), ("XC", xc), ("YC", yc),
+                    ("XG", xc), ("YG", yc)):
+        write_mds(str(d / name), a)
+    top = T.read_grid(str(d), surface_level="top")
+    bottom = T.read_grid(str(d), surface_level="bottom")
+    assert top["hFacC"][0, 0] == 1.0 and bottom["hFacC"][0, 0] == 0.0
 
 
 # ---------------------------------------------------------------------------

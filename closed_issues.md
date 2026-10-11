@@ -1331,3 +1331,53 @@ Decide whether this is intended. If a reference must resolve to inventoried Mark
 ### Gate acceptance
 
 Accepted by `loop_gate.py --check-done` at 2026-10-11T09:20:01.598853+00:00 for iteration 2026-10-11T09:13:34.394895+00:00. Decided RUNOFF-035's open question: the refusal was unintended. Root cause: doc_inventory.py::measure's Fortran-comment-prose extension tuple omitted .h, so every .h header (RNF.h, GRID.h, etc.) always measured has_docs=False regardless of content, which is exactly why doc_contract.py's reference check refused it with 'contains no inventoried documentation'. MITgcm's .h files use the identical column-1 C/c/*/! comment convention as .inc files already covered. Added .h to the tuple with an inline comment explaining why. Demonstrated the actual harness failure mode directly: MITgcm/pkg/rnf/RNF.h::<module> now measures has_docs=True via docs_measure, the exact check validate_report performs on a disposition reference -- it would no longer be refused. tools/esx is outside source_paths/test_paths/configuration_paths entirely, so this carries no scientific-signature or review-reason implications; harness_change, 0 reviewers.
+
+## 🟢 RESOLVED: Python runoff tools assume level 1 is the surface (pressure coordinates)
+
+**Date Identified**: 2026-10-03T11:00:00Z
+**Date Resolved**: 2026-10-11T13:10:14.707709+00:00
+**Status**: Resolved
+**UUID**: RUNOFF-032
+**Anchors**: MITgcm/utils/python/MITgcmutils/MITgcmutils/runoff/check.py::<module>; MITgcm/utils/python/MITgcmutils/MITgcmutils/runoff/targets.py::<module>; MITgcm/utils/python/MITgcmutils/MITgcmutils/runoff/convert.py::<module>
+
+### Issue or research question
+The checker's grid rules (R01 land target), the target builder's wet mask and the converter's land refusal all read `hFacC` level 1 as the surface. In pressure coordinates the surface is level `Nr` (package design decision 5); under shelfice it is `kSurfC`. With `--grid-dir` on a pressure-coordinate grid the checker would flag valid targets as land.
+
+### Evidence
+RUNOFF-002: on the cs32 `input.in_p` grid, 1011 of the 1189 runoff cells are dry at level 1 and none are dry at level `Nr` (Bob round 1; review B confirmed).
+
+### Scientific or engineering impact
+Users of pressure-coordinate or ice-shelf configurations get false land errors, or wrong spread targets.
+
+### Proposed action and acceptance
+Add a surface-level option to all three tools: `--surface-level top|bottom|kSurfC`, or detect it from `data` (`buoyancyRelation`) when a run directory is given, and document it. Acceptance: the cs32 `input.in_p` grid checks cleanly with the converted cs32 file; a shelfice grid uses `kSurfC`; the existing tests are unchanged.
+
+**Implemented 2026-10-11 (Bob).** Two modes, not three: `top` (default; z
+coordinates, with or without shelfice) is each column's first wet level
+scanning from level 1, which is `model/src/ini_masks_etc.F:177-191`'s own
+`kSurfC` scan, confirmed from source before implementing it — so a separate
+`kSurfC` reading was never needed, only the generalization from "level 1" to
+"first wet level". `bottom` (pressure coordinates) is level `Nr`
+unconditionally, as `model/src/apply_forcing.F:466-474` requires. A shared
+helper (`MITgcmutils.runoff.check._surface_hfac`) backs `_read_grid_field`
+(check.py), `_Geom.__init__`/`read_grid` (targets.py) and `_grid`
+(convert.py); each tool gained a `--surface-level {top,bottom}` CLI flag
+(default `top`, bit-for-bit the old level-1 hardcode on a grid without
+shelfice — all 356 of `pytest tests/runoff` pass unchanged), and check.py's
+command line auto-detects `bottom` from `buoyancyRelation` of
+`--grid-dir`'s own `data` file (`'OCEANICP'`/`'ATMOSPHERIC'`). Measured on
+the real cs32 `input.in_p` grid (built and run for this issue,
+`global_ocean.cs32x15/output_esx_input.in_p`, PASS at 10 digits against
+`results/output.in_p.txt`): the committed `input.rnof_sparse/runoff_sparse.nc`
+(1189 targets) goes from 1011 R01 land findings under the unfixed level-1
+hardcode to 0 under `--surface-level bottom` (or auto-detected), confirming
+the figure this issue was filed on. A synthetic shelfice-pattern column (dry
+at level 1, wet at level 2) resolves correctly to the deeper level under the
+default `top` mode in all three tools (new tests in
+`tests/runoff/test_runoff_check.py`, `test_targets.py`, `test_convert.py`);
+a column dry at every level is still refused exactly as before (must-fail
+control). Awaiting review and final verification.
+
+### Gate acceptance
+
+Accepted by `loop_gate.py --check-done` at 2026-10-11T13:10:14.707709+00:00 for iteration 2026-10-11T09:24:15.768719+00:00. Fixed the Python runoff tools' (check.py, targets.py, convert.py) hardcoded assumption that level 1 of hFacC is always the surface, which is wrong in pressure coordinates (surface is level Nr) and under shelfice (surface is the first wet level, which may be below level 1). A shared two-mode (top/bottom) helper replaces the hardcode, with a --surface-level CLI flag and auto-detection from buoyancyRelation. Bob confirmed from source (not merely assumed) that top mode exactly generalizes the model's own kSurfC computation (ini_masks_etc.F:177-191); Richard independently re-confirmed this against source himself and found that pkg/rnf's own Fortran already uses this exact two-mode split internally, additional corroboration. Both independently reproduced the cs32 input.in_p real-grid result (1011 of 1189 false land findings become 0) and verified the shelfice-pattern resolution in all three tools. Final verification EXECUTED PASS, 71 of 71 scientific commands.

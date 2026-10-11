@@ -412,6 +412,17 @@ MITgcm grid output (`hFacC`, `RAC`, `XC`, `YC`) and runs the grid checks as well
 It reads time series one block of records at a time, so memory stays bounded for
 very large files.
 
+`--grid-dir`'s `hFacC` is read at the model's own surface level
+([package design](package_design.md) decision 5), not unconditionally level 1
+(RUNOFF-032): `--surface-level top` (the default) is each column's first wet
+level scanning from level 1, correct in z coordinates with or without
+shelfice; `--surface-level bottom` is level `Nr` unconditionally, for
+pressure coordinates. Without `--surface-level`, the command line
+auto-detects it from `buoyancyRelation` of `--grid-dir`'s own `data` file
+(`'OCEANICP'`/`'ATMOSPHERIC'`: bottom; otherwise, including no `data` file:
+top); `check_files`'s own `surface_level` keyword does not auto-detect, since
+it is not told which directory, if any, is a run directory.
+
 `--tables-only` (`check_files(..., tables_only=True)`) checks a file that holds
 only the source, alias and target tables, such as the output of the target-table
 builder (§13) before its time series are added. In this mode the `time` dimension
@@ -471,7 +482,7 @@ misbehave), **W** a warning (suspicious but usable), **I** information.
 | `P01` | W | A time-series chunk spans more than one record along `time`. |
 | `P02` | E | A model-read variable uses an HDF5 filter other than deflate, shuffle or fletcher32. |
 | `X01` | E | Across several files: identical source, alias and target tables, grid attributes and variable set; records in time order, with each file's first bound equal to the previous file's last bound; `_YYYY` files share one offset of their first `time` value from 1 January of the year in their name; for `fixed` sampling the spacing across each file boundary equals `mitgcm_time_period`. |
-| `R01` | E | (`--grid-dir`) A target cell is on land (`hFacC` = 0 at level 1). |
+| `R01` | E | (`--grid-dir`) A target cell is on land (`hFacC` = 0 at the model's own surface level, chosen by `--surface-level`/`surface_level`, §9's note above; not unconditionally level 1). |
 | `R02` | E | (`--grid-dir`) `target_cell_area` differs from `RAC` by more than 1e-4 relative. |
 | `R04` | E | (`--grid-dir`, schema 1.1) A `target_level` is not a level of the grid (above the number of levels of `hFacC`) or is dry at the target cell (`hFacC` = 0 at that level), which the model refuses at init. |
 | `R03` | W | (`--grid-dir`) `target_lon` / `target_lat` differ from `XC` / `YC` by more than 1e-3 degrees. The model refuses the same disagreement at init, but only above half the cell's own spacing, which on every grid in use is far coarser than 1e-3°, so a file that passes R03 always passes the model's check. R03 stays a warning: it compares *unpacked* values and runs on grids whose `XC`,`YC` the model would not compare at all. |
@@ -679,11 +690,15 @@ write the tables into an existing runoff file.
 
 **Inputs.**
 
-- **Grid:** MITgcm grid output, global or tiled: `hFacC` (level 1, wet where
-  > 0), `XC`, `YC` (cell centers, degrees), `XG`, `YG` (south-west cell corners,
-  degrees) and `RAC` (m²). `mitgcm_grid_nx` and `mitgcm_grid_ny` come from the
-  array shape, and `target_cell` uses the checker's flattening `c = i + nx·j`.
-  Only spherical grids in degrees are supported.
+- **Grid:** MITgcm grid output, global or tiled: `hFacC` (wet where > 0, at
+  the model's own surface level chosen by `surface_level`/`--surface-level`:
+  `"top"`, the default, each column's first wet level scanning from level 1,
+  z coordinates with or without shelfice; `"bottom"`, level `Nr`
+  unconditionally, pressure coordinates; RUNOFF-032), `XC`, `YC` (cell
+  centers, degrees), `XG`, `YG` (south-west cell corners, degrees) and `RAC`
+  (m²). `mitgcm_grid_nx` and `mitgcm_grid_ny` come from the array shape, and
+  `target_cell` uses the checker's flattening `c = i + nx·j`. Only spherical
+  grids in degrees are supported.
 - **Sources:** either a CSV file or a schema-1.0 NetCDF file.
   - The CSV has the columns `source_id`, `lon`, `lat` (degrees), optional `name`,
     `type`, `notes`, `reference` and `alt_names` (aliases separated by `;`), and
@@ -951,13 +966,15 @@ the model the same runoff. `sparse_to_dense` is the inverse.
   `(ny, nx)`, and `target_cell` is `i + nx·j` in it. Nothing else about the
   kind of grid is used, so lat-lon, cubed-sphere and LLC layouts are converted
   alike.
-- **Grid:** `RAC` and `hFacC` (level 1) from a directory of MITgcm grid
-  output, and `XC`, `YC` when present. From Python the arrays can be given
-  directly. Level 1 is the surface level in z coordinates. In pressure
-  coordinates the surface is level `Nr`, and level 1 is dry wherever the
-  ocean is shallower than the deepest level, so with `--grid-dir` the
-  converter refuses runoff on such cells. From Python, pass the surface mask
-  as the `hfac` array.
+- **Grid:** `RAC` and `hFacC` (the model's own surface level) from a
+  directory of MITgcm grid output, and `XC`, `YC` when present. From Python
+  the arrays can be given directly. The surface level is chosen by
+  `--surface-level`/`surface_level` (RUNOFF-032): `"top"` (default) is each
+  column's first wet level scanning from level 1, correct in z coordinates
+  with or without shelfice; `"bottom"` is level `Nr` unconditionally, for
+  pressure coordinates (`--surface-level bottom`, since this command line
+  does not read a run's `data` file to auto-detect it, unlike the checker's).
+  From Python, an already-2D `hfac` array bypasses the mode entirely.
 - **Timing:** the `runoff*` settings of `data.exf` and the calendar of
   `data.cal`, as options (table below).
 
@@ -993,10 +1010,10 @@ the model the same runoff. `sparse_to_dense` is the inverse.
   is zero. A source has one temperature, so cell temperatures that differ
   within a group are replaced by this mean, and `sparse_to_dense` does not
   give them back.
-- **Refusals:** a nonzero value on a land cell (`hFacC` = 0 at level 1), and a
-  NaN or Inf value, stop the conversion with an error that names the cell and
-  record. Negative values give a warning. Only the records exf would read are
-  converted and checked.
+- **Refusals:** a nonzero value on a land cell (`hFacC` = 0 at the model's own
+  surface level), and a NaN or Inf value, stop the conversion with an error
+  that names the cell and record. Negative values give a warning. Only the
+  records exf would read are converted and checked.
 
 **Timing.** Each exf timing mode maps to one time axis. Line numbers refer to
 `pkg/exf`, `pkg/cal` and `eesupp/src` in `MITgcm/`.
