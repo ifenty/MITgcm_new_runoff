@@ -94,6 +94,7 @@ PROBE_FILE = "probe.nc"
 DATA_RNF = """# Sparse runoff package parameters: the placement probe
  &RNF_PARM01
   RNF_file = '{0}',
+  RNF_applyAsRain = .TRUE.,
  &
 """.format(PROBE_FILE)
 

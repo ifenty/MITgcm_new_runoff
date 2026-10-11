@@ -16,7 +16,10 @@
     "MITgcm/pkg/pkg_depend",
     "MITgcm/pkg/ptracers/ptracers_apply_forcing.F",
     "MITgcm/utils/python/MITgcmutils/MITgcmutils/runoff",
-    "MITgcm/utils/python/MITgcmutils/setup.py"
+    "MITgcm/utils/python/MITgcmutils/setup.py",
+    "MITgcm/model/src/external_forcing.F",
+    "MITgcm/model/src/external_forcing_surf.F",
+    "MITgcm/pkg/longstep/longstep_forcing_surf.F"
   ],
   "test_paths": [
     "tests"
@@ -222,6 +225,11 @@
         "L_unset",
         "--case",
         "U_unset"
+      ],
+      [
+        "{python}",
+        "tests/rnf/level_check.py",
+        "--build"
       ],
       [
         "{python}",
@@ -604,6 +612,11 @@
       [
         "{python}",
         "tests/rnf/tendency_term_check.py",
+        "--build"
+      ],
+      [
+        "{python}",
+        "tests/rnf/level_check.py",
         "--build"
       ],
       [

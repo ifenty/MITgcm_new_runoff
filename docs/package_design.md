@@ -5,7 +5,9 @@
 > placement, file checks and the volume flux of a constant record:
 > RUNOFF-004; time handling: RUNOFF-005; the temperature, salinity and
 > tracer terms and the reads they need: RUNOFF-013, moved from tendency terms
-> to the surface flux fields by RUNOFF-031).** This is
+> to the surface flux fields by RUNOFF-031; the generalized multi-level route,
+> `addMass` and per-level tendencies, made the default with the RUNOFF-031
+> route kept behind `RNF_applyAsRain`: RUNOFF-046).** This is
 > the decision record for RUNOFF-010. Every statement about existing MITgcm
 > behavior was read from the live source in `MITgcm/` (branch `new_runoff`) and
 > carries a `file:line` citation. Nothing here was established by running the
@@ -22,10 +24,10 @@ Paths are relative to `MITgcm/`.
 | # | Topic | Choice |
 |---|---|---|
 | 1 | Package identity | New package `pkg/rnf` (`ALLOW_RNF`, `useRNF`, `data.rnf`). The name `runoff` is unusable. |
-| 2 | Volume flux | The package fills the exf `runoff` field (option A). It needs `useEXF` and `ALLOW_RUNOFF`. `exf_mapfields.F` is unchanged. |
-| 3 | Temperature, salinity | Surface targets use the surface flux fields (RUNOFF-031): heat through the exf `runoftemp` field and its `EXF_MAPFIELDS` term in `Qnet` (needs `ALLOW_RUNOFTEMP`), salt added to `surfaceForcingS`, as mass flux × (source property − property the freshwater formulation already assigned). Subsurface: tendency terms, RUNOFF-025. |
-| 4 | Passive tracers | The same form, added to `surfaceForcingPTr` after `PTRACERS_FORCING_SURF` and again in `LONGSTEP_FORCING_SURF`; names matched to `PTRACERS_names` at init; refused under pkg/longstep with `LS_nIter ≠ 1`. |
-| 5 | Target level | Surface targets use the model's own surface-level rule (`1`, `Nr` or `kSurfC`). Targets under an ice shelf or beyond an open boundary are refused; so is a moving shelf edge (`SHI_update_kTopC`) until the `addMass` path exists. |
+| 2 | Volume flux | **Two routes, one per run, chosen by `RNF_applyAsRain` (RUNOFF-046).** Default (`.FALSE.`), the *generalized* route: `rhoConstFresh·flux·frac` into `addMass` at each target entry's own level (option C, `RNF_ADD_MASS`; needs `ALLOW_ADDFLUID`, `selectAddFluid` 1 or 2, a blank `addMassFile`). `.TRUE.`, the *legacy* route: the package fills the exf `runoff` field (option A; needs `useEXF` and `ALLOW_RUNOFF`), refused for any target that is not its column's surface cell. |
+| 3 | Temperature, salinity | Generalized route: per-level tendencies `[(mX) − m_X·X(k)]·μ·D` at each entry's level (`RNF_TENDENCY_APPLY_T/S`, restored from 46684c3af^), the model's generic `temp_addMass`/`salt_addMass` term on the runoff share cancelled. Legacy route: the surface flux fields (RUNOFF-031): heat through the exf `runoftemp` field and its `EXF_MAPFIELDS` term in `Qnet` (needs `ALLOW_RUNOFTEMP`), salt added to `surfaceForcingS`, as mass flux × (source property − property the freshwater formulation already assigned). |
+| 4 | Passive tracers | Generalized route: the same per-level tendency in `PTRACERS_APPLY_FORCING` (`RNF_TENDENCY_APPLY_PTR`), local reference. Legacy route: the same form, added to `surfaceForcingPTr` after `PTRACERS_FORCING_SURF` and again in `LONGSTEP_FORCING_SURF`. Both: names matched to `PTRACERS_names` at init; refused under pkg/longstep with `LS_nIter ≠ 1`. |
+| 5 | Target level | Schema 1.0 (and no `target_level`): the column's surface cell (`1`, `Nr` or `kSurfC`). Schema 1.1: `target_level` is an absolute level index, which must be a wet level of the column (RUNOFF-046). The legacy route refuses any target that is not the surface cell. Targets under an ice shelf or beyond an open boundary are refused on both routes, and so is a moving shelf edge (`SHI_update_kTopC`); under-shelf targets remain RUNOFF-020's. |
 | 6 | Reading, decomposition | NetCDF `NF_*` calls under `HAVE_NETCDF`, master thread, every process reads; index range checked in the model; cell placement by the `mdsio` arithmetic. |
 | 7 | Time handling | exf record routines for fixed and monthly sampling; own code for hold-exact, yearly sampling and the source-vector read. One set of record weights for all series. |
 | 8 | Diagnostics, monitor, pickup | The runoff's own surface fluxes (`RNFqnet`, `RNFsflx`, `RNFtfNN`) plus the input fields; a monitor block; no pickup. |
@@ -274,6 +276,90 @@ files. RUNOFF-004 moves from "exf routines" to `pkg/rnf`.
 
 ## Decision 2: volume flux path
 
+**Two routes (RUNOFF-046, owner decision 2026-10-10, quoted in that issue of
+`open_issues.md`).** Runoff is a lateral advective input, not a vertical
+surface flux, so the default is now the *generalized* route, option C below,
+and the route this decision chose in RUNOFF-010, option A, survives as the
+*legacy* route behind the new `RNF_PARM01` switch `RNF_applyAsRain`
+(default `.FALSE.`). Exactly one route contributes in a run: every hook of the
+legacy route tests `RNF_applyAsRain` at its call site
+(`pkg/exf/exf_getffields.F`, `model/src/external_forcing_surf.F`,
+`pkg/longstep/longstep_forcing_surf.F`, and the `RNF_applyT` condition of
+`pkg/exf/exf_mapfields.F`), and every routine of the generalized route returns
+at once when it is set. `RNF_EXF_RUNOFF`, `RNF_FORCING_SURF` and
+`RNF_FORCING_SURF_PTR` themselves are unchanged, so a run with
+`RNF_applyAsRain = .TRUE.` is the RUNOFF-031 run bit for bit (measured:
+`lab_sea/input.rnof_sp_const` 16 digits against its reference, and
+`refusal_check.py --case as_rain_surface_11`, a schema-1.1 file with every
+`target_level` 1, 16 digits against the dense constant run). The legacy route
+is refused for a file with **any** target that is not the surface cell of its
+column (decision 5), so it is never extended below the surface.
+
+*The generalized route (`RNF_ADD_MASS`, `pkg/rnf/rnf_add_mass.F`).* Called
+from `LOAD_FIELDS_DRIVER` right after `RNF_FIELDS_LOAD`, after the per-step
+reset of `addMass` (`model/src/load_fields_driver.F:110-128`) and before
+`CALC_DIV_GHAT` and `INTEGR_CONTINUITY` read it. For each target entry `e` of
+the tile it adds `rhoConstFresh·flux_s·frac_e` [kg/s] to
+`addMass(i,j,RNF_tgtK(e))`, one entry at a time, so entries of one cell at
+different levels each land at their own. The factor `rhoConstFresh`, with the
+model's `mass2rUnit = 1/rhoConst` on `addMass`, carries the volume the legacy
+route carries through `EmPmR = −rhoConstFresh·runoff`. The free surface
+sees the depth sum of `addMass` (`calc_div_ghat.F:127-135`,
+`integr_continuity.F:108-133`), so it rises by the same amount whatever the
+level (measured on lab_sea, `tests/rnf/level_check.py`: the `Eta` field
+after the first step for a source at level 5 differs from the level-1 one
+by 6.9e-17 of the response `Eta_surf - Eta_zero`, and for the same source
+spread over levels 2-5 not at all, while `W` in the target column differs
+by 0.97 of the injection velocity `flux/rA`; from the second step the fields
+drift apart, by 6.9e-3 and 2.0e-2 of the response at steps 2 and 3 for
+level 5 and by 4.1e-3 and 1.2e-2 for levels 2-5, because the T and S
+profiles and so the flow differ, while the domain volume `sum(Eta·rA)` stays
+the same to 1.6e-15). The route needs `ALLOW_ADDFLUID` and
+`selectAddFluid` 1 or 2, and a blank `addMassFile`, because the reset happens
+only then and the runoff would otherwise accumulate in a file-loaded field
+(`RNF_CHECK`); `rigidLid` is a model error with it
+(`model/src/config_check.F:837-845`) and synchronous stepping draws the
+model's one-step-lag warning (`:846-854`). The per-cell bound `RNF_cellVolMax`
+is applied there to each cell and level the entries are in, with the
+thickness of that level, `drF(k)·hFacC(i,j,k)`, and the summed flux of the
+entries of that cell and level (measured: three sources of 1e7 m³/s refused
+on lab_sea level 2, 10 m thick, and accepted on level 8, 50 m thick).
+
+What the generalized route gives up, accepted by the owner: reasons 2 and 4
+below are now its documented consequences. `pkg/seaice`, `pkg/thsice` and
+`pkg/bling` read the exf `runoff` array, which stays zero, so they do not see
+this runoff; the runoff control `xx_runoff`, `EXFroff` and the exf adjoint
+storage concern a field the package does not fill; and the virtual salt flux,
+`selectBalanceEmPmR` and the KPP surface buoyancy flux do not include it.
+
+**KPP visibility gap (RUNOFF-046, owner accepted, 2026-10-10).** This is wider
+than the "freshwater part" reason 4 states below: `KPP_FORCING_SURF` computes
+`KPPbo` from `surfaceForcingT`/`surfaceForcingS` alone
+(`pkg/kpp/kpp_forcing_surf.F:225-229`), and the non-local transport term
+`KPPghat` multiplies the same two fields directly
+(`pkg/kpp/kpp_transport_t.F:78-79,93-94`, `kpp_transport_s.F:95-96,111-112`).
+The generalized route's heat and salt enter only through `gT`/`gS`
+(`RNF_TENDENCY_APPLY_T/S`, called from `THERMODYNAMICS`'s chain,
+`model/src/apply_forcing.F:720,960`), which runs after `KPP_CALC` (called from `DO_OCEANIC_PHYS`,
+`model/src/forward_step.F:657`, at `model/src/do_oceanic_phys.F:956`, which
+precedes `THERMODYNAMICS` at `forward_step.F:733`) and never touches
+`surfaceForcingT`/`S` (`RNF_FORCING_SURF`'s write is gated on
+`RNF_applyAsRain`, `model/src/external_forcing_surf.F:406-416`, `.FALSE.` by
+default). So **both** the heat and the salt/freshwater buoyancy terms are
+invisible to `KPPbo`/`KPPghat`, not just salt — and not partially or on a
+one-step lag like the sea-ice/thsice/bling gap above: `theta`/`salt` do reach
+KPP's density/stability profile one step later (`pkg/kpp/kpp_routines.F:1851`
+and nearby), but `bo`/`ghat` never reference `theta`/`salt`, only
+`surfaceForcingT`/`S`, so this channel shapes mixing coefficients, not
+`bo`/`ghat`'s amplitude. A generalized-route target therefore drives no
+surface buoyancy forcing or non-local transport in KPP's mixed-layer
+calculation at any time, under any grid or timing. Accepted for now,
+unexercised by any oracle; `tests/rnf/kpp_heat_check.py` covers only the
+legacy route (every committed input pins `RNF_applyAsRain=.TRUE.`).
+
+The rest of this decision is the RUNOFF-010 analysis that chose option A, kept
+because it is the legacy route's.
+
 **Alternatives.**
 
 - **A. Fill exf `runoff`.** The package computes `Σ_s flux_s·frac_{s,c}/rA` in
@@ -345,7 +431,12 @@ build without exf and is not scheduled.
   "Known effects inherited from the dense path" below, and the third, since
   RUNOFF-031, is the condition of the `ALLOW_RUNOFTEMP` block of
   `exf_mapfields.F`, which also runs for `RNF_applyT` (decision 3). Those three
-  are the whole exf footprint.
+  are the whole exf footprint. Since RUNOFF-046 the call and the
+  `exf_mapfields.F` condition are made on the legacy route only
+  (`useRNF .AND. RNF_applyAsRain`, and `RNF_applyT .AND. RNF_applyAsRain`),
+  so `exf_getffields.F` now includes `RNF_SIZE.h`/`RNF.h` under `ALLOW_RNF`,
+  as `exf_mapfields.F` already did; still three files, and on the generalized
+  route the exf `runoff` field stays zero.
 
 **Mutual exclusion and other refusals in `RNF_CHECK`** (each a fatal error
 through `PRINT_ERROR` and the package error count):
@@ -940,6 +1031,80 @@ documents exf and not the internals of `pkg/rnf`.
 
 ## Decision 3: temperature and salinity contributions
 
+**The generalized route (RUNOFF-046), the default.** The heat and salt of the
+runoff are tendencies at the level of each target entry, added by
+`RNF_TENDENCY_APPLY_T` and `RNF_TENDENCY_APPLY_S` (`pkg/rnf/rnf_tendency_apply.F`),
+which are the routines RUNOFF-031 removed, recovered from fork commit
+`46684c3af^` and generalized in two ways.
+
+1. *The level.* The old routines acted at the column's surface level only.
+   These are called once per level `k` from `APPLY_FORCING_T/S`
+   (`model/src/apply_forcing.F`, after the `ICEFRONT_TENDENCY_APPLY_T/S`
+   calls, where the old calls were) and from `EXTERNAL_FORCING_T/S`
+   (`model/src/external_forcing.F`, beside icefront's; that path is compiled
+   only with `USE_OLD_EXTERNAL_FORCING`, which no experiment here uses, so
+   those two calls are unrun), and add the entries with `RNF_tgtK = k`.
+2. *The reference.* The old routines used the property the model's surface
+   freshwater term (`EmPmR`, `temp_EvPrRn`, `salt_EvPrRn`, `convertFW2Salt`)
+   had already given the water: the N/L/U branches below. On this route the
+   water is an `addMass` source, which the model treats as water at the
+   **local** value: tracer tendencies are in advective form, which removes
+   `X·div(U)` (`pkg/generic_advdiff/gad_calc_rhs.F:768-779`, and the same in
+   `gad_advection.F`), so the mass source changes no concentration by
+   itself. The physical term of water at `X_s` entering ambient water at
+   `X(i,j,k)` is then, with no branching,
+
+   ```
+   g_X += [ (mX) − m_X·X(i,j,k) ] · μ · recip_drF(k) · recip_hFacC(i,j,k)
+   ```
+
+   with `m_e = rhoConstFresh·flux_s·frac_e/rA` per entry. A source whose
+   temperature is missing is in neither `(mT)` nor `m_T` and enters at the
+   ambient temperature; salinity defaults to 0, so a file without
+   `runoff_salinity` dilutes (`−m·S(i,j,k)`).
+
+*The model's generic `addMass` term, cancelled.* With `selectAddFluid ≠ 0`
+and `temp_addMass` (`salt_addMass`) set, `APPLY_FORCING_T` (`_S`) adds
+`addMass·μ·(temp_addMass − X')/rA·D` with `X' = θ` in the
+nonlinear-free-surface or `convertFW2Salt = −1` branch and `tRef(k)` otherwise
+(`model/src/apply_forcing.F:504-531`, `874-901`; `external_forcing.F` has the
+same). That term acts on the runoff share of `addMass` too, with one global
+property, which cannot be the per-source one. The routines therefore
+subtract exactly that term for each entry's `m_e`, with the model's own branch
+test, so the total is the physical term above in every branch. They do not
+refuse `temp_addMass`/`salt_addMass` instead: `salt_addMass` is 0, not unset,
+in every default run, because `model/src/ini_parms.F:1580` copies
+`salt_EvPrRn` (default 0, `set_defaults.F:265`) into it, so a refusal would
+refuse every default set-up and could be met only by unsetting `salt_EvPrRn`,
+which changes the surface salt formulation of precipitation and evaporation as
+well. (Arch first resolved this as a refusal; the default above made it
+unworkable, and the cancellation gives the total that resolution asked for.)
+In the virtual-flux branch the physical total, relative to the local value,
+differs from the model's own convention for its generic term, relative to
+`tRef(k)`/`sRef(k)`: the runoff term follows the physics, not that
+convention. Measured (`tests/rnf/level_check.py`, lab_sea, first step from a
+uniform state): `deep` (default: no `temp_addMass`, `salt_addMass` = 0,
+branch U), `deep_U_set` (`temp_addMass` = 7) and `deep_L_set`
+(`convertFW2Salt = −1`, both set) all give the analytic total at the target
+level to at most 1.7e-14 relative; with the cancellation removed (mutant
+`build_esx_addm_mut_nocancel`) the totals fail by 0.45 to 1.3 relative while
+the diagnostics, which are the physical term, still pass.
+
+*Time level.* The terms use the source series of the current step, the step
+of the `addMass` `RNF_ADD_MASS` filled, as the model's own generic term does;
+`RNF_lagFlds` is the legacy route's only. Without `staggerTimeStep` both share
+the one-step lag the model warns about.
+
+*Diagnostics.* `RNFgT` and `RNFgS` (three-dimensional, `degC/s` and
+`g/kg/s`) are the physical term, i.e. what the runoff does to the property in
+total, including the share the generic term provides; `RNFaddM` is the runoff
+share of `addMass` (kg/s). The RUNOFF-045 refusal (`ALLOW_ATM_TEMP` with
+`temp_EvPrRn` set) and the `ALLOW_RUNOFTEMP` requirement are the legacy
+route's only: this route does not use the exf runoff heat.
+
+Everything below this point is the **legacy route** (`RNF_applyAsRain =
+.TRUE.`), unchanged.
+
 **Revised 2026-10-09 by RUNOFF-031 (owner decision, quoted in that issue of
 `open_issues.md`):** "follow existing conventions for adding volume, heat,
 salt, and other tracers. In the case of fluxes entering the surface grid cell,
@@ -1229,6 +1394,16 @@ volume oracle and gains the `runoftemp` fill.
 
 ## Decision 4: passive tracers
 
+**The generalized route (RUNOFF-046).** `RNF_TENDENCY_APPLY_PTR`, called from
+`PTRACERS_APPLY_FORCING` beside `GCHEM_ADD_TENDENCY`
+(`pkg/ptracers/ptracers_apply_forcing.F`, where the RUNOFF-008 call was),
+adds `[(mC_n) − m·C_n(i,j,k)]·μ·D` at each entry's level for a ptracer that a
+`runoff_ptracer_<NAME>` variable feeds. `pkg/ptracers` has no generic `addMass`
+term, so there is nothing to cancel, and a ptracer that no variable feeds
+enters at its ambient concentration. Its diagnostic is the three-dimensional
+`RNFtrNN`. The match of names and the refusal under pkg/longstep with
+`LS_nIter ≠ 1` apply to both routes. What follows is the legacy route.
+
 **Where ptracers handles freshwater.** `PTRACERS_FORCING_SURF`, called from
 `EXTERNAL_FORCING_SURF` (`model/src/external_forcing_surf.F:188-197`), builds
 `surfaceForcingPTr` with the same three branches as temperature and salinity,
@@ -1265,7 +1440,9 @@ The time-level rule of decision 3 applies unchanged, because
 **Hook points, two, and why.** `RNF_FORCING_SURF` calls it at the end of the
 `EXTERNAL_FORCING_SURF` tile loop, i.e. after `PTRACERS_FORCING_SURF` has set
 the field (`model/src/external_forcing_surf.F:188-197`, `402-409`), so
-pkg/ptracers itself is not edited. **A hook there alone does not reach a
+this route needs no edit of pkg/ptracers (the one edit there is the
+generalized route's `RNF_TENDENCY_APPLY_PTR` call in
+`ptracers_apply_forcing.F`, RUNOFF-046). **A hook there alone does not reach a
 pkg/longstep run**: `LONGSTEP_THERMODYNAMICS` zeroes and rebuilds
 `surfaceForcingPTr` in `LONGSTEP_FORCING_SURF` before every ptracer step
 (`pkg/longstep/longstep_thermodynamics.F:156-159`,
@@ -1429,10 +1606,35 @@ be lost when it fires. An exact check needs one more hook between
 runs with an evolving shelf edge. The `addMass` path makes under-shelf targets
 legal, and the refusal is lifted with it.
 
-**Interior levels (schema 1.1).** Each per-tile target entry stores its level.
-A value above 1 selects a fixed model level and the `addMass` path. The dense
-fields then need a level dimension or a per-level sparse loop; that choice
-belongs to the implementation issue.
+**Interior levels (schema 1.1, implemented by RUNOFF-046).** Each per-tile
+target entry stores its level in `RNF_tgtK`. In a schema-1.0 file, and in a
+file without `target_level`, that is the column's surface level by the rule
+above. In a schema-1.1 file `target_level` is an **absolute 1-based MITgcm
+level index**, used as it is with no translation (a pressure-coordinate file
+that means the surface writes `Nr`); `RNF_INIT_FIXED` reads the minor version
+of `mitgcm_runoff_schema_version` to tell the two apart. A 1.1 level must be
+in `1..Nr` (refused for every process, naming the source, the level and
+`Nr`) and wet at the target cell (refused on the owning tile, "target_level is
+not a wet level of this column"); every wet cell of a column lies between
+`kSurfC` and `kLowC`, so that one test is "at or below the column's top". A
+source spread over a depth range is a source with several entries on one
+cell at different levels; splitting the range is
+`MITgcmutils.runoff.targets.distribute_levels`' job, not the model's. The
+per-level work loops over the entries and tests each entry's own `RNF_tgtK`
+(the "per-level sparse loop" alternative), so no three-dimensional companion
+of the dense fields exists and the legacy route's memory is unchanged.
+
+**The legacy route takes surface targets only.** With `RNF_applyAsRain =
+.TRUE.`, `RNF_INIT_FIXED` refuses any target whose level is not its column's
+surface cell, whatever the file's other targets are ("RNF_applyAsRain=.TRUE.
+needs every target at the surface cell", owner decision 2026-10-10). A
+schema-1.1 file with every level at the surface runs on it unchanged.
+
+The refusals of targets under an ice shelf and of `SHI_update_kTopC` apply to
+both routes: the generalized route could place an under-shelf entry, but no
+experiment here can run it (isomip compiles no exf), so lifting them is left
+to RUNOFF-020 with a test. The text below about "until the `addMass` path
+exists" is the RUNOFF-010 plan for that step.
 
 **Consequence for issues.** RUNOFF-020: sources at the ice front in open water
 work with the surface path; sources under the shelf need the `addMass` path and
@@ -1621,7 +1823,7 @@ tendency terms.
 | `RNFsflx ` | g/m²/s | `(mS) − m·S_ref`, the salt `RNF_FORCING_SURF` adds to `surfaceForcingS` times `rUnit2mass`, > 0 increases salinity, as `SFLUX` |
 | `RNFtemp ` | °C | `(mT)/m_T` where `m_T > 0` |
 | `RNFsaln ` | g/kg | `(mS)/m` where `m > 0` |
-| `RNFnsrc ` | 1 | number of sources feeding the cell |
+| `RNFnsrc ` | 1 | number of target entries feeding the cell (of sources, in a schema-1.0 file) |
 | `RNFtfNN ` | tracer units·kg/m²/s | `(mC_n) − m·C_ref,n`, the tracer `RNF_FORCING_SURF_PTR` adds to `surfaceForcingPTr` times `rUnit2mass`, for runoff tracer `NN`, i.e. the `NN`-th `runoff_ptracer_*` variable of the file, not ptracer `NN` |
 
 `RNFqnet`, `RNFsflx` and `RNFtfNN` are registered and filled (RUNOFF-031);
@@ -1636,7 +1838,10 @@ runoff present but every source feeding the cell missing its temperature in
 the record used — a deliberate, stated value and not an accident of the
 division it would otherwise be; `RNFnsrc` counts the target entries owning
 the cell, which schema rule T03 (no duplicate `(source, cell)` pair) makes
-the number of distinct sources too.
+the number of distinct sources too in a schema-1.0 file. T03 keys on the
+level as well, so a schema-1.1 source spread over several levels of one cell
+counts once per level (RUNOFF-046); on the generalized route the
+three-dimensional `RNFaddM` says where each share went.
 
 **Monitor** (`RNF_MONITOR`, at `monitorFreq`, in the style of
 `pkg/exf/exf_monitor.F:189-198`), implemented in `pkg/rnf/rnf_monitor.F`,

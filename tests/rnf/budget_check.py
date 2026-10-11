@@ -1452,6 +1452,9 @@ def write_input(case, input_dir, table, perturb=None, no_tracers=False):
                  " &RNF_PARM01\n"
                  f"  RNF_file = '{SPARSE_FILE}',\n"
                  "  RNF_debugLev = 3,\n"
+                 # the legacy surface route this check measures; the
+                 # default is the generalized route (RUNOFF-046)
+                 "  RNF_applyAsRain = .TRUE.,\n"
                  " &\n")
     return dt, info
 

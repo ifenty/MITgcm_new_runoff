@@ -57,6 +57,8 @@ CHECK_CASES = {
     "land": {"target_on_land"},
     "cell area": {"cell_area"},
     "cell centre": {"target_coords", "target_coords_nan"},
+    "dry level": {"level_11_dry"},
+    "surface-only route": {"as_rain_deep_target"},
     "array bound": {"too_many_sources", "too_many_targets"},
     "per-cell aggregate": {"cell_above_vol_max"},
 }

@@ -324,6 +324,10 @@ def write_input(input_dir, sparse, dt=3600.0):
                      " &RNF_PARM01\n"
                      f"  RNF_file = '{SPARSE_FILE}',\n"
                      "  RNF_debugLev = 3,\n"
+                     # the legacy surface route (exf runoftemp) this
+                     # check measures; the default is the generalized
+                     # route (RUNOFF-046)
+                     "  RNF_applyAsRain = .TRUE.,\n"
                      " &\n")
     return dt
 

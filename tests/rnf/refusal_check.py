@@ -16,14 +16,25 @@ There are three kinds of case.
 * **Configuration refusals** (``RNF_READPARMS``, ``RNF_CHECK``): a setting of
   ``data.exf``, ``data.pkg`` or ``data.rnf`` that the package refuses. They
   name a valid sparse file, ``input.rnof_const/runoff_sparse.nc``, because
-  the file is read before ``RNF_CHECK`` runs.
+  the file is read before ``RNF_CHECK`` runs. Every case runs the legacy
+  surface route (``RNF_applyAsRain = .TRUE.`` in ``DATA_RNF``) except
+  ``generalized_needs_addfluid``, which leaves the switch at its default and
+  is refused because this binary has no ``ALLOW_ADDFLUID`` (RUNOFF-046; the
+  generalized route itself is measured by ``tests/rnf/level_check.py``).
 * **File refusals** (``RNF_INIT_FIXED``, ``RNF_NC_READ_FLUX``,
   ``RNF_NC_ATT_REAL``): a copy of that file with one violation, written into
   the scratch directory by ``sparse_file``:
 
   - table entries: a cell index or a source index out of range, a
-    ``target_level`` of 2, a fraction that is negative or not a number, a
-    negative fraction hidden in a sum that is still 1;
+    ``target_level`` of 2 in a schema-1.0 file, a fraction that is negative or
+    not a number, a negative fraction hidden in a sum that is still 1; and,
+    since RUNOFF-046, in a schema-1.1 file (where ``target_level`` is an
+    absolute level index), a level outside ``1..Nr``
+    (``level_11_out_of_range``), a level below the column's floor
+    (``level_11_dry``) and a level other than the surface under the legacy
+    route every case here runs (``as_rain_deep_target``), with
+    ``as_rain_surface_11``, a 1.1 file whose every level is 1, as the control
+    that must give the dense constant run;
   - a target on land, a wrong cell area, a fraction sum off by 1e-3, and
     a target moved one cell in x while its ``target_lon``/``target_lat``
     still name the cell it came from (``target_coords``). That move is
@@ -137,23 +148,30 @@ A refusal case passes when all of these hold:
 * no forbidden message is in any log.
 
 A refusal that only one tile's check detects (land, cell area, cell centre,
-array bound, per-cell aggregate) must stop every process. Under ``--mpi``
+dry level, surface-only route, array bound, per-cell aggregate) must stop
+every process. Under ``--mpi``
 this is what the ``STOP`` count and the timeout check: one ``STOP`` line per
-process, and no hang. Those five checks are not a remembered list: they are
+process, and no hang. Those seven checks are not a remembered list: they are
 exactly the checks behind the cases that carry a ``stderr_any`` message,
-which is by definition the message only the owning process prints -- seven
+which is by definition the message only the owning process prints -- nine
 cases (``target_on_land``, ``cell_area``, ``target_coords``,
-``target_coords_nan``, ``too_many_sources``, ``too_many_targets``,
-``cell_above_vol_max``). Four of the five checks are ``RNF_INIT_FIXED``'s;
-the fifth is the per-cell aggregate bound ``RNF_cellVolMax``, which
+``target_coords_nan``, ``level_11_dry``, ``as_rain_deep_target``,
+``too_many_sources``, ``too_many_targets``, ``cell_above_vol_max``). Six of
+the seven checks are ``RNF_INIT_FIXED``'s, the dry-level and surface-only
+ones being RUNOFF-046's (a schema-1.1 ``target_level`` below its column's
+floor, and one other than the surface under ``RNF_applyAsRain = .TRUE.``);
+the seventh is the per-cell aggregate bound ``RNF_cellVolMax``, which
 ``RNF_EXF_RUNOFF`` evaluates per cell on the tile that owns it and then
 reduces with ``GLOBAL_SUM_INT`` so that every process stops
 (``rnf_exf_runoff.F``, the per-cell loop at 144-179 and the reduction and
-stop at 184-205).
+stop at 184-205). The generalized route's copy of that bound, in
+``RNF_ADD_MASS`` at each target's own level, is tile-local in the same way
+but is not a case here: this binary has no ``ALLOW_ADDFLUID``, so it is
+measured by ``tests/rnf/level_check.py`` on its own build.
 
 **This paragraph has been wrong twice, both times by omitting a check that
 had just been added, so it is asserted rather than maintained:**
-``tests/esx/test_instrument_claims.py`` compares the two counts and the seven
+``tests/esx/test_instrument_claims.py`` compares the two counts and the nine
 names above against what :func:`cases` returns, and fails the ``structural``
 suite when they drift. "Cell centre" was missing from RUNOFF-033, which added
 that check, until RUNOFF-042's sweep of ``.py`` returned the line as a
@@ -231,7 +249,20 @@ RNF_HEADER = os.path.join(ROOT, "MITgcm", "pkg", "rnf", "RNF.h")
 # The process and thread label that MITgcm puts in front of its log lines.
 PID_PREFIX = re.compile(r"^\(PID\.TID \d{4}\.\d{4}\)\s?")
 
+# Every case runs the legacy surface route the refusals were written
+# against (RNF_applyAsRain = .TRUE.); the generalized route is the
+# default since RUNOFF-046 and its own refusals are cases of their own.
 DATA_RNF = """# Sparse runoff package parameters
+ &RNF_PARM01
+  RNF_file = '{0}',
+  RNF_applyAsRain = .TRUE.,
+ &
+"""
+
+# The same with RNF_applyAsRain left at its default, .FALSE.: the
+# generalized route, which the one case that uses it refuses on this
+# binary (no ALLOW_ADDFLUID, selectAddFluid = 0).
+DATA_RNF_GENERALIZED = """# Sparse runoff package parameters
  &RNF_PARM01
   RNF_file = '{0}',
  &
@@ -239,6 +270,7 @@ DATA_RNF = """# Sparse runoff package parameters
 
 DATA_RNF_BLANK = """# Sparse runoff package parameters
  &RNF_PARM01
+  RNF_applyAsRain = .TRUE.,
  &
 """
 
@@ -251,6 +283,7 @@ DATA_RNF_YEARLY = """# Sparse runoff package parameters
   RNF_file = '../input.rnof_yearly/runoff_sparse.nc',
   RNF_useYearlyFiles = .TRUE.,
   RNF_repCycle = 31536000.,
+  RNF_applyAsRain = .TRUE.,
  &
 """
 
@@ -490,7 +523,29 @@ def sparse_info():
                          f"wet and not already a target: the target_coords "
                          f"case has no one-cell move to make")
     moved_entry, moved_cell = moved[0]
+    # RUNOFF-046: the levels of the first target's column, from lab_sea's
+    # own delZ and bathymetry. ``dry_level`` is the first level whose top
+    # is at or below the sea floor there, so it is dry whatever hFacMin
+    # does to the bottom cell; ``as_rain_deep_target`` needs level 2 wet,
+    # i.e. a floor below the bottom of level 2, which is asserted here so
+    # that case cannot turn into a dry-level refusal unnoticed.
+    with open(os.path.join(VERIF, EXPERIMENT, "code", "SIZE.h")) as fh:
+        nr = int(re.search(r"(?m)^\s*&\s*Nr\s*=\s*(\d+)", fh.read()).group(1))
+    with open(os.path.join(VERIF, EXPERIMENT, "input", "data")) as fh:
+        dz_text = re.search(r"(?ms)^\s*delZ\s*=(.*?)(?=^\s*\w+\s*=)",
+                            fh.read()).group(1)
+    dz = [float(v) for v in re.findall(r"[-+]?\d+\.?\d*(?:[eE][-+]?\d+)?",
+                                       dz_text)]
+    if len(dz) != nr:
+        raise ValueError(f"lab_sea delZ has {len(dz)} values, Nr is {nr}")
+    floor = -float(bathy.ravel()[wet_cell])
+    tops = np.concatenate([[0.0], np.cumsum(dz)[:-1]])
+    dry_level = int(np.nonzero(tops >= floor)[0][0]) + 1
+    if not floor > tops[2]:
+        raise ValueError(f"the first target's column is {floor} m deep: "
+                         f"level 2 is not a full wet level there")
     return {"ids": ids, "target_source": target_source, "nx": nx, "ny": ny,
+            "nr": nr, "dry_level": dry_level,
             "flux_sum": flux_sum, "flux0": flux0, "wet_cell": wet_cell,
             "land_cell": i + nx * j,
             "fracs": fracs, "wet_area": wet_area,
@@ -957,6 +1012,20 @@ def cases(data_pkg, data_exf, info=None):
          "files": {"data.pkg": pkg_no_exf, "data.rnf": rnf_ok},
          "stderr": [MESSAGES["useEXF"], one_error],
          "stdout": [], "stop": stop_check, "forbid": after_checks},
+        # RUNOFF-046: the generalized route, the default, puts the volume
+        # in addMass, which this binary does not compile and which lab_sea
+        # does not switch on; both are refused at once.
+        {"name": "generalized_needs_addfluid",
+         "files": {"data.pkg": pkg_on,
+                   "data.rnf": DATA_RNF_GENERALIZED.format(SPARSE_REL)},
+         "stderr": ["RNF_CHECK: RNF_applyAsRain=.FALSE. (the generalized "
+                    "runoff route) needs",
+                    'RNF_CHECK: "#define ALLOW_ADDFLUID" in CPP_OPTIONS.h, '
+                    "or RNF_applyAsRain=.TRUE. in data.rnf",
+                    "RNF_CHECK: RNF_applyAsRain=.FALSE. needs selectAddFluid "
+                    "= 1 or 2 (it is   0)",
+                    "RNF_CHECK: detected  2 fatal error(s)"],
+         "stdout": [], "stop": stop_check, "forbid": after_checks},
     ]
     if info is None:
         return out
@@ -1028,6 +1097,13 @@ def cases(data_pkg, data_exf, info=None):
             level = ds.createVariable("target_level", "i4", ("target",))
             level[:] = 1
             level[0] = value
+        return edit
+
+    def level_all(value):
+        """A target_level of ``value`` on every entry (RUNOFF-046)."""
+        def edit(ds):
+            level = ds.createVariable("target_level", "i4", ("target",))
+            level[:] = value
         return edit
 
     def marker(att, value, flux):
@@ -1382,6 +1458,37 @@ def cases(data_pkg, data_exf, info=None):
                   ["target_level is not 1 (only the surface cell is "
                    f"allowed): source {ids[0]},", one_init],
                   edit=add_level(2)),
+        # RUNOFF-046: from schema 1.1 target_level is an absolute level
+        # index. Out of range is a table-entry refusal (every process
+        # reads the table); a level below the column's bottom is one only
+        # the owning tile can see; and the legacy route this binary runs
+        # (RNF_applyAsRain = .TRUE., DATA_RNF) refuses a target at any
+        # level other than its column's surface, whatever the rest of the
+        # file holds (owner decision 2026-10-10).
+        file_case("level_11_out_of_range",
+                  [f"RNF: target_level out of range: source {ids[0]}, "
+                   f"target_level{info['nr'] + 1:12d} (valid: 1 to Nr "
+                   f"={info['nr']:4d}), target entry (from 0){0:12d}",
+                   one_init],
+                  edit=several(set_att(mitgcm_runoff_schema_version="1.1"),
+                               add_level(info["nr"] + 1))),
+        file_case("level_11_dry",
+                  ["refused target(s) on all processes", one_init],
+                  ["RNF: target_level is not a wet level of this column: "
+                   f"source {ids[0]},",
+                   f"RNF: target_level ={info['dry_level']:4d}, surface "
+                   f"level{1:4d}"],
+                  edit=several(set_att(mitgcm_runoff_schema_version="1.1"),
+                               add_level(info["dry_level"]))),
+        file_case("as_rain_deep_target",
+                  ["refused target(s) on all processes", one_init],
+                  ["RNF: RNF_applyAsRain=.TRUE. needs every target at the "
+                   f"surface cell: source {ids[0]},",
+                   f"RNF: target_level ={2:4d}, surface level{1:4d}",
+                   "RNF: set RNF_applyAsRain=.FALSE. (the default) in "
+                   "data.rnf"],
+                  edit=several(set_att(mitgcm_runoff_schema_version="1.1"),
+                               add_level(2))),
         file_case("fraction_negative",
                   [range_msg + f"{ids[0]},", one_init],
                   edit=set_var("target_fraction", 0, -0.25)),
@@ -2023,6 +2130,22 @@ def cases(data_pkg, data_exf, info=None):
          "normal_end": True, "stderr": [], "stdout": stdout_ok,
          "summary": {"RNF_nSrcFile": "7", "RNF_nTgtOwned": "7"},
          "flux_sum": info["flux_sum"], "digits": (DENSE_REF, 13, 99),
+         "stop": "ABNORMAL END", "forbid": no_error},
+        # RUNOFF-046, the control of as_rain_deep_target: a schema-1.1
+        # file whose every target_level is 1, the surface cell in z
+        # coordinates, runs on the legacy route this binary uses
+        # (RNF_applyAsRain = .TRUE.) exactly as the 1.0 file it was made
+        # from, i.e. it gives the dense constant run to the 16 digits
+        # input.rnof_sp_const gives it.
+        {"name": "as_rain_surface_11",
+         "copy_from": DENSE_INPUT, "copy": dense,
+         "files": {"data.pkg": pkg_on, "data.rnf": rnf_bad},
+         "nc": {"bad.nc": {"edit": several(
+             set_att(mitgcm_runoff_schema_version="1.1"), level_all(1))}},
+         "normal_end": True, "stderr": [], "stdout": stdout_ok,
+         "summary": {"RNF_applyAsRain": "T", "RNF_levAbs": "T",
+                     "RNF_nTgtDeep": "0", "RNF_nTgtOwned": "7"},
+         "flux_sum": info["flux_sum"], "digits": (DENSE_REF, 16, 99),
          "stop": "ABNORMAL END", "forbid": no_error},
         {"name": "zero_flux_differs",
          "copy_from": DENSE_INPUT, "copy": dense,

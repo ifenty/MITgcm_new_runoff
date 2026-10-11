@@ -1,4 +1,12 @@
-# Sparse runoff NetCDF schema, version 1.0
+# Sparse runoff NetCDF schema, version 1.1
+
+> **Version 1.1 (RUNOFF-046, 2026-10-10)** changes one thing: from 1.1 on,
+> `target_level` is an **absolute 1-based MITgcm level index** (rule `T07`,
+> §3.4, §12), so a source can feed cells below the surface, and one source can
+> feed several levels of one cell. A 1.0 file means exactly what it meant
+> before and is read the same way; everything else in this document holds for
+> both versions. Writers that put every target at the surface still write
+> 1.0.
 
 > **Status: proposed (RUNOFF-001), awaiting owner approval.** This is the file
 > format that the MITgcm sparse-runoff reader (RUNOFF-004), the dense→sparse
@@ -158,7 +166,7 @@ Rows may appear in any order. Sorting by source and then cell is recommended.
 | `target_source` | `(target)` | int | R | yes | 0-based index into `source`. Attribute `instance_dimension = "source"`. |
 | `target_cell` | `(target)` | int (int32 recommended; int64 allowed) | R | yes | 0-based global cell index, `cell = i + mitgcm_grid_nx · j`. `(i, j)` are the 0-based positions in the global 2D array that MITgcm reads from a dense `runoffFile` on this grid, with `i` varying fastest (Fortran order). For exch2 cubed-sphere and LLC grids this is the exch2 global I/O map (`exch2_global_Nx` × `exch2_global_Ny`, the `Global Map (IO)` line, which exch2 writes to `w2_tile_topology.NNNN.log` when `W2_printMsg < 0` (the default, `-1`) and to STDOUT otherwise), not the `SIZE.h` Nx × Ny, and it depends on `W2_mapIO`: e.g. 192 × 32 for cs32 with `W2_mapIO = -1` and 90 × 1170 for LLC90 with `W2_mapIO = 1`. The index does not depend on the tile size or MPI layout. |
 | `target_fraction` | `(target)` | double (float allowed) | R | yes | Share of the source's flux sent to this cell, `units = "1"`. Each value is in `[0, 1]`. Each source's fractions sum to 1 within 1e-6. |
-| `target_level` | `(target)` | int | O | yes | Reserved for 3D runoff. Schema 1.0 allows only 1, which means the surface cell of the column: level 1 in z coordinates, `Nr` in pressure coordinates, `kSurfC` under `pkg/shelfice` ([package design](package_design.md), decision 5). If absent, every target is level 1. |
+| `target_level` | `(target)` | int | O | yes | **1.0:** only 1, which means the surface cell of the column: level 1 in z coordinates, `Nr` in pressure coordinates, `kSurfC` under `pkg/shelfice` ([package design](package_design.md), decision 5). **1.1:** the absolute 1-based MITgcm level index `k` of the target, used as it is with no translation (a pressure-coordinate file that means the surface writes `Nr`); it must be a wet level of the cell (the model refuses `k` outside `1..Nr` and a dry `k`). One (source, cell) may have entries at several levels, each with its own fraction. If absent, in either version, every target is the surface cell. The model's legacy route (`RNF_applyAsRain = .TRUE.`) refuses a file with any target that is not its column's surface cell. |
 | `target_cell_area` | `(target)` | double (float allowed) | O | yes | Horizontal area `rA` of the cell on the grid the file was built for, in m². If present, the model compares it with its own `rA` (relative tolerance 1e-4) to catch a file built for a different grid. **A value that is not a finite number is not allowed:** any NaN or ±Inf is an error, and the model stops. The comparison is written as a negated `≤`, so such a value is refused and not accepted (which a plain "difference greater than the tolerance" test would do, since every comparison with a NaN is false). The checker flags it as `T09`. |
 | `target_lon` | `(target)` | float/double | O | check | Cell-center longitude, `degrees_east`. For people and plots, and, when both of these are present and unpacked, checked by the model: `RNF_INIT_FIXED` refuses a target whose stored centre is further from the owning cell's `XC`,`YC` than half that cell's own grid spacing (`RNF_lonLatTol`). That is what catches a target moved to another cell of the same area, which no area tolerance can catch: across a cubed-sphere facet boundary two cells have `rA` that is bitwise equal. No value is ever *used*, so the check is skipped — with a warning, and `RNF_lonLatChk = F` in the package summary — when either variable is absent, when either carries `scale_factor` or `add_offset` (this reader does not unpack), or when the grid's `XC`,`YC` are not degrees (a Cartesian grid). **Where the check runs, a value that is not a finite number is not allowed:** any NaN or ±Inf is an error, and the model stops. The distance test is written as a negated `≤` so such a value is refused and not accepted; written the obvious way round it would be accepted, because every comparison with a NaN is false. The checker flags it as `T09`. |
 | `target_lat` | `(target)` | float/double | O | check | Cell-center latitude, `degrees_north`. Checked with `target_lon`, as above. |
@@ -227,7 +235,7 @@ record is one contiguous hyperslab. Stored as float (32-bit) or double.
 
 | Attribute | Type | Req. | Meaning |
 |---|---|---|---|
-| `mitgcm_runoff_schema_version` | string | R | `"1.0"`. The model refuses a major version it doesn't know. |
+| `mitgcm_runoff_schema_version` | string | R | `"1.0"` or `"1.1"`; the minor version decides what `target_level` means (§3.4). The model refuses a major version it doesn't know. |
 | `mitgcm_grid_nx` | int | R | Width of the global 2D layout used by `target_cell` (for exch2 grids, `exch2_global_Nx` for the run's `W2_mapIO`). |
 | `mitgcm_grid_ny` | int | R | Height of that layout. The model stops if `(nx, ny)` differs from its own global layout. |
 | `mitgcm_time_sampling` | string | R | `constant` (one record), `fixed` (a constant period, e.g. hourly or daily), `monthly` (calendar months) or `yearly` (calendar years). |
@@ -441,7 +449,7 @@ misbehave), **W** a warning (suspicious but usable), **I** information.
 | `T04` | E | Fractions are finite and in `[0, 1]`. |
 | `T05` | E | Each source's fractions sum to 1 within 1e-6 (every source therefore has at least one target). |
 | `T06` | W | A fraction is exactly 0. |
-| `T07` | E | `target_level`, if present, is 1 everywhere (schema 1.0). |
+| `T07` | E | `target_level`, if present: in a 1.0 file, is 1 everywhere; from 1.1 on, is at least 1 (an absolute level index; `R04` checks it against the grid). |
 | `T08` | I | Targets are not sorted by source and cell. |
 | `T09` | E | `target_cell_area`, `target_lon` or `target_lat`, where present, holds a value that is not a finite number (NaN or ±Inf). The model stops the run on one, so this is an error and not a warning. Tested on the stored values, which is what the Fortran reads; a fill marker is a finite number and is left to `S09`, `R02` and `R03`. No grid directory is needed. |
 | `M01` | E | `time` units and `calendar` are allowed. |
@@ -465,6 +473,7 @@ misbehave), **W** a warning (suspicious but usable), **I** information.
 | `X01` | E | Across several files: identical source, alias and target tables, grid attributes and variable set; records in time order, with each file's first bound equal to the previous file's last bound; `_YYYY` files share one offset of their first `time` value from 1 January of the year in their name; for `fixed` sampling the spacing across each file boundary equals `mitgcm_time_period`. |
 | `R01` | E | (`--grid-dir`) A target cell is on land (`hFacC` = 0 at level 1). |
 | `R02` | E | (`--grid-dir`) `target_cell_area` differs from `RAC` by more than 1e-4 relative. |
+| `R04` | E | (`--grid-dir`, schema 1.1) A `target_level` is not a level of the grid (above the number of levels of `hFacC`) or is dry at the target cell (`hFacC` = 0 at that level), which the model refuses at init. |
 | `R03` | W | (`--grid-dir`) `target_lon` / `target_lat` differ from `XC` / `YC` by more than 1e-3 degrees. The model refuses the same disagreement at init, but only above half the cell's own spacing, which on every grid in use is far coarser than 1e-3°, so a file that passes R03 always passes the model's check. R03 stays a warning: it compares *unpacked* values and runs on grids whose `XC`,`YC` the model would not compare at all. |
 
 ## 10. Example header
@@ -528,7 +537,7 @@ variables:
 		target_fraction:long_name = "share of the source flux sent to this cell" ;
 		target_fraction:units = "1" ;
 	int target_level(target) ;
-		target_level:long_name = "target level (schema 1.0: always 1 = surface cell)" ;
+		target_level:long_name = "target level (schema 1.0: always 1 = surface cell; 1.1: absolute level index)" ;
 	double target_cell_area(target) ;
 		target_cell_area:long_name = "horizontal cell area rA" ;
 		target_cell_area:units = "m2" ;
@@ -653,9 +662,13 @@ content; a reader accepts any minor version of its own major version, and stops
 with a clear error on content it can't honor. A major version changes the meaning
 of existing content, and a reader refuses a major version it doesn't know.
 
-3D runoff (`target_level` other than 1) is planned as version 1.1. A 1.0 reader
-already reads `target_level` and stops on any value other than 1, so it never
-silently puts subsurface runoff at the surface.
+Version 1.1 is 3D runoff: `target_level` other than 1, an absolute level
+index (RUNOFF-046). A 1.0 reader already reads `target_level` and stops on any
+value other than 1, so it never silently puts subsurface runoff at the
+surface; a 1.1 reader reads the minor version and keeps the 1.0 meaning for a
+1.0 file. A 1.1 file all of whose levels are 1 is, in z coordinates, the same
+file as its 1.0 twin. `MITgcmutils.runoff.targets.distribute_levels` writes
+1.1 (§13).
 
 ## 13. Building the target table
 
@@ -903,6 +916,27 @@ check_files("targets.nc", grid_dir="run/", tables_only=True)
 The builder uses `scipy`'s k-d tree for nearest-cell searches when `scipy` is
 installed. Otherwise it uses a slower pure-numpy search that gives identical
 results.
+
+**Depth ranges (schema 1.1).** `distribute_levels(tables, grid, depth_ranges)`
+spreads the surface targets of each source in `depth_ranges`
+(`source_id → (top, bottom)`, metres below the rest-state surface, `−RF`) over
+the model levels the range overlaps. Each target `(s, c, f)` becomes one entry
+per wet level `k` of cell `c`, with `target_level = k` and the share
+`f·w_k/Σw`, where `w_k` is the thickness of the overlap of the range with the
+wet part of level `k`, `DRF(k)·hFacC(k)` measured down from the level's top
+(the z-coordinate partial cell at the bottom). The shares of one cell sum to
+`f`, so the fractions of each source still sum to 1; `top = bottom` is one
+depth and goes to the one wet level that contains it. A cell whose wet column
+ends above `top` is an error naming the source and the column depth, or with
+`below_floor="clip"` goes to its deepest wet level. A cell whose top wet level
+is not level 1 (an ice-shelf column) is an error, as the model refuses it. It
+needs the full vertical grid: `hFacC` with every level, `RF` and `DRF`, read
+from the grid output (`read_levels`), z coordinates only. Sources without a
+range stay at the surface. The result is written as schema 1.1 by
+`write_targets`, which writes 1.0 for tables without levels. On the command
+line, `--depth-range TOP:BOTTOM` applies one range to every source, with
+`--below-floor {error,clip}`. The model runs such a file on its generalized
+route (`RNF_applyAsRain = .FALSE.`, the default); the legacy route refuses it.
 
 ## 14. Converting dense runoff files
 

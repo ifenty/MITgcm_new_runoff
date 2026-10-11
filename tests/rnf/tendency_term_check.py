@@ -966,6 +966,9 @@ def write_input(case, input_dir, zero_flux):
                  f"  RNF_file = '{SPARSE_FILE}',\n"
                  "  RNF_holdRecord = .TRUE.,\n"
                  "  RNF_debugLev = 3,\n"
+                 # the legacy surface route this check measures; the
+                 # default is the generalized route (RUNOFF-046)
+                 "  RNF_applyAsRain = .TRUE.,\n"
                  " &\n")
     return dt
 

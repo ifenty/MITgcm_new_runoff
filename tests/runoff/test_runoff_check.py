@@ -995,6 +995,53 @@ def test_r03_lon_lat(tmp_path, grid_dir):
     assert check_files(p, grid_dir=grid_dir).findings == []
 
 
+V11 = {"mitgcm_runoff_schema_version": schema.SCHEMA_VERSION_LEVELS}
+
+
+def test_t07_schema_1_1_absolute_levels(tmp_path):
+    """RUNOFF-046: from schema 1.1 target_level is an absolute level index.
+
+    The level 2 that the 1.0 case T07 refuses is valid in 1.1, and so are
+    two entries of one (source, cell) at different levels (T03 keys on the
+    level too); a level below 1 is still T07."""
+    ok = build(tmp_path, dict(global_attrs=V11, target_level=[1, 1, 1, 2, 1]))
+    assert check_files(ok).findings == [], check_files(ok).format_text()
+    two = build(tmp_path, dict(global_attrs=V11, target_cell=[69, 69, 125, 233, 234],
+                               target_level=[1, 2, 1, 1, 1]), name="two.nc")
+    assert check_files(two).findings == [], check_files(two).format_text()
+    bad = build(tmp_path, dict(global_attrs=V11, target_level=[1, 0, 1, 1, 1]),
+                name="zero.nc")
+    r = check_files(bad)
+    assert r.rules("E") == {"T07"}, r.format_text()
+    assert "absolute 1-based MITgcm level" in r.errors[0].message
+    # the same level 2 in a 1.0 file is still refused, with the 1.0 message
+    old = build(tmp_path, dict(target_level=[1, 1, 1, 2, 1]), name="old.nc")
+    r = check_files(old)
+    assert r.rules("E") == {"T07"} and "allows only 1" in r.errors[0].message
+
+
+def test_r04_schema_1_1_level_against_grid(tmp_path, grid_dir):
+    """R04: a 1.1 target_level must be a level of hFacC and wet at the cell.
+
+    The test grid has NZ = 2 levels, and cell 0 is wet at level 1 only."""
+    ok = build(tmp_path, dict(global_attrs=V11, target_cell=[0, 70, 125, 233, 234],
+                              target_level=[1, 2, 2, 1, 2]))
+    assert check_files(ok, grid_dir=grid_dir).findings == []
+    dry = build(tmp_path, dict(global_attrs=V11, target_cell=[0, 70, 125, 233, 234],
+                               target_level=[2, 1, 1, 1, 1]), name="dry.nc")
+    r = check_files(dry, grid_dir=grid_dir)
+    assert r.rules("E") == {"R04"}, r.format_text()
+    assert "is dry" in r.errors[0].message
+    deep = build(tmp_path, dict(global_attrs=V11, target_level=[1, 1, 3, 1, 1]),
+                 name="deep.nc")
+    r = check_files(deep, grid_dir=grid_dir)
+    assert r.rules("E") == {"R04"}, r.format_text()
+    assert "1 to Nr = 2" in r.errors[0].message
+    assert main([deep, "--grid-dir", grid_dir]) == 1
+    # without a grid, only T07 applies, and level 3 passes it
+    assert check_files(deep).findings == []
+
+
 def test_grid_shape_mismatch_is_g01(tmp_path, grid_dir):
     p = build(tmp_path, dict(nx=40, ny=8))
     r = check_files(p, grid_dir=grid_dir)
@@ -1159,7 +1206,7 @@ def test_tables_only_several_files(tmp_path):
 # ---------------------------------------------------------------------------
 # Every rule of schema section 9 is demonstrated above
 
-DEMONSTRATED_ELSEWHERE = {"X01", "R01", "R02", "R03", "P02", "S10"}
+DEMONSTRATED_ELSEWHERE = {"X01", "R01", "R02", "R03", "R04", "P02", "S10"}
 
 
 def test_every_rule_has_a_demonstration():

@@ -31,17 +31,27 @@ This is the scientific contract agents read. Executable paths and commands are i
     and `Qnet`, salt in `surfaceForcingS`, tracers in `surfaceForcingPTr`);
     subsurface fluxes (RUNOFF-025, RUNOFF-020) are applied as tendencies, as
     in pkg/shelfice, with full budget diagnostics.
+    **Revised again by the owner's decision of 2026-10-10 (RUNOFF-046):**
+    runoff is a lateral advective input, not a vertical surface flux, so the
+    default is now the *generalized* route -- the volume as an `addMass`
+    source and the heat, salt and tracers as tendencies, each at the target
+    entry's own level, any level or range of levels -- and the RUNOFF-031
+    surface route survives behind the runtime switch `RNF_applyAsRain`
+    (`data.rnf`, default `.FALSE.`), refused at init when any target of the
+    file is not its column's surface cell.
   - Plan the work as RUNOFF-010 to RUNOFF-029 and file new issues as needed.
-  - Subsurface discharge (RUNOFF-025) is now in scope. Opening the upstream PR still requires explicit owner approval.
+  - Subsurface discharge (RUNOFF-025) is now in scope, and delivered by RUNOFF-046, which folds RUNOFF-025 in. Opening the upstream PR still requires explicit owner approval.
 - In-scope deliverables and explicit exclusions:
   - **Phase 1 deliverables:**
     - 2D (surface) sparse runoff in the new package `pkg/rnf`, feeding exf
     - a Python dense→sparse NetCDF converter
     - lab_sea and cs32 oracle tests
     - exf documentation
-  - **Excluded from phase 1:** 3D/subsurface runoff via `addMass`, more than one
-    runoff file, and adjoint tests. These are in [long-term goals](../long_term_goals.md).
-    Phase 1 must not design them out.
+  - **Excluded from phase 1:** more than one runoff file, and adjoint tests.
+    These are in [long-term goals](../long_term_goals.md). Phase 1 must not
+    design them out. 3D/subsurface runoff via `addMass` was excluded here too
+    until the owner's decision of 2026-10-10 brought it in (RUNOFF-046);
+    targets under an ice shelf are still refused (RUNOFF-020).
 - Completion criteria for this deployment:
   - Sparse runoff reproduces the dense-path results on
     `global_ocean.cs32x15` (`input.icedyn`, `input.seaice`) and on the new lab_sea
@@ -64,16 +74,26 @@ This is the scientific contract agents read. Executable paths and commands are i
     apply unchanged to every cell it feeds.
   - Where several sources feed one cell, volumes add, and T, S and all tracers
     are flux-weighted means. This conserves heat, salt and tracer content.
-  - The volume goes through exf's `runoff` array, so the downstream exf/model
-    physics (`pkg/exf/exf_mapfields.F`) is unchanged. At a surface target the
-    heat goes through exf's `runoftemp` field and its `Qnet` term, as dense
-    runoff temperature does (this needs `ALLOW_RUNOFTEMP`), and salt and
-    tracers are added to `surfaceForcingS` and `surfaceForcingPTr`, so KPP and
-    the `TFLUX`/`SFLUX` diagnostics see them (RUNOFF-031); under `pkg/seaice`
-    the heat, being part of `Qnet`, keeps only its open-water share `(1 − A)`,
-    as on the dense path (see the invariants below); subsurface targets
-    will use tendency terms (RUNOFF-025). See the package design, decisions 3
-    and 4.
+  - **Two routes, one per run (RUNOFF-046).** On the default, generalized
+    route (`RNF_applyAsRain = .FALSE.`) the volume is `rhoConstFresh·flux·frac`
+    added to the model's `addMass` at each target entry's level
+    (`RNF_ADD_MASS`; needs `ALLOW_ADDFLUID`, `selectAddFluid` 1 or 2 and a
+    blank `addMassFile`), and the heat, salt and tracers are tendencies at
+    that level, `[(mX) − m_X·X(i,j,k)]·μ·D`, relative to the ambient value,
+    with the model's generic `temp_addMass`/`salt_addMass` term on the runoff
+    share cancelled (`RNF_TENDENCY_APPLY_T/S/PTR`). Nothing reaches the exf
+    `runoff` array there, so `pkg/seaice`, `pkg/thsice` and `pkg/bling` do
+    not see that runoff (owner-accepted gap). On the legacy route
+    (`RNF_applyAsRain = .TRUE.`, surface targets only) the volume goes
+    through exf's `runoff` array, so the downstream exf/model physics
+    (`pkg/exf/exf_mapfields.F`) is unchanged; the heat goes through exf's
+    `runoftemp` field and its `Qnet` term, as dense runoff temperature does
+    (this needs `ALLOW_RUNOFTEMP`), and salt and tracers are added to
+    `surfaceForcingS` and `surfaceForcingPTr`, so KPP and the `TFLUX`/`SFLUX`
+    diagnostics see them (RUNOFF-031); under `pkg/seaice` the heat, being
+    part of `Qnet`, keeps only its open-water share `(1 − A)`, as on the
+    dense path (see the invariants below). See the package design, decisions
+    2 to 4.
 - Inputs/outputs, dimensions, units and coordinate/reference conventions: one
   NetCDF file with:
   - source ids (alphanumeric)
@@ -90,10 +110,13 @@ This is the scientific contract agents read. Executable paths and commands are i
     LLC, including exch2 blank tiles.
   - A global cell index is a cell's 0-based position in the flattened global 2D
     layout of a dense `runoffFile` on that grid.
-  - At init, each tile converts its indices to local `(i,j,bi,bj)`. In phase 1
-    every target is the column's surface cell (level 1 in z coordinates, `Nr` in
-    pressure coordinates, `kSurfC` under shelfice); targets under an ice shelf are
-    refused until the `addMass` path exists (RUNOFF-025).
+  - At init, each tile converts its indices to local `(i,j,bi,bj)` and gives
+    each target entry its level: the column's surface cell (level 1 in z
+    coordinates, `Nr` in pressure coordinates, `kSurfC` under shelfice) for a
+    schema-1.0 file or one without `target_level`, and the file's own
+    absolute level index, which must be wet, for a schema-1.1 file
+    (RUNOFF-046). The legacy route refuses any target that is not the surface
+    cell; targets under an ice shelf are refused on both routes (RUNOFF-020).
   - Each tile stores only its own cells.
   - A target cell on land (surface `maskC` = 0) is a fatal error that names the
     source.
@@ -118,7 +141,10 @@ This is the scientific contract agents read. Executable paths and commands are i
     (decisions 5 and 6: `maskC`, `maskInC`, index range); a target on a blank
     tile is owned by no tile and shows up as a fraction deficit.
   - Total applied volume flux, `Σ runoff·rA`, equals `Σ_s flux_s(t)`.
-  - Heat, salt and tracer input (`Σ F_c·X_c`) equals `Σ_s flux_s·X_s`. For heat
+  - Heat, salt and tracer input (`Σ F_c·X_c`) equals `Σ_s flux_s·X_s`
+    relative to the ambient value of the target cell on the generalized route
+    (domain budget closure measured to 1.7e-14 at a single interior level and
+    over four levels, `tests/rnf/level_check.py`). On the legacy route, for heat
     this is a statement about the term the package hands to exf `Qnet`
     (`RNFqnet`, RUNOFF-031), before any sea-ice open-water scaling: under
     `pkg/seaice` (`SEAICE_EXTERNAL_FLUXES`) only `(1 − A)` of it reaches ocean
@@ -547,7 +573,9 @@ This is the scientific contract agents read. Executable paths and commands are i
   (package design, decisions 2 and 3):
   - one guarded call in `exf_getffields.F` (`RNF_EXF_RUNOFF`, which fills the
     exf `runoff` array, and its `runoftemp` array when the file carries a
-    temperature);
+    temperature), made on the legacy route only since RUNOFF-046
+    (`useRNF .AND. RNF_applyAsRain`, with `RNF_SIZE.h`/`RNF.h` included
+    under `ALLOW_RNF` for the flag);
   - two tests conditioned on `useRNF` in `EXF_CHECK_RANGE`
     (`exf_check_range.F`): the runoff **upper** bound is skipped, and the
     `sflux` bound is applied to `sflux + runoff` so that it still refuses an
@@ -556,18 +584,27 @@ This is the scientific contract agents read. Executable paths and commands are i
     test and every other field's range check are untouched;
   - one condition in `exf_mapfields.F` (RUNOFF-031, owner decision
     2026-10-09): the `ALLOW_RUNOFTEMP` block that adds the runoff heat to
-    `Qnet` runs for `RNF_applyT` as well as for a `runoftempfile`, with
+    `Qnet` runs for `RNF_applyT` as well as for a `runoftempfile` (for
+    `RNF_applyT .AND. RNF_applyAsRain` since RUNOFF-046), with
     `RNF_SIZE.h`/`RNF.h` included under `ALLOW_RNF` for the flag. Without
     `pkg/rnf` the block is the one upstream has.
 
   This is a convention, so read it as the permitted footprint: editing
   `exf_check_range.F` and `exf_mapfields.F` in those places is *allowed and
   done*, not off-limits. Any further exf edit needs its own decision.
-  Outside pkg/exf the forcing hooks are one call in
+  Outside pkg/exf the legacy route's forcing hooks are one call in
   `model/src/external_forcing_surf.F` (`RNF_FORCING_SURF`) and one in
   `pkg/longstep/longstep_forcing_surf.F` (`RNF_FORCING_SURF_PTR`), both
-  RUNOFF-031; `model/src/apply_forcing.F` and pkg/ptracers are as upstream
-  has them.
+  RUNOFF-031 and both, since RUNOFF-046, guarded by `useRNF .AND.
+  RNF_applyAsRain` with `RNF.h` included for the flag. The generalized
+  route (RUNOFF-046) adds: `RNF_ADD_MASS` in
+  `model/src/load_fields_driver.F`, next to `RNF_FIELDS_LOAD`;
+  `RNF_TENDENCY_APPLY_T`/`_S` in `model/src/apply_forcing.F` (two calls,
+  after `ICEFRONT_TENDENCY_APPLY_T/S`) and in `model/src/external_forcing.F`
+  (two calls, the `USE_OLD_EXTERNAL_FORCING` path, which no experiment here
+  compiles); and `RNF_TENDENCY_APPLY_PTR` in
+  `pkg/ptracers/ptracers_apply_forcing.F`. Every one is under `ALLOW_RNF`
+  and `useRNF`, so without `pkg/rnf` those files are the ones upstream has.
 - Put new parameters in `data.rnf` (`RNF_PARM01`), read in `rnf_readparms.F` and
   reported in the package summary.
 
@@ -662,7 +699,8 @@ This is the scientific contract agents read. Executable paths and commands are i
   not to prose (RUNOFF-042 round 1).** `tests/esx/test_instrument_claims.py`
   asserts `tests/rnf/refusal_check.py`'s list of the tile-local refusals
   against the cases that `cases()` actually returns carrying a `stderr_any`
-  message — seven cases over five checks — and runs in `structural` under
+  message — nine cases over seven checks since RUNOFF-046 (seven over five
+  when this was written) — and runs in `structural` under
   `pytest -q tests/esx`. The reason is a measured failure of the alternative:
   that list was replaced by a prose "mechanical antecedent" precisely so it
   could not rot, and it rotted in the same round, because the enumeration

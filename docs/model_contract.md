@@ -37,7 +37,16 @@
 > has no such mode; the budget closure **in the sum over time** rather than
 > per record, and in the nonlinear-free-surface configurations just named
 > (both RUNOFF-016); the input-only diagnostics and the monitor (RUNOFF-015);
-> and the `addMass` path for interior and under-shelf targets (RUNOFF-025).
+> and under-shelf targets (RUNOFF-020; refused on both routes).
+> **Since RUNOFF-046 (2026-10-10) there are two routes**, one per run, chosen
+> by `RNF_applyAsRain` in `data.rnf`: the default, `.FALSE.`, is the
+> *generalized* route, which puts the volume in the model's `addMass` at each
+> target's own level and the heat, salt and tracers in as per-level
+> tendencies, so a schema-1.1 `target_level` can name any wet level and one
+> source can feed several levels; `.TRUE.` is the RUNOFF-031 *legacy* surface
+> route described below, unchanged, and refused for a file with any target
+> that is not its column's surface cell. The invariants below hold on both;
+> where a bullet describes the surface flux fields it is the legacy route's.
 > The source routines and their tests are
 > listed in [the code map](code_map.md), the tests and their limits in
 > [the qualification matrix](verification_matrix.md).
@@ -212,8 +221,9 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
 3. Each tile maps the global indices that fall on it to local `(i,j,k,bi,bj)` and
    stores, for each source present on the tile, its local cells and fractions.
    The placement uses the arithmetic `pkg/mdsio` uses for a global file, never
-   the grid geometry. The level is stored with each target; schema 1.0 allows
-   only the surface.
+   the grid geometry. The level is stored with each target: the column's
+   surface cell in schema 1.0 (or without `target_level`), the file's own
+   absolute level index in schema 1.1, which must be a wet level of the cell.
 4. Each source's fractions are summed over all tiles and processes with
    `GLOBAL_SUM_*`. If any source differs from 1.0 by more than 1e-6, the run stops.
    This also catches a target that no tile owns, when its fraction is more
@@ -255,7 +265,9 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
     `X_c = Σ_s flux_s·frac_{s,c}·X_s / F_c`. This conserves heat content, salt
     and tracer mass.
   - A source without a temperature contributes at the surface water
-    temperature. A build without exf `ALLOW_ATM_TEMP` that sets
+    temperature on the legacy route, and at the ambient temperature of its
+    target cell on the generalized route. On the legacy route, a build
+    without exf `ALLOW_ATM_TEMP` that sets
     `temp_EvPrRn` cannot reach that case at all: `RNF_CHECK` refuses a file
     carrying `runoff_temperature` together with `temp_EvPrRn` set in such a
     build (RUNOFF-045), naming the condition, regardless of which
@@ -263,10 +275,18 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
     ([package design](package_design.md), decision 3, "Missing temperature").
   - A source without a salinity contributes S = 0.
   - Where `F_c = 0`, `X_c` is unused.
-- **At a surface target, temperature, salinity and tracers enter through the
-  surface flux fields the rest of MITgcm's surface forcing uses** (owner
-  decision 2026-10-09, RUNOFF-031; subsurface targets, RUNOFF-025, will use
-  tendency terms with budget diagnostics). With `m = rhoConstFresh · F_c / rA`
+- **On the generalized route (the default, RUNOFF-046), temperature, salinity
+  and tracers enter as tendencies at the target level**,
+  `[Σ m_e·X_s − m_X·X(i,j,k)]·μ·recip_drF(k)·recip_hFacC`, relative to the
+  ambient value of the target cell, with the model's own generic
+  `temp_addMass`/`salt_addMass` term on the runoff share cancelled
+  ([package design](package_design.md), decision 3); a source without a
+  temperature enters at the ambient temperature, one without a salinity
+  dilutes (S = 0), and a ptracer no variable feeds enters at its ambient
+  concentration.
+- **On the legacy route, at a surface target, temperature, salinity and
+  tracers enter through the surface flux fields the rest of MITgcm's surface
+  forcing uses** (owner decision 2026-10-09, RUNOFF-031). With `m = rhoConstFresh · F_c / rA`
   the runoff mass flux in kg m⁻² s⁻¹:
   - **Heat** follows MITgcm's existing convention for runoff heat: the package
     sets the exf field `runoftemp` to `[Σ_s m_s·T_s + (m − m_T)·θ]/m`

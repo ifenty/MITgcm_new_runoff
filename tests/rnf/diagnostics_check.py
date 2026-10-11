@@ -181,7 +181,7 @@ DATA_DIAGNOSTICS = """# Direct diagnostics oracle of tests/rnf/diagnostics_check
 #   RNFmflx  :: mass flux, rhoConstFresh*RNFvflx
 #   RNFtemp  :: (mT)/m_T where m_T > 0, else 0
 #   RNFsaln  :: (mS)/m where m > 0, else 0
-#   RNFnsrc  :: number of sources feeding the cell
+#   RNFnsrc  :: number of target entries feeding the cell
  &DIAGNOSTICS_LIST
   diag_mnc = .FALSE.,
   fields(1,1) = 'EXFroff ',
@@ -459,6 +459,9 @@ def write_input(case, input_dir, table, dt_hint=None):
                  " &RNF_PARM01\n"
                  "  RNF_file = 'runoff_diag.nc',\n"
                  "  RNF_debugLev = 3,\n"
+                 # the legacy surface route this check measures; the
+                 # default is the generalized route (RUNOFF-046)
+                 "  RNF_applyAsRain = .TRUE.,\n"
                  " &\n")
     return dt
 

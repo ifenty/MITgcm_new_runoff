@@ -222,6 +222,9 @@ def write_input(input_dir, warm, t_runoff=None):
                  f"  RNF_file = '{SPARSE_FILE}',\n"
                  "  RNF_holdRecord = .TRUE.,\n"
                  "  RNF_debugLev = 3,\n"
+                 # the legacy surface route this check measures; the
+                 # default is the generalized route (RUNOFF-046)
+                 "  RNF_applyAsRain = .TRUE.,\n"
                  " &\n")
     return cell, dt
 
