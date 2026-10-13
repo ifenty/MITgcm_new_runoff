@@ -224,7 +224,9 @@
         "--case",
         "L_unset",
         "--case",
-        "U_unset"
+        "U_unset",
+        "--case",
+        "L_unset_wet1"
       ],
       [
         "{python}",

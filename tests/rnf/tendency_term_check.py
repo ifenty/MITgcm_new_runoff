@@ -201,11 +201,20 @@ or many cells (RUNOFF-016, ``tests/rnf/budget_check.py``), the mapping of
 several runoff tracers onto several ptracers (one tracer here, since the
 ordinary lab_sea build has ``PTRACERS_num = 1``; that is
 ``budget_check``'s two-tracer case), or the lagged time level, which no
-verification experiment configures. In the two local-arm rows the tracer
-at the target cell is still exactly :data:`TRC0` when the measured step
-starts (nothing moves a uniform tracer there over the dry first step),
-so those rows tell the local arm from the other arms but not the local
-tracer of that step from the initial one.
+verification experiment configures. In the two local-arm rows of the
+cases above the tracer at the target cell is still exactly :data:`TRC0`
+when the measured step starts (nothing moves a uniform tracer there over
+the dry first step), so those rows tell the local arm from the other
+arms but not the local tracer of that step from the initial one.
+``L_unset_wet1`` (RUNOFF-043) closes that gap for the package column: its
+first record is wet, the tracer at the cell is 0.775337 when the measured
+step starts (0.75 initially), and :func:`judge_wet_first` judges the
+package term against the analytic value built from that dumped tracer.
+Measured on a mutant binary whose local arm takes the literal initial
+tracer (``tests/rnf/mutant_wet1_code.py``, ``--use-build``), ``L_unset``
+still passes while ``L_unset_wet1`` fails at 1.139e-02. It judges no
+total column (the two runs no longer share a state on entering the
+measured step), makes no zero-flux run, and claims no table row.
 
 Usage
 =====
@@ -457,6 +466,18 @@ CASES = (
      "temp_EvPrRn": None, "salt_EvPrRn": 0.0, "ptr_EvPrRn": None,
      "sources": ((0.75, None, 5.0, 3.0), (0.25, -1.0, 20.0, 0.5)),
      "rows": ("T1-NL-unset", "S1-NL-set", "C2-L-unset")},
+    # RUNOFF-043: record 1 is wet too, so the tracer at the target cell has
+    # already changed (by the first step's own runoff) when the measured
+    # step starts, and a reference taken from a stale level -- the initial
+    # tracer, which is also the previous step's here -- differs from the
+    # local one. Judged by :func:`judge_wet_first` on the package column
+    # only, because the two runs no longer enter the measured step in the
+    # same state; it claims no table row (the rows are covered, in both
+    # columns, by the cases above).
+    {"name": "L_unset_wet1", "branch": "L", "wet_first": True,
+     "temp_EvPrRn": None, "salt_EvPrRn": 0.0, "ptr_EvPrRn": None,
+     "sources": ((1.0, 30.0, 5.0, 3.0),),
+     "rows": ()},
     # RUNOFF-045 retired the two rows that used to be measured here
     # (L_set_noatm, U_set_noatm: a build without ALLOW_ATM_TEMP with
     # temp_EvPrRn set and a runoff temperature in the file). RNF_CHECK
@@ -469,7 +490,7 @@ CASES = (
 UNSET_RL = 1.234567e5
 
 
-def write_sparse(path, cell, sources, dt, zero_flux=False):
+def write_sparse(path, cell, sources, dt, zero_flux=False, wet_first=False):
     """Write the one-cell sparse runoff file of a case.
 
     One target cell, one target entry per source with fraction 1, both
@@ -489,6 +510,11 @@ def write_sparse(path, cell, sources, dt, zero_flux=False):
     record it does not use a weight of exactly zero -- and
     :func:`judge` checks that identity on the state dumps rather than
     assuming it.
+
+    With ``wet_first`` (RUNOFF-043) record 1 carries the case's flux too,
+    so the first step is wet: the target cell's tracer has changed by the
+    time the measured step starts. There is then no common state to
+    difference against, and no zero-flux run is made for such a case.
 
     The time axis is a fixed period of one time step anchored on the
     model's own calendar start (``lab_sea/input/data.cal``:
@@ -534,7 +560,8 @@ def write_sparse(path, cell, sources, dt, zero_flux=False):
         frac[:] = 1.0
         flux = ds.createVariable("runoff_flux", "f8", ("time", "source"))
         flux.units = "m3 s-1"
-        flux[0, :] = 0.0
+        flux[0, :] = ([0.0 if zero_flux else FLUX*s[0] for s in sources]
+                      if wet_first else 0.0)
         flux[1, :] = [0.0 if zero_flux else FLUX*s[0] for s in sources]
         temp = ds.createVariable("runoff_temperature", "f8",
                                  ("time", "source"),
@@ -862,7 +889,8 @@ def write_input(case, input_dir, zero_flux):
     cell = sparse_info()["wet_cell"]
     dt = 3600.0
     write_sparse(os.path.join(input_dir, SPARSE_FILE), cell,
-                 case["sources"], dt, zero_flux=zero_flux)
+                 case["sources"], dt, zero_flux=zero_flux,
+                 wet_first=case.get("wet_first", False))
     write_state(input_dir, tracer=True)
 
     with open(os.path.join(base, "data")) as fh:
@@ -1504,6 +1532,102 @@ def judge_tracer(case, run_dir, zero_dir, cell, dt, want, before, result,
                 f"{got/scale:.3e}")
 
 
+def judge_wet_first(case, run_dir, cell, dt):
+    """Judge a case whose first record is wet (RUNOFF-043): package column only.
+
+    In every other case the tracer at the target cell is still
+    :data:`TRC0` when the measured step starts, so the local arm of
+    ``RNF_FORCING_SURF_PTR`` (``C_ref = pTracer(ks)``) could be fed the
+    initial or the previous step's tracer and still pass. Here record 1
+    carries the flux (:func:`write_sparse` ``wet_first``), the first step
+    moves the tracer at the cell, and the term of the second step is
+    judged against :func:`expected_tracer` built from the tracer in the
+    run's own ``PTRACER01`` dump of the step before. The case requires
+    that tracer to differ from the initial one and the package term to be
+    at least ``RTOL * DISCRIMINATION`` away from the term the initial (=
+    previous-level) tracer would have given.
+
+    The total column is not judged: with a wet first step the case run
+    and a zero-flux run no longer enter the measured step in the same
+    state, so their difference is not the runoff term. The T and S
+    package columns are judged as well (their state is read the same way).
+    """
+    problems = []
+    result = {"name": case["name"], "rows": list(case["rows"])}
+    start = state_at(run_dir, "0000000000", cell, tracer=True)
+    for name, value in (("theta", THETA0), ("salt", SALT0), ("trc", TRC0)):
+        if start[name] != value:
+            problems.append(f"the run's own iteration-0 dump has "
+                            f"{name} = {start[name]!r} at the target cell, "
+                            f"not the {value!r} this script wrote")
+    before = state_at(run_dir, FIRST_DUMP, cell, tracer=True)
+    result["initial_state"] = {"theta": start["theta"], "salt": start["salt"],
+                               "trc": start["trc"]}
+    result["state_of_measured_step"] = {"theta": before["theta"],
+                                        "salt": before["salt"],
+                                        "trc": before["trc"]}
+    result["trc_shift"] = before["trc"] - start["trc"]
+    if before["trc"] == start["trc"]:
+        problems.append("the tracer at the target cell is unchanged when "
+                        "the measured step starts: the first step was not "
+                        "wet, so this case does not tell the local tracer "
+                        "from the initial one")
+    want = expected(case, run_dir, cell, before["theta"], before["salt"])
+    result["expected"] = {k: v for k, v in want.items()
+                          if k not in ("hFacC_dims",)}
+    if not want["finite"]:
+        problems.append("the analytic terms are not all finite")
+    for name, value in (("tracForcingOutAB", 1.0), ("nonlinFreeSurf", 0.0)):
+        if want[name] != value:
+            problems.append(f"{name} = {want[name]}, not {value}")
+    text = read_file(run_dir, "output.txt") or ""
+    tw = expected_tracer(case, text, want["m"], want["mu"], want["D"],
+                         want["rA"], before["trc"])
+    result["expected_tracer"] = tw
+    if not tw["finite"]:
+        problems.append("the analytic tracer terms are not all finite")
+    if tw["C_ref_arm"] != "local":
+        problems.append(f"C_ref arm is {tw['C_ref_arm']}, not the local "
+                        f"one this case exists to test")
+    if "initial" not in tw["alternatives_C"]:
+        problems.append("the initial tracer gives the same term as the "
+                        "local one: the case cannot tell them apart")
+
+    measured = {}
+    for key, stream in (("package_T", "rnfQnet"), ("package_S", "rnfSflx"),
+                        ("package_C", "rnfTfC")):
+        measured[key], label = dump_at(run_dir, stream, cell)
+        result[key + "_dump"] = label
+    result["measured"] = measured
+    ref = {"package_T": want["package_T"], "package_S": want["package_S"],
+           "package_C": tw["package_C"]}
+    rel = {}
+    for key, value in ref.items():
+        if abs(value) < FLOOR:
+            problems.append(f"{key} is {value!r}, below the floor {FLOOR!r}: "
+                            f"the case does not measure this term")
+            rel[key] = None
+            continue
+        rel[key] = abs(measured[key] - value)/abs(value)
+        if rel[key] > RTOL:
+            problems.append(f"{key}: measured {measured[key]!r}, expected "
+                            f"{value!r}, relative {rel[key]:.3e} > {RTOL!r}")
+    result["relative"] = rel
+    margins = {}
+    for arm, alt in tw["alternatives_C"].items():
+        margin = abs(measured["package_C"] - alt)/max(
+            abs(alt), abs(measured["package_C"]))
+        margins[arm] = margin
+        if margin <= RTOL*DISCRIMINATION:
+            problems.append(
+                f"tracer: the measured package term is within {margin:.3e} "
+                f"of the term with C_ref = {arm}, so the case cannot tell "
+                f"the local arm from that one")
+    result["C_ref_margins"] = margins
+    result["problems"] = problems
+    return result
+
+
 def judge(case, run_dir, zero_dir, cell, dt):
     """Compare the measured terms with the analytic ones."""
     problems = []
@@ -1639,7 +1763,11 @@ def judge(case, run_dir, zero_dir, cell, dt):
 
 
 def check_case(case, args):
-    """Run one case and its zero-flux reference, and judge them."""
+    """Run one case and its zero-flux reference, and judge them.
+
+    A case with ``wet_first`` (RUNOFF-043) has no zero-flux reference and
+    is judged by :func:`judge_wet_first` instead of :func:`judge`.
+    """
     build = BUILD if case.get("atm_temp", True) else NOATM_BUILD
     if args.use_build:
         build = args.use_build
@@ -1656,7 +1784,7 @@ def check_case(case, args):
         return None
     cell = sparse_info()["wet_cell"]
     runs = {}
-    for zero_flux in (False, True):
+    for zero_flux in ((False,) if case.get("wet_first") else (False, True)):
         name = PREFIX + case["name"] + ("_zero" if zero_flux else "")
         input_dir = os.path.join(VERIF, EXPERIMENT, name)
         shutil.rmtree(input_dir, ignore_errors=True)
@@ -1671,7 +1799,10 @@ def check_case(case, args):
         print(f"FAIL {case['name']}: " + "; ".join(bad))
         return {"name": case["name"], "rows": list(case["rows"]),
                 "problems": bad}
-    result = judge(case, runs[False][0], runs[True][0], cell, dt)
+    if case.get("wet_first"):
+        result = judge_wet_first(case, runs[False][0], cell, dt)
+    else:
+        result = judge(case, runs[False][0], runs[True][0], cell, dt)
     verdict = "PASS" if not result["problems"] else "FAIL"
     rel = result.get("relative", {})
     print(f"{verdict} {case['name']}: rows {', '.join(case['rows'])}; "

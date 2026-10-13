@@ -450,37 +450,6 @@ Out of RUNOFF-030's scope by construction: that issue relaxes a guard, and this 
 ### Proposed action and acceptance
 Compare `runoftemp` in both halves of the condition and print `runoftemp` in the message. Acceptance: a `runoftemp` above 36 degC with `useExfCheckRange` at its default is refused and the message names the temperature and its value; a volume flux of any magnitude is not reported as a temperature error; `tests/rnf/exf_heat_check.py` still passes at its measured 5.834e-16 over 7 cells (3.559e-16 before RUNOFF-031). [**2026-10-09, RUNOFF-031:** this issue matters more now: the sparse heat goes through `runoftemp`, so the misnamed test applies to sparse runoff too, and every lab_sea instrument that carries a temperature (`tendency_term_check`, `budget_check`, `exf_heat_check`, `kpp_heat_check`) builds with `ALLOW_RUNOFTEMP`; cs32 always did.] Since this is upstream code, decide with the owner whether to carry it as a local fix or report it upstream only.
 
-## UNRESOLVED: runoff tracer term is mis-sampled in time under pkg/longstep with LS_nIter > 1
-
-**Date Identified**: 2026-10-09T07:50:00Z
-**Status**: Unresolved
-**UUID**: RUNOFF-043
-**Anchors**: MITgcm/pkg/rnf/rnf_forcing_surf.F::<module>; MITgcm/pkg/longstep/longstep_forcing_surf.F::<module>
-
-### Issue or research question
-With pkg/longstep the passive tracers step every `LS_nIter` dynamics steps with `PTRACERS_dTLev = LS_nIter*dTtracerLev` (`pkg/ptracers/ptracers_readparms.F:159`), and the model's own freshwater term uses `LS_fwFlux`, the long-step **average** of `EmPmR` (`pkg/longstep/longstep_average.F`, `longstep_forcing_surf.F:66-147`). `RNF_TENDENCY_APPLY_PTR` instead applies the `RNF_ap*` fields of the **current** dynamics step for the whole long step. The two agree only when the runoff is constant over the long step or `LS_nIter = 1`. [**2026-10-09, RUNOFF-031:** the term moved to `surfaceForcingPTr` and is re-added after `LONGSTEP_FORCING_SURF` by `RNF_FORCING_SURF_PTR`; it is still the current step's, so the mis-sampling stands, and the option-C refusal was implemented in RUNOFF-031 (`RNF_CHECK`, `refusal_check.py` cases `longstep_tracer` and `longstep_no_tracer`, the refusal shown failing on a guard-removed mutant).]
-
-### Evidence
-Found by review A of RUNOFF-008 (2026-10-09, agent ad98e39fd4b872093) and confirmed by Arch from source. Witness `devel-loop/loop_state/scratch/ad98e39fd4b872093/longstep_nIter_witness.json`: the `tendency_term_check` `L_unset` pair (record 1 dry, record 2 wet), tracer change at the target cell over two steps against the source-carried `(mC − m·C_L)·mu·D·dt` of the one wet step: ratio 1.000000000000002 at `LS_nIter = 1`, **1.9999999999999998 at `LS_nIter = 2`**. Stock `lab_sea/input.longstep/data.longstep` sets `LS_nIter = 2`. With `PTRACERS_EvPrRn` set there is also a cancellation residual `(m_avg − m_now)·EvPrRn·mu` between the model term and the package term (derived from source, not measured). The longstep arms themselves match `PTRACERS_FORCING_SURF` and the package's `C_ref` choice; only the time sampling differs. T and S are unaffected (pkg/longstep steps only ptracers).
-
-### Scientific or engineering impact
-Silent tracer-budget error, up to a factor `LS_nIter` at a step where runoff switches on, for any longstep run whose runoff varies within a long step. pkg/longstep was never declared a supported class of pkg/rnf, and no document states the limit yet; every RUNOFF-008 oracle runs `LS_nIter = 1`.
-
-### Proposed action and acceptance
-Decide between (a) averaging the package's tracer inputs over the long step the way `LONGSTEP_AVERAGE` averages `EmPmR`, so the term is exact for any `LS_nIter`, and (b) refusing `useRNF` tracer variables with `LS_nIter > 1` in `RNF_CHECK` and documenting it. Either way document the limit in `docs/package_design.md` decision 4 and the verification matrix. Acceptance: Richard's witness reproduces at ratio 1 to 1e-12 under (a), or is refused with a named message under (b); an enrolled case with `LS_nIter = 2` that fails on the current code; no-change runs unchanged. Kind: scientific_change (risk supported_semantics under (a)).
-
-**Owner decision, 2026-10-09: (b).** "pkg/rnf does not need to support pkg/longstep at this time. If the model is configured with both, throw an error and stop (similar to other occasions when the model encounters incompatible package combinations) — refuse and document the limit." One point is waiting on the owner. pkg/longstep has no run-time switch: it is active whenever it is compiled and `usePTRACERS` is set (`longstep_readparms.F:47`), and `LS_nIter` defaults to 1. lab_sea compiles it, and every RUNOFF-008 tracer oracle runs on lab_sea with `LS_nIter = 1`, which is exact. Arch proposed refusing in `RNF_CHECK` when longstep actually long-steps, i.e. `ALLOW_LONGSTEP`, `usePTRACERS` and `LS_nIter ≠ 1`, rather than whenever both packages are compiled, which would stop every lab_sea tracer run.
-
-**Owner decision, 2026-10-09 (final): option C.** Refuse only the broken configuration.
-- **Condition:** in `RNF_CHECK` under `#ifdef ALLOW_LONGSTEP`, stop when `usePTRACERS`, `LS_nIter ≠ 1` and `RNF_nTrUse > 0`, i.e. the file feeds at least one ptracer. `RNF_nTrUse` is set by `RNF_NC_SERIES` in `RNF_INIT_FIXED`, which runs before `RNF_CHECK`.
-- **Message:** names pkg/longstep, `LS_nIter` and the runoff tracer variables. It suggests `LS_nIter = 1` or `RNF_usePtracers = .FALSE.`.
-- **Not refused:** `LS_nIter ≠ 1` with no runoff tracer variables. There the volume reaches `EmPmR` and `LS_fwFlux` by exf's own path (`RNF_EXF_RUNOFF` fills exf `runoff`), which is time-consistent under longstep.
-- **Documentation:** the limit goes in package design decision 4, the verification matrix and the code map.
-- **Acceptance:** an enrolled refusal case with `LS_nIter = 2` and a runoff tracer, shown failing on a mutant with the guard removed. A companion case with `LS_nIter = 2` and no tracer variables must run normally. A third case at `LS_nIter = 1` with tracers must run (the RUNOFF-008 oracles already do). No-change runs unchanged. One Richard.
-- **Option D (support by averaging) is deferred to RUNOFF-044.** Once it lands, this refusal is removed.
-
-Also carried here from the same review (coverage, not a defect): in RUNOFF-008's enrolled local-arm tendency rows the cell's tracer still equals its initial value at the measured step, so a stale-time-level reference would pass them; review A's witness with a wet first record (local 1.50318 vs initial 1.5) shows the code uses the current tracer. Enrolling a wet-first-record case closes that gap.
-
 ## BLOCKED: support pkg/longstep with LS_nIter > 1 for runoff tracers (average the tracer input over the long step)
 
 **Date Identified**: 2026-10-09T09:30:00Z
