@@ -1,0 +1,441 @@
+{
+  "retrospective": {
+    "schema_version": 3,
+    "id": "RUNOFF-017",
+    "iteration": 1,
+    "closes_timestamp": "2026-10-13T23:29:53.843113+00:00",
+    "timestamp": "2026-10-15T22:34:59Z",
+    "accounting": {
+      "path": "devel-loop/loop_state/accounting/b82e0a60ae30cf47422ba2ca21e38bc72970556061d78d4628416b2502df0cb0.json",
+      "sha256": "b82e0a60ae30cf47422ba2ca21e38bc72970556061d78d4628416b2502df0cb0"
+    },
+    "measured": {
+      "span_minutes": 2822,
+      "dispatches": {
+        "bob": 3,
+        "scout": 1,
+        "richard": 5
+      },
+      "rounds": {
+        "bob": 3,
+        "scout": 1,
+        "richard": 3
+      },
+      "cost_usd": {
+        "bob": 0.0,
+        "scout": 0.0,
+        "richard": 0.0
+      },
+      "unknown_cost_event_ids": [
+        "b919305de9dc4bd4a53968638de61ed8",
+        "4780279ba1e74ecfaf94b5f197dea100",
+        "101ab0ffdfa0419a947095ccedd03655",
+        "ff83b174d0904ee9ae055b2641a49242",
+        "e3f1a0b920c4412685c800563201a7c9",
+        "bfac8f36cb20438d93708ba1e48b7d88",
+        "b9e2703252624f7db5dccb2c6a900de4",
+        "1cdac94acdfe428c950bb4c7c3ba33b1",
+        "8f30634ecd4f4564bf2f7a556c11dd43"
+      ],
+      "coordinator_coverage": "recorded",
+      "billing_status": "provider_reported_not_invoice_reconciled",
+      "coordinator": {
+        "tool_measured_minutes": 127.5,
+        "self_reported_minutes": 570.0,
+        "self_reported_usd": null,
+        "provider_reported_usd": null
+      },
+      "cost_scope": "cost_usd and span-based figures describe dispatched agents; coordinator cost is recorded separately: Arch self-reported 570 min, cost unknown (coordinator.self_reported; not added to cost_usd)"
+    },
+    "problems": [],
+    "solutions": [],
+    "confirmations": [],
+    "carry_forward": [],
+    "no_problem_reason": "",
+    "commentary": "pending"
+  },
+  "accounting": {
+    "billing_status": "provider_reported_not_invoice_reconciled",
+    "by_phase": {
+      "orientation": {
+        "effort_seconds": 6.398621082305908,
+        "elapsed_seconds": 6.398621082305908,
+        "events": 11
+      },
+      "verification": {
+        "effort_seconds": 16500.703860521317,
+        "elapsed_seconds": 16500.703860521317,
+        "events": 9
+      }
+    },
+    "by_role": {
+      "bob": {
+        "dispatches": 3,
+        "reported_usd": 0.0,
+        "rounds": 3,
+        "seconds": 0.0,
+        "tool_calls": 0,
+        "unknown_cost_events": 3,
+        "unknown_tool_call_events": 3,
+        "usage": {}
+      },
+      "richard": {
+        "dispatches": 5,
+        "reported_usd": 0.0,
+        "rounds": 3,
+        "seconds": 0.0,
+        "tool_calls": 0,
+        "unknown_cost_events": 5,
+        "unknown_tool_call_events": 5,
+        "usage": {}
+      },
+      "scout": {
+        "dispatches": 1,
+        "reported_usd": 0.0,
+        "rounds": 1,
+        "seconds": 0.0,
+        "tool_calls": 0,
+        "unknown_cost_events": 1,
+        "unknown_tool_call_events": 1,
+        "usage": {}
+      }
+    },
+    "child_elapsed_seconds": 0,
+    "components": [
+      {
+        "event_id": "b919305de9dc4bd4a53968638de61ed8",
+        "kind": "unmetered_native",
+        "parent_event_id": "b919305de9dc4bd4a53968638de61ed8",
+        "reported_usd": null,
+        "role": "bob",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "4780279ba1e74ecfaf94b5f197dea100",
+        "kind": "unmetered_native",
+        "parent_event_id": "4780279ba1e74ecfaf94b5f197dea100",
+        "reported_usd": null,
+        "role": "scout",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "101ab0ffdfa0419a947095ccedd03655",
+        "kind": "unmetered_native",
+        "parent_event_id": "101ab0ffdfa0419a947095ccedd03655",
+        "reported_usd": null,
+        "role": "bob",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "ff83b174d0904ee9ae055b2641a49242",
+        "kind": "unmetered_native",
+        "parent_event_id": "ff83b174d0904ee9ae055b2641a49242",
+        "reported_usd": null,
+        "role": "richard",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "e3f1a0b920c4412685c800563201a7c9",
+        "kind": "unmetered_native",
+        "parent_event_id": "e3f1a0b920c4412685c800563201a7c9",
+        "reported_usd": null,
+        "role": "richard",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "bfac8f36cb20438d93708ba1e48b7d88",
+        "kind": "unmetered_native",
+        "parent_event_id": "bfac8f36cb20438d93708ba1e48b7d88",
+        "reported_usd": null,
+        "role": "bob",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "b9e2703252624f7db5dccb2c6a900de4",
+        "kind": "unmetered_native",
+        "parent_event_id": "b9e2703252624f7db5dccb2c6a900de4",
+        "reported_usd": null,
+        "role": "richard",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "1cdac94acdfe428c950bb4c7c3ba33b1",
+        "kind": "unmetered_native",
+        "parent_event_id": "1cdac94acdfe428c950bb4c7c3ba33b1",
+        "reported_usd": null,
+        "role": "richard",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      },
+      {
+        "event_id": "8f30634ecd4f4564bf2f7a556c11dd43",
+        "kind": "unmetered_native",
+        "parent_event_id": "8f30634ecd4f4564bf2f7a556c11dd43",
+        "reported_usd": null,
+        "role": "richard",
+        "source": "devel-loop/loop_state/dispatch_log.jsonl"
+      }
+    ],
+    "coordinator": {
+      "coverage": "recorded",
+      "included_in_reported_usd": "no",
+      "provider_reported_usd": null,
+      "self_reported": {
+        "minutes": 570.0,
+        "records": [
+          {
+            "minutes": 90.0,
+            "phase": "coordination",
+            "record_id": "416d5dfed2db465682a5046c9eee0ba4",
+            "recorded_at": "2026-10-15T22:34:59.493834+00:00",
+            "source": "Estimate from iteration timestamps (start 2026-10-13T23:29Z, closed 2026-10-15T15:3xZ, paused ~30 h awaiting owner); no host /cost in-session; USD unknown",
+            "usd": null
+          },
+          {
+            "minutes": 480.0,
+            "phase": "waiting",
+            "record_id": "e5284ea974f1406c8a9cd2639a79eb22",
+            "recorded_at": "2026-10-15T22:34:59.592987+00:00",
+            "source": "Estimate: three final verifications of ~2 h each, the first two stopped at the 2 h background cap; excludes the owner-decision pause; USD unknown",
+            "usd": null
+          }
+        ],
+        "records_without_usd": 2,
+        "usd": null
+      },
+      "tool_measured": {
+        "basis": "wall time of gate commands run as arch; excludes interactive session time",
+        "effort_seconds": 7647.076965093613,
+        "elapsed_seconds": 7647.076965093613,
+        "events": 6
+      }
+    },
+    "coordinator_coverage": "recorded",
+    "end": "2026-10-15T22:32:01.274133+00:00",
+    "issue_id": "RUNOFF-017",
+    "missing_timing_event_ids": [
+      "b919305de9dc4bd4a53968638de61ed8",
+      "4780279ba1e74ecfaf94b5f197dea100",
+      "101ab0ffdfa0419a947095ccedd03655",
+      "ff83b174d0904ee9ae055b2641a49242",
+      "e3f1a0b920c4412685c800563201a7c9",
+      "bfac8f36cb20438d93708ba1e48b7d88",
+      "b9e2703252624f7db5dccb2c6a900de4",
+      "1cdac94acdfe428c950bb4c7c3ba33b1",
+      "8f30634ecd4f4564bf2f7a556c11dd43"
+    ],
+    "outside_child_intervals_seconds": 169327.43102002144,
+    "phase_events": [
+      {
+        "event_id": "e5c729703cce49ea8afc2606ab8bf2f8",
+        "finished_at": "2026-10-13T23:29:55.467579+00:00",
+        "issue_id": "RUNOFF-017",
+        "phase": "orientation",
+        "reason": null,
+        "role": "arch",
+        "seconds": 0.874744487926364,
+        "started_at": "2026-10-13T23:29:54.592793+00:00"
+      },
+      {
+        "event_id": "c9fc1ca4a97947758b3cfa80b1a273bb",
+        "finished_at": "2026-10-13T23:30:25.191819+00:00",
+        "issue_id": "RUNOFF-017",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.5066255908459425,
+        "started_at": "2026-10-13T23:30:24.685268+00:00"
+      },
+      {
+        "event_id": "92b3a6fb6eaf45418b8c1a6d5c424f94",
+        "finished_at": "2026-10-14T00:23:47.284218+00:00",
+        "issue_id": "RUNOFF-017",
+        "phase": "verification",
+        "reason": null,
+        "role": "a8f001e7682b0a7f2",
+        "seconds": 1961.012629976496,
+        "started_at": "2026-10-13T23:51:06.271643+00:00"
+      },
+      {
+        "event_id": "75655faa6da042848aa21f86b5e67247",
+        "finished_at": "2026-10-14T00:32:08.062119+00:00",
+        "issue_id": "RUNOFF-017",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.3815577905625105,
+        "started_at": "2026-10-14T00:32:07.680544+00:00"
+      },
+      {
+        "event_id": "d030404b196e4880807beab8e474e252",
+        "finished_at": "2026-10-14T01:46:03.099204+00:00",
+        "issue_id": "RUNOFF-017",
+        "phase": "verification",
+        "reason": null,
+        "role": "a8f001e7682b0a7f2",
+        "seconds": 2741.6600356809795,
+        "started_at": "2026-10-14T01:00:21.439224+00:00"
+      },
+      {
+        "event_id": "f9ecf424c40845259b6ed9ddc1e673b7",
+        "finished_at": "2026-10-14T01:47:29.471799+00:00",
+        "issue_id": "RUNOFF-017",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.4136783815920353,
+        "started_at": "2026-10-14T01:47:29.058126+00:00"
+      },
+      {
+        "event_id": "f44bfdd3bd25448c871b4d8550c08fd8",
+        "finished_at": "2026-10-14T01:48:45.021402+00:00",
+        "issue_id": "RUNOFF-017",
+        "phase": "orientation",
+        "reason": null,
+        "seconds": 0.7390781547874212,
+        "started_at": "2026-10-14T01:48:44.282343+00:00"
+      },
+      {
+        "event_id": "9e3394841ae042ebb5a018723304dc43",
+        "finished_at": "2026-10-14T01:51:27.212866+00:00",
+        "issue_id": "RUNOFF-017",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 144.12503572925925,
+        "started_at": "2026-10-14T01:49:03.087842+00:00"
+      },
+      {
+        "event_id": "2993ffe208394585961e1ef235da321b",
+        "finished_at": "2026-10-14T01:56:33.710751+00:00",
+        "issue_id": "RUNOFF-017",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 133.2593197580427,
+        "started_at": "2026-10-14T01:54:20.451342+00:00"
+      },
+      {
+        "event_id": "7c02159c262e44da9fc31c013dce4eb7",
+        "finished_at": "2026-10-14T01:59:47.197615+00:00",
+        "issue_id": "RUNOFF-017",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 145.4780730549246,
+        "started_at": "2026-10-14T01:57:21.719544+00:00"
+      },
+      {
+        "event_id": "074ed40592724857af3c70e490e4626c",
+        "finished_at": "2026-10-14T03:05:35.939084+00:00",
+        "issue_id": "RUNOFF-017",
+        "phase": "verification",
+        "reason": null,
+        "role": "ad2f2f2f823ed7162",
+        "seconds": 2052.9396411925554,
+        "started_at": "2026-10-14T02:31:22.999544+00:00"
+      },
+      {
+        "event_id": "437029b5a4b54f74acba0db84d2621f6",
+        "finished_at": "2026-10-14T03:11:13.675779+00:00",
+        "issue_id": "RUNOFF-017",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.5098228752613068,
+        "started_at": "2026-10-14T03:11:13.165924+00:00"
+      },
+      {
+        "event_id": "e73e5bc93aab4489b6cfa6814b875879",
+        "finished_at": "2026-10-14T03:47:38.466488+00:00",
+        "issue_id": "RUNOFF-017",
+        "phase": "verification",
+        "reason": null,
+        "role": "a494ddd40fcc84c7b",
+        "seconds": 2098.889589184895,
+        "started_at": "2026-10-14T03:12:39.576902+00:00"
+      },
+      {
+        "event_id": "129991d1fd3c45359dc624f7a4966551",
+        "finished_at": "2026-10-14T03:53:00.151865+00:00",
+        "issue_id": "RUNOFF-017",
+        "phase": "orientation",
+        "reason": null,
+        "role": "richard",
+        "seconds": 0.3853072188794613,
+        "started_at": "2026-10-14T03:52:59.766550+00:00"
+      },
+      {
+        "event_id": "c2cf382a3a394e6191f33f51bc577d76",
+        "finished_at": "2026-10-14T03:55:33.663092+00:00",
+        "issue_id": "RUNOFF-017",
+        "phase": "orientation",
+        "reason": null,
+        "role": "bob",
+        "seconds": 0.48076706007122993,
+        "started_at": "2026-10-14T03:55:33.182318+00:00"
+      },
+      {
+        "event_id": "c45d87a110ba4d41bce927f5abb9df3b",
+        "finished_at": "2026-10-14T04:00:50.133155+00:00",
+        "issue_id": "RUNOFF-017",
+        "phase": "orientation",
+        "reason": null,
+        "seconds": 0.5495112743228674,
+        "started_at": "2026-10-14T04:00:49.583633+00:00"
+      },
+      {
+        "event_id": "8e3d0e380d824057851c0ce27b01faec",
+        "finished_at": "2026-10-14T04:03:56.126127+00:00",
+        "issue_id": "RUNOFF-017",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 170.65370157919824,
+        "started_at": "2026-10-14T04:01:05.472437+00:00"
+      },
+      {
+        "event_id": "b0c0de4dc60745f5aa0a7ad522022560",
+        "finished_at": "2026-10-14T04:06:53.834913+00:00",
+        "issue_id": "RUNOFF-017",
+        "phase": "orientation",
+        "reason": null,
+        "seconds": 0.7662223652005196,
+        "started_at": "2026-10-14T04:06:53.068724+00:00"
+      },
+      {
+        "event_id": "7197228c3b8c4de999d44521f7fc3d0d",
+        "finished_at": "2026-10-14T04:07:00.653361+00:00",
+        "issue_id": "RUNOFF-017",
+        "phase": "orientation",
+        "reason": null,
+        "seconds": 0.7912242840975523,
+        "started_at": "2026-10-14T04:06:59.862039+00:00"
+      },
+      {
+        "event_id": "f97aa16e582a4b2f9bc8c767a649ef61",
+        "finished_at": "2026-10-15T22:27:50.491444+00:00",
+        "issue_id": "RUNOFF-017",
+        "phase": "verification",
+        "reason": null,
+        "role": "arch",
+        "seconds": 7052.6859652828425,
+        "started_at": "2026-10-15T20:30:17.805459+00:00"
+      }
+    ],
+    "reported_usd": 0,
+    "schema_version": 2,
+    "span_seconds": 169327.43102002144,
+    "start": "2026-10-13T23:29:53.843113+00:00",
+    "unknown_cost_event_ids": [
+      "b919305de9dc4bd4a53968638de61ed8",
+      "4780279ba1e74ecfaf94b5f197dea100",
+      "101ab0ffdfa0419a947095ccedd03655",
+      "ff83b174d0904ee9ae055b2641a49242",
+      "e3f1a0b920c4412685c800563201a7c9",
+      "bfac8f36cb20438d93708ba1e48b7d88",
+      "b9e2703252624f7db5dccb2c6a900de4",
+      "1cdac94acdfe428c950bb4c7c3ba33b1",
+      "8f30634ecd4f4564bf2f7a556c11dd43"
+    ]
+  }
+}
