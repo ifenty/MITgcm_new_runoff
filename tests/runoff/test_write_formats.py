@@ -371,6 +371,18 @@ def check_file(path, headers):
                 symbols.update(local)
         values = split_items(items)
         kinds = [item_kind(v, symbols) for v in values]
+        # An internal write to the one character variable msgBuf has ONE
+        # record, so a format with fewer descriptors than items would
+        # revert to a second record and die with "End of file" (the
+        # message of rnf_init_fixed.F:384, RUNOFF-017). reverted_kinds
+        # models reversion within a record, which is right for a file or
+        # a multi-record unit and is why this went unflagged before.
+        if len(descriptor_kinds(fmt)) < len(values):
+            found.append((line, "format ({0}) has {1} descriptor(s) for {2}"
+                          " item(s): reversion starts a second record of the"
+                          " one-record msgBuf (runtime End of file)"
+                          .format(fmt, len(descriptor_kinds(fmt)),
+                                  len(values))))
         want = reverted_kinds(fmt, len(values))
         if len(want) < len(values):
             found.append((line, "format ({0}) writes {1} item(s), {2} given"
@@ -492,6 +504,31 @@ def test_the_two_fixed_bugs_and_an_integer_real_mix_are_detected(tmp_path):
     assert "is c but descriptor 6" in text[5], text[5]
     assert "is c but descriptor 3" in text[13], text[13]
     assert "(fracF) is r but descriptor 2" in text[20], text[20]
+
+
+def test_format_reversion_onto_a_second_record_is_detected(tmp_path):
+    """The old zero-count message of RNF_INIT_FIXED must be flagged.
+
+    ``'(A,2(A,I8))'`` with six items passed the kind check, because the
+    reversion tail has the right kinds, yet it fails at run time: msgBuf
+    is a one-record internal unit (RUNOFF-017). The corrected format and
+    one that fits without reversion must stay clean.
+    """
+    def run(fmt):
+        src = ("      SUBROUTINE T( myThid )\n"
+               "      CHARACTER*(MAX_LEN_MBUF) msgBuf\n"
+               "      INTEGER nS, nT\n"
+               "      WRITE(msgBuf,'(" + fmt + ")') 'the file',\n"
+               "     &    ' has', nS, ' source(s) and', nT,\n"
+               "     &    ' target entry(ies)'\n"
+               "      RETURN\n"
+               "      END\n")
+        path = tmp_path / "t.F"
+        path.write_text(src)
+        return check_file(str(path), symbols_of_headers())
+    old = run("A,2(A,I8)")
+    assert len(old) == 1 and "second record" in old[0][1], old
+    assert run("A,A,I8,A,I8,A") == []
 
 
 def test_pkg_rnf_write_statements_match_their_formats():

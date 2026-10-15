@@ -71,51 +71,6 @@ Acceptance: test cases in at least one lat-lon and one cs32 configuration for ea
 
 Unblocked 2026-10-04: RUNOFF-004 closed (sparse reader, per-tile lists, placement by the `mdsio_read_field.F` arithmetic, `GLOBAL_SUM` fraction check and the exf volume flux; fork `610d4cbaf`, final verification receipt `2e11b06d`, all 33 scientific commands passing). Note the reader accepts **one constant record only**: `rnf_init_fixed.F:199-217` stops the run for `RNF_useYearlyFiles` or any `RNF_period` other than 0, naming RUNOFF-005.
 
-## UNRESOLVED: Refusal and negative tests for invalid runoff input
-
-**Date Identified**: 2026-10-02T22:30:00Z
-**Status**: Unresolved
-**UUID**: RUNOFF-017
-**Anchors**: docs/runoff_schema.md::<module>
-
-### Issue or research question
-Model-side refusal tests: fraction sum off, land or off-grid target, blank-tile target, unknown tracer, missing variables, wrong units/schema version, grid mismatch, sparse and dense both set, missing flux values.
-
-### Evidence
-Owner direction 2026-10-02 (owner away for several days): develop and test the new runoff program across many MITgcm configurations, with and without T, S and tracer contributions, in every time mode, as a robust, documented MITgcm package following MITgcm coding standards; T/S fluxes follow the shelfice/icefront tendency pattern. Required failure behaviour: esx/project_profile.md (stop at init with an EXF/package-prefixed message naming the source).
-
-### Scientific or engineering impact
-Silent acceptance of bad input is the highest-risk failure mode (dropped mass).
-
-### Proposed action and acceptance
-Acceptance: one negative case per refusal, each stopping with the exact expected message; run by a script in tests/.
-
-Refusals added by the RUNOFF-010 design (docs/package_design.md, decisions 2, 3, 5, 6), each needing its own negative case: `target_cell` outside `0 ≤ g < nx·ny`, including a negative index (and `target_source` out of range); a target with `maskInC = 0` beyond an open boundary; a target under an ice shelf (`kTopC ≠ 0`); `useRNF` with `SHI_update_kTopC`; `exf_outscal_sflux ≠ 1`; a dense `runoftempfile`; `runoffconst ≠ 0`; `useRNF` without `useEXF` or without `ALLOW_RUNOFF`; a blank `RNF_file`; a build without NetCDF; a restart in synchronous nonlinear-free-surface mode whose time minus one step precedes the first record.
-
-Carry forward from RUNOFF-012:
-- Configure the cs32 case (`useRNF=.TRUE.` in input.seaice) that triggers both the `runofffile` and `runoftempfile` refusals, giving "2 fatal error(s)". lab_sea cannot test `runoftempfile` because `EXF_CHECK` stops first without `ALLOW_RUNOFTEMP`.
-- Refusal branches compiled but never executed: `ALLOW_RUNOFF` undefined, `HAVE_NETCDF` undefined, `useShelfIce` with `SHI_update_kTopC`, and `USE_OLD_EXTERNAL_FORCING`.
-
-Carry forward from RUNOFF-005 (reviews A and B, correction round 4, 2026-10-05): **make the `forbid` class non-vacuous by construction, and grade its evidence honestly.** `tests/rnf/refusal_check.py` has 14 distinct forbidden literals across 54 cases. A round-4 audit found none vacuous, but the audit decays:
-
-1. **One-line permanent fix (review B).** Assert at start-up that every `forbid` literal also appears in some case's positive `stderr`/`stderr_any`/`stdout` expectation. All six currently-unwitnessed literals are today the named positive expectation of exactly one sibling case (`runofffile`, `runoffconst`, `exf_outscal_sflux`, `useEXF_false`, `blank_RNF_file`, `fraction_sum`); **deleting or renaming any one of those six cases would silently turn its literal into an unwitnessed and unasserted forbid string** in the cases that still carry it, with nothing to notice. That is the LL-009 shape — a hole closed by audit rather than by a case — and a start-up assertion closes it permanently.
-2. **The matrix reports two grades of evidence as one (review A).** Its "so none is vacuous" is true, but five of the six are `MESSAGES` entries with a **single Python definition** used both as the positive expectation and inside `no_error`, so a rewording breaks the positive case loudly *and* the two uses cannot drift — which is **stronger** than a log witness, since a witness only proves some past binary once emitted the text. The genuinely weaker member is `fraction sum is not 1`, a **duplicated raw string** (positive at `refusal_check.py:721` plus two forbid lists) whose copies can drift apart. The record currently undersells five and misses the real residual; name the one.
-3. **The method's true limit is not spelling (review A).** A `forbid` can go vacuous with **no rewording at all**, if the condition that would emit the message stops being reachable in that case's setup. No literal sweep sees that. What protects against it is the positive case existing — which it does for all 14, and which item 1 would make enforced rather than incidental.
-
-Also from review A, cheap and unrelated: anchor `placement_probe.OPEN_FAILED`'s basename (require a path separator or start-of-field before `probe.nc`) so the pattern cannot match a file merely ending in it. Unreachable today because `PROBE_FILE` has one definition driving both `DATA_RNF` and the matcher; purely a tightening.
-
-Carry forward from RUNOFF-013 (correction round 1, 2026-10-05) — **three `RNF_NC_SERIES` items, one of them closed by measurement rather than by code:**
-
-1. **A duplicate `RNF_trPtr` check is NOT needed: the condition is unreachable.** Review B proposed guarding against two runoff-tracer variables mapped to the same ptracer, of which the `iRnf` loop of `RNF_TENDENCY_APPLY_PTR` silently keeps the last. The "keeps the last" half is true, but the premise is not: `RNF_NC_SERIES` trims the variable name with `ILNBLNK`, which treats **only the literal space** as blank (`eesupp/src/utils.F:123-152`), so two *distinct* NetCDF names can collide on the trimmed name only through a trailing blank, and **NetCDF refuses one** — creating `runoff_ptracer_dye ` fails with `NetCDF: Name contains illegal characters` (measured 2026-10-05, netCDF4 1.7.4, libnetcdf 4.10.0). The one route that rule leaves open closes itself: a trailing **NUL** is accepted but collapsed to the same stored name, after which the duplicate name is refused with `NetCDF: String match to name in use` (same measurement, correction round 2). Distinct names therefore trim to distinct tracer names, which match distinct `PTRACERS_names` entries or none (two equal entries give `nMatch ≥ 2`, itself a refusal), so `RNF_trPtr` cannot hold a duplicate. Recorded here so the suggestion is not re-filed; the `iRnf` loop stays as defence in depth. Do **not** attach the `PTRACERS_num ≥ 2` condition to this item — that belongs to the two-matching-names refusal below. [**2026-10-09, RUNOFF-031:** `RNF_TENDENCY_APPLY_PTR` was deleted; its successor `RNF_FORCING_SURF_PTR` loops over the runoff tracers and would add both rather than keep the last. The condition stays unreachable, so the conclusion is unchanged.]
-2. **The two `RNF_NC_SERIES` refusals that still have no case**, both needing another build: a name matching more than one `PTRACERS_names` entry (needs `PTRACERS_num ≥ 2`) and the `#else /* ALLOW_PTRACERS */` branch for a model compiled without pkg/ptracers. Three siblings were enrolled in correction round 1 (`ptracer_name_empty`, `ptracer_name_long`, `ptracer_too_many`), each measured passing on the committed build and failing on a mutant with its guard weakened, and correction round 2 added their at-the-bound counterfactuals (`ptracer_name_min`, `ptracer_name_max`, `ptracer_count_max`), which hold the guards back from `.GE.`; these two refusals are what is left. [**2026-10-09, RUNOFF-008:** the first of the two is reachable by input on the `PTRACERS_num = 2` build, measured once and not enrolled: with `PTRACERS_names = ('dye', 'dye')`, `useMNC = .FALSE.` and a file carrying `runoff_ptracer_dye`, the run stops with `RNF_NC_SERIES: RNF: runoff_ptracer_dye: the name matches   2 PTRACERS_names entries` and `ABNORMAL END: S/R RNF_INIT_FIXED`, while `('dye', 'dye2')` runs and applies the term. With lab_sea's default `useMNC = .TRUE.` it never gets there: pkg/mnc stops first on the duplicate name (`MNC_CW_ADD_VNAME ERROR: 'dye' is already defined`). It is not in `refusal_check.py` because that script runs every case on one binary chosen by `--mpi` and is enrolled without `--build`; see the RUNOFF-008 entry.]
-3. **A missing value of `runoff_salinity` or of a tracer** still drives no case, so the per-series naming of that message is unmeasured for those two series even though seven flux cases run the same code path (six until RUNOFF-030 added `flux_above_source_max`). See the matrix refusal row. RUNOFF-030 also widened that code path: `RNF_NC_READ_ONE` now carries an out-of-range refusal with its own per-series count line beside the missing-value one, and that line too is measured for the flux only.
-
-Carry forward from RUNOFF-033 (review A, correction round 2, 2026-10-05): **enrol a non-finite `target_cell_area` case.** Commit `016fdee5d` made the same one-token NaN fail-open fix at **two** sibling comparison sites in `rnf_init_fixed.F` — the cell-centre check and the pre-existing `target_cell_area` check — but only the first got a permanent case (`target_coords_nan`). The existing `cell_area` case is `scale_var("target_cell_area", 0, 1.01)`, a **finite** error, and the coordinate check is reached only *after* the area check passes, so reverting the area comparison to `.GT.` would leave **both** existing cases green and no configured command would notice. The behaviour is correct today — review A measured `area_nan` refused with exit 1 in correction round 1 — and `T09-cell-area-nan` covers the checker side, so what is missing is regression coverage of the model-side backstop, which exists precisely for files that never went through `MITgcmutils.runoff.check`. One line closes it: a `file_case` with `set_var("target_cell_area", 0, float("nan"))` expecting the message the model already prints, `target_cell_area differs from the cell area rA`, confirmed by review A's round-1 probe. See LL-009.
-
-Carry forward from RUNOFF-004 (review B, correction round 1, 2026-10-04): add the **cross-rank global-count oracle**. `tests/rnf/refusal_check.py::judge` asserts that a tile-local refusal message appears in *some* rank's `STDERR` and that each rank emits one `STOP` line, but it never asserts the **value** of the `GLOBAL_SUM_INT`-ed count, and `sparse_info` always selects a land cell in the western half, i.e. rank 0 — so the zero-local/non-zero-global case has no case. Review B wrote and ran the two that distinguish a correct reduction from a lucky one, on 2 MPI ranks: `land_rank1_only`, where rank 0 owns no refused target and prints no detail line yet still prints `1 refused target(s) on all processes` and stops, and `land_both_ranks`, where each rank sees 1 locally yet both print `2`. Both passed, with no hang. Fold them into `refusal_check.py` and assert the summed value. Its receipt is `devel-loop/loop_state/scratch/ab74b9af824d5b71c/richard_refusal_mpi2.json`; the same run also covered four refusal paths that had no case (`RNF_period` set in `data.rnf`, schema major version 2.0, `constant` sampling with two records, and `runoff_flux` with its dimensions transposed). Low priority: the mechanism is proven by execution and unchanged since. Note the scratch receipt is git-ignored and local to this machine, so re-derive the cases from the description rather than relying on the file surviving.
-
-Unblocked 2026-10-04: RUNOFF-004 closed (sparse reader, per-tile lists, placement by the `mdsio_read_field.F` arithmetic, `GLOBAL_SUM` fraction check and the exf volume flux; fork `610d4cbaf`, final verification receipt `2e11b06d`, all 33 scientific commands passing). Note the reader accepts **one constant record only**: `rnf_init_fixed.F:199-217` stops the run for `RNF_useYearlyFiles` or any `RNF_period` other than 0, naming RUNOFF-005.
-
 ## UNRESOLVED: global_ocean.90x40x15 and global_oce_latlon sparse runoff testbeds
 
 **Date Identified**: 2026-10-02T22:30:00Z
@@ -504,3 +459,60 @@ Low. This is explicitly not a detection gap (the class is already caught); the v
 
 ### Proposed action and acceptance
 Give `RNF_DIAGNOSTICS_INIT` (or the surrounding diagnostics setup) a message naming which `diagTitle`/`diagName` overflowed its fixed field, on the existing abort path. Acceptance: a deliberately-oversized title aborts with a message naming it; the existing abort-on-overflow behavior for every other title is unchanged.
+
+## UNRESOLVED: refusals that need an open-boundary or blank-tile build (maskInC = 0 target, blank-tile target)
+
+**Date Identified**: 2026-10-13T00:00:00Z
+**Status**: Unresolved
+**UUID**: RUNOFF-048
+**Anchors**: MITgcm/pkg/rnf/rnf_init_fixed.F::<module>; tests/rnf/refusal_check.py::<module>
+
+### Issue or research question
+Split out of RUNOFF-017 (scout matrix, 2026-10-13). Two refusals have no enrolled case because no runoff experiment can reach them: refuse = 2, a target with `maskInC = 0` beyond an open boundary (`rnf_init_fixed.F:799-800`), and a target on a blank exch2 tile, which is caught only as a fraction deficit by the global sum (`rnf_init_fixed.F:1009-1047`, comment at :1044).
+
+### Evidence
+Scout read of `packages.conf` over all 17 runoff experiment configurations: no obcs, no blank tile (inferred from the package lists, not from the data files; verify before building). RUNOFF-019 lists `seaice_obcs` and `obcs_ctrl` as regional testbeds, which would supply the open-boundary build.
+
+### Scientific or engineering impact
+Highest silent-acceptance risk of the RUNOFF-017 list: a target the model never applies drops its mass, and the only guard for a blank tile is a fraction-sum deficit whose exact condition is untested on one.
+
+### Proposed action and acceptance
+Add an experiment with obcs and one with a blank exch2 tile (new `code/` directories; may reuse RUNOFF-019's testbed). Acceptance: a target beyond the open boundary stops with the refuse = 2 message; a target on a blank tile stops through the fraction deficit with a message naming the source, on `-mpi N`; each shown failing on a guard-removed mutant; a control with a valid target runs.
+
+## UNRESOLVED: refusals that need a shelfice build (target under an ice shelf, SHI_update_kTopC)
+
+**Date Identified**: 2026-10-13T00:00:00Z
+**Status**: Unresolved
+**UUID**: RUNOFF-049
+**Anchors**: MITgcm/pkg/rnf/rnf_check.F::<module>; MITgcm/pkg/rnf/rnf_init_fixed.F::<module>
+
+### Issue or research question
+Split out of RUNOFF-017. `useRNF` with `useShelfIce` and `SHI_update_kTopC` is refused (`rnf_check.F:216`) and a target with `kTopC /= 0` is refused as refuse = 3 (`rnf_init_fixed.F:802-804`, under `#ifdef ALLOW_SHELFICE`). No runoff experiment compiles pkg/shelfice (0 hits in 17 configurations), so both branches are compiled-but-unexecuted.
+
+### Evidence
+Scout read of `packages.conf` (inferred; verify). Related: RUNOFF-020 (grids with ice-shelf cavities, top wet level below k = 1), which would supply the build.
+
+### Scientific or engineering impact
+Without the refusals the target "loses its volume" (code comment): silent mass loss under an ice shelf.
+
+### Proposed action and acceptance
+One shelfice + rnf build. Acceptance: a target under a shelf stops with the refuse = 3 message and `SHI_update_kTopC` stops with its message, each shown failing on a guard-removed mutant, with a control that runs. May share the build with RUNOFF-020.
+
+## UNRESOLVED: restart-before-first-record refusal in synchronous nonlinear free-surface mode is never executed
+
+**Date Identified**: 2026-10-13T00:00:00Z
+**Status**: Unresolved
+**UUID**: RUNOFF-050
+**Anchors**: MITgcm/pkg/rnf/rnf_fields_load.F::<module>; tests/rnf/refusal_check.py::<module>
+
+### Issue or research question
+Split out of RUNOFF-017. `rnf_fields_load.F:173-190` stops a restart in synchronous nonlinear-free-surface mode whose time minus one step precedes the first record. The code comment (`rnf_fields_load.F:166-169`) says "No case is enrolled", and no experiment configures that branch. The same branch exercises `RNF_lagFlds = T`, which has never run (verification matrix, restart rows).
+
+### Evidence
+Scout read of the code and of `docs/verification_matrix.md:614-621`. Related: RUNOFF-022 (pickup/restart reproducibility).
+
+### Scientific or engineering impact
+Without the stop the lagged fields would be wrong or zero on restart. Rare branch; lower priority than RUNOFF-048 and RUNOFF-049.
+
+### Proposed action and acceptance
+Configure branch N (nonlinear free surface, real freshwater flux, no staggerTimeStep) with a restart. Acceptance: the stop fires on a file whose first record is after t - dt and is shown failing on a guard-removed mutant; a control with an earlier record or a repeat cycle runs. May be done together with RUNOFF-022.

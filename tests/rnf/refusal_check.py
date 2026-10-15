@@ -46,6 +46,15 @@ There are three kinds of case.
     "distance greater than the tolerance" form accepts;
   - the file as a whole: a grid size mismatch, a missing grid attribute, a
     time sampling other than ``constant``, a missing required variable;
+    and, since RUNOFF-017, a schema major version other than 1 or no
+    version at all, a missing ``mitgcm_grid_ny``, each of the dimensions
+    ``time``, ``source`` and ``target`` missing, each of the variables
+    ``source_id``, ``target_source``, ``target_cell`` and ``runoff_flux``
+    missing, and a file with no sources or no targets (``no_sources``,
+    ``no_targets``). The message ``WRITE`` of that guard
+    (``rnf_init_fixed.F:384``) had a format that died with the Fortran
+    runtime error "End of file" instead of printing; RUNOFF-017 corrected
+    it, and ``tests/runoff/test_write_formats.py`` now flags that class;
   - the flux: not a number, infinite, above 1e30, equal to a numeric
     ``missing_value`` or to the ``_FillValue`` of a float32 variable, and a
     ``missing_value`` stored as text, which must stop the run and not be
@@ -181,6 +190,15 @@ and this one case is a dict literal instead, so the method could not see it.
 Both reviewers found the omission by **calling** :func:`cases`, which is the
 enumeration that sees every case however it was built, and that is how the
 test above derives the set.
+
+RUNOFF-017 added to the configuration refusals ``generalized_addmassfile``
+(a non-blank ``addMassFile`` on the generalized route, which adds a third
+fatal error to the two of ``generalized_needs_addfluid``) with its control
+``legacy_addmassfile`` (the same setting on the legacy route, which must
+run), and ``schema_major_only`` (a version ``"1"``) as the control of the
+schema refusals. Its must-fail demonstration is one mutant build,
+``build_esx_mut_cfg017`` (``tests/rnf/mutant_cfg017_code.py``), on which the
+thirteen refusal cases fail and the two controls still pass.
 
 Two configuration refusals came with RUNOFF-031, each with a must-run
 control: ``temperature_no_runoftemp`` (a file with ``runoff_temperature``
@@ -826,7 +844,7 @@ def timed_axis(dst, nrec, period=TIMED_PERIOD, repeat="none", first=0.0,
 
 def sparse_file(path, edit=None, skip=(), retype=None, many_sources=0,
                 many_targets=0, wet_cell=0, split_from=None, split_ulp=None,
-                timed=None):
+                timed=None, empty=None):
     """Write a sparse runoff file at ``path``, derived from the valid one.
 
     Every dimension, variable and attribute of ``SPARSE`` is copied except
@@ -839,7 +857,12 @@ def sparse_file(path, edit=None, skip=(), retype=None, many_sources=0,
     on one tile. With ``many_targets`` it is a synthetic file with one source
     and that many target entries, all on ``wet_cell`` with equal fractions.
     With ``split_from`` it is the file of :func:`split_file`, in which two
-    sources feed each cell of that file, or three with ``split_ulp``.
+    sources feed each cell of that file, or three with ``split_ulp``. With
+    ``empty`` set to ``"source"`` or ``"target"`` it is a file with the
+    valid global attributes whose dimension of that name has length 0
+    (RUNOFF-017): netCDF has no fixed dimension of length 0, so that
+    dimension is made unlimited and given no records, and the other one
+    has one entry.
     """
     import netCDF4
     import numpy as np
@@ -850,6 +873,31 @@ def sparse_file(path, edit=None, skip=(), retype=None, many_sources=0,
         src.set_auto_maskandscale(False)
         dst.set_auto_maskandscale(False)
         dst.setncatts({k: src.getncattr(k) for k in src.ncattrs()})
+        if empty:
+            if empty not in ("source", "target"):
+                raise ValueError(f"empty must be source or target: {empty!r}")
+            n_src = None if empty == "source" else 1
+            n_tgt = None if empty == "target" else 1
+            dst.createDimension("time", None)
+            dst.createDimension("source", n_src)
+            dst.createDimension("target", n_tgt)
+            dst.createDimension("id_strlen", 8)
+            dst.createVariable("time", "f8", ("time",))[:] = [0.0]
+            dst["time"].setncatts({k: src["time"].getncattr(k)
+                                   for k in src["time"].ncattrs()})
+            dst.createVariable("source_id", "S1", ("source", "id_strlen"))
+            dst.createVariable("target_source", "i4", ("target",))
+            dst.createVariable("target_cell", "i4", ("target",))
+            dst.createVariable("target_fraction", "f8", ("target",))
+            dst.createVariable("runoff_flux", "f8", ("time", "source"))
+            if n_src:
+                dst["source_id"][:] = np.array([list("s0000000")], dtype="S1")
+                dst["runoff_flux"][0, :] = 1.0e-3
+            else:
+                dst["target_source"][:] = [0]
+                dst["target_cell"][:] = [0]
+                dst["target_fraction"][:] = [1.0]
+            return
         if many_sources or many_targets:
             n_src = many_sources or 1
             n_tgt = many_sources or many_targets
@@ -977,6 +1025,11 @@ def cases(data_pkg, data_exf, info=None):
         add_to_namelist(exf_file, "EXF_NML_03", " runoffconst = 1.E-8,"),
         "EXF_NML_03", " exf_outscal_sflux = 2.0,")
     after_checks = [PASSED]
+
+    def lab_sea_data():
+        """The text of ``lab_sea/input/data`` (for the cases that add to it)."""
+        with open(os.path.join(VERIF, EXPERIMENT, "input", "data")) as fh:
+            return fh.read()
     stop_check = "ABNORMAL END: S/R RNF_CHECK"
     one_error = "RNF_CHECK: detected  1 fatal error(s)"
     out = [
@@ -1025,6 +1078,26 @@ def cases(data_pkg, data_exf, info=None):
                     "RNF_CHECK: RNF_applyAsRain=.FALSE. needs selectAddFluid "
                     "= 1 or 2 (it is   0)",
                     "RNF_CHECK: detected  2 fatal error(s)"],
+         "stdout": [], "stop": stop_check, "forbid": after_checks},
+        # RUNOFF-017 (rnf_check.F:253-261): the generalized route needs
+        # addMassFile blank, because addMass is reset at every step only
+        # then (load_fields_driver.F:116) and the runoff would accumulate
+        # in the file's field. The case differs from
+        # generalized_needs_addfluid by the one setting, so the fatal
+        # error tally of 3 against that case's 2 is the guard's own
+        # count. The file need not exist: it is read, if at all, after
+        # RNF_CHECK, and this binary has no ALLOW_ADDFLUID to read it.
+        {"name": "generalized_addmassfile",
+         "files": {"data.pkg": pkg_on,
+                   "data.rnf": DATA_RNF_GENERALIZED.format(SPARSE_REL),
+                   "data": add_to_namelist(
+                       lab_sea_data(), "PARM05",
+                       " addMassFile = 'addmass.bin',")},
+         "stderr": ["RNF_CHECK: RNF_applyAsRain=.FALSE. needs addMassFile"
+                    " blank (addMass is then not reset at",
+                    "RNF_CHECK: every step, and the runoff would"
+                    " accumulate in it)",
+                    "RNF_CHECK: detected  3 fatal error(s)"],
          "stdout": [], "stop": stop_check, "forbid": after_checks},
     ]
     if info is None:
@@ -1504,6 +1577,81 @@ def cases(data_pkg, data_exf, info=None):
                   ["RNF: the file has no global attribute mitgcm_grid_nx",
                    one_init],
                   edit=del_att("mitgcm_grid_nx")),
+        # RUNOFF-017: the file-side and configuration refusals that had
+        # no case of their own. Each guard has a case here, and the
+        # must-fail demonstration is one mutant build
+        # (tests/rnf/mutant_cfg017_code.py) that removes exactly these
+        # guards. Messages are the Fortran's: rnf_init_fixed.F 297-314
+        # (schema), 331-347 (grid attributes), 361-389 (dimensions and
+        # their lengths), 400-415 and rnf_nc_utils.F RNF_NC_READ_ONE (the
+        # required variables), rnf_check.F 253-261 (addMassFile).
+        file_case("schema_major_2",
+                  ["RNF_INIT_FIXED: RNF: the schema major version of the"
+                   " file (2.0) is not 1", one_init],
+                  edit=set_att(mitgcm_runoff_schema_version="2.0")),
+        file_case("schema_missing",
+                  ["RNF: the file has no global attribute"
+                   " mitgcm_runoff_schema_version", one_init],
+                  edit=del_att("mitgcm_runoff_schema_version")),
+        file_case("missing_attribute_ny",
+                  ["RNF: the file has no global attribute mitgcm_grid_ny",
+                   one_init],
+                  edit=del_att("mitgcm_grid_ny")),
+        # A dimension is absent when the lookup by name fails, which is
+        # what renaming it makes happen; the variables that use it follow
+        # the rename, so nothing else in the file is wrong.
+        file_case("missing_dim_time",
+                  ["RNF_INIT_FIXED: RNF: looking for the dimension time"
+                   " failed", "NetCDF says: NetCDF: Invalid dimension ID"
+                   " or name"],
+                  stop="ABNORMAL END: S/R RNF_NC_ERROR",
+                  edit=lambda ds: ds.renameDimension("time", "tim")),
+        file_case("missing_dim_source",
+                  ["RNF_INIT_FIXED: RNF: looking for the dimension source"
+                   " failed", "NetCDF says: NetCDF: Invalid dimension ID"
+                   " or name"],
+                  stop="ABNORMAL END: S/R RNF_NC_ERROR",
+                  edit=lambda ds: ds.renameDimension("source", "src")),
+        file_case("missing_dim_target",
+                  ["RNF_INIT_FIXED: RNF: looking for the dimension target"
+                   " failed", "NetCDF says: NetCDF: Invalid dimension ID"
+                   " or name"],
+                  stop="ABNORMAL END: S/R RNF_NC_ERROR",
+                  edit=lambda ds: ds.renameDimension("target", "tgt")),
+        # rnf_init_fixed.F:383-389. Its message WRITE used the format
+        # '(A,2(A,I8))' for six items, which reverts onto a second record
+        # of the one-record msgBuf, so the guard died with the Fortran
+        # runtime error "End of file" (exit 2, no STOP line, empty STDERR)
+        # instead of printing its message (measured on the RUNOFF-017
+        # build before the format became '(A,A,I8,A,I8,A)').
+        file_case("no_sources",
+                  [f"RNF_INIT_FIXED: RNF: the file has{0:8d} source(s) and"
+                   f"{1:8d} target entry(ies)", one_init],
+                  empty="source"),
+        file_case("no_targets",
+                  [f"RNF_INIT_FIXED: RNF: the file has{1:8d} source(s) and"
+                   f"{0:8d} target entry(ies)", one_init],
+                  empty="target"),
+        file_case("missing_variable_source_id",
+                  ["RNF: looking for the required variable source_id"
+                   " failed", "NetCDF: Variable not found"],
+                  stop="ABNORMAL END: S/R RNF_NC_ERROR",
+                  skip=("source_id",)),
+        file_case("missing_variable_target_source",
+                  ["RNF: looking for the required variable target_source"
+                   " failed", "NetCDF: Variable not found"],
+                  stop="ABNORMAL END: S/R RNF_NC_ERROR",
+                  skip=("target_source",)),
+        file_case("missing_variable_target_cell",
+                  ["RNF: looking for the required variable target_cell"
+                   " failed", "NetCDF: Variable not found"],
+                  stop="ABNORMAL END: S/R RNF_NC_ERROR",
+                  skip=("target_cell",)),
+        file_case("missing_variable_runoff_flux",
+                  ["RNF: looking for the required variable runoff_flux"
+                   " failed", "NetCDF: Variable not found"],
+                  stop="ABNORMAL END: S/R RNF_NC_ERROR",
+                  skip=("runoff_flux",)),
         file_case("flux_inf", missing_msg, stop=stop_flux,
                   edit=set_var("runoff_flux", (0, 0), float("inf"))),
         file_case("flux_huge", missing_msg, stop=stop_flux,
@@ -1760,6 +1908,9 @@ def cases(data_pkg, data_exf, info=None):
     for case in out:
         if case["stop"] in (stop_flux, "ABNORMAL END: S/R RNF_NC_ATT_REAL"):
             case["forbid"] = ["RNF_INIT_VARIA: runoff flux"]
+    # runoff_flux is looked up in RNF_NC_READ_ONE, i.e. also after RNF_CHECK
+    next(c for c in out if c["name"] == "missing_variable_runoff_flux")[
+        "forbid"] = ["RNF_INIT_VARIA: runoff flux"]
     next(c for c in out if c["name"] == "fraction_hidden")["forbid"] = \
         forbid_file + ["fraction sum is not 1"]
     # The point of target_coords: the checks that came before it cannot see
@@ -2124,6 +2275,36 @@ def cases(data_pkg, data_exf, info=None):
          "summary": {"RNF_file": f"'{SPARSE_REL}'"},
          "flux_sum": info["flux_sum"], "stop": "ABNORMAL END",
          "forbid": no_error},
+        # RUNOFF-017: the control of generalized_addmassfile. The guard
+        # belongs to the generalized route only: the legacy route this
+        # binary runs (RNF_applyAsRain = .TRUE.) does not use addMass, so
+        # the same non-blank addMassFile must pass RNF_CHECK and the run
+        # must end normally. A guard that fired on any addMassFile would
+        # pass the refusal case and fail here.
+        {"name": "legacy_addmassfile",
+         "files": {"data.pkg": pkg_on, "data.rnf": rnf_ok,
+                   "data": add_to_namelist(
+                       lab_sea_data(), "PARM05",
+                       " addMassFile = 'addmass.bin',")},
+         "normal_end": True, "stderr": [], "stdout": stdout_ok,
+         "summary": {"RNF_applyAsRain": "T"},
+         "flux_sum": info["flux_sum"], "stop": "ABNORMAL END",
+         "forbid": no_error + ["needs addMassFile blank"]},
+        # RUNOFF-017: the control of schema_major_2 and schema_missing. A
+        # version with no minor part ("1") is schema 1.0
+        # (rnf_init_fixed.F:319-323), so the major-version test must let
+        # it through and the file must give the dense constant run. A
+        # test that refused any version without a dot would pass the
+        # refusal cases and fail here.
+        {"name": "schema_major_only",
+         "copy_from": DENSE_INPUT, "copy": dense,
+         "files": {"data.pkg": pkg_on, "data.rnf": rnf_bad},
+         "nc": {"bad.nc": {"edit": set_att(
+             mitgcm_runoff_schema_version="1")}},
+         "normal_end": True, "stderr": [], "stdout": stdout_ok,
+         "summary": {"RNF_levAbs": "F", "RNF_nTgtOwned": "7"},
+         "flux_sum": info["flux_sum"], "digits": (DENSE_REF, 16, 99),
+         "stop": "ABNORMAL END", "forbid": no_error},
         {"name": "cells_equal_dense",
          "copy_from": DENSE_INPUT, "copy": dense,
          "files": {"data.pkg": pkg_on, "data.rnf": DATA_RNF.format(CELLS_REL)},
