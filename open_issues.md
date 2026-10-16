@@ -26,30 +26,6 @@ A closed dependency prompts reconsideration; it does not automatically unblock w
 <Hypothesis, bounded change/inquiry, independent oracle, tolerances and completion criteria>
 ```
 
-## UNRESOLVED: Survey MITgcm verification experiments as runoff testbeds and build the test matrix
-
-**Date Identified**: 2026-10-02T22:30:00Z
-**Status**: Unresolved
-**UUID**: RUNOFF-011
-**Anchors**: MITgcm/verification/README.md::<module>; docs/verification_matrix.md::<module>
-
-### Issue or research question
-Which verification experiments can host sparse-runoff tests: grid type (lat-lon, cubed sphere, LLC), regional vs global, open boundaries, sea ice, ice shelves/cavities, free-surface and freshwater settings (useRealFreshWaterFlux, nonlinFreeSurf), forcing package (exf vs other), run cost; which have a dense runoff path usable as an oracle.
-
-### Evidence
-Owner direction 2026-10-02 (owner away for several days): develop and test the new runoff program across many MITgcm configurations, with and without T, S and tracer contributions, in every time mode, as a robust, documented MITgcm package following MITgcm coding standards; T/S fluxes follow the shelfice/icefront tendency pattern. Candidates seen: global_ocean.cs32x15, global_ocean.90x40x15, global_oce_latlon (input.yearly), lab_sea, seaice_obcs, obcs_ctrl, isomip (input.icefront), offline_exf_seaice, 1D_ocean_ice_column, tutorial_global_oce_latlon.
-
-### Scientific or engineering impact
-Defines which configurations prove the package works; without it testing stays at two grids.
-
-### Proposed action and acceptance
-docs/verification_matrix.md gains a testbed table (experiment, grid, features, oracle available, cost) and a prioritized list of new input.<X> cases each tied to an issue. Acceptance: Richard confirms the feature classifications against the experiments' data files.
-
-Carry forward from RUNOFF-012:
-- Five verification experiments compile their own `code/` copy of a routine this package hooks, and so will not get the hooks: `tutorial_global_oce_latlon` (ptracers_apply_forcing.F) and four with a local apply_forcing.F, listed in docs/verification_matrix.md. Exclude them as testbeds, or patch their copies in a test variant.
-- cs32 `input.in_p` already runs dense exf runoff and runoff temperature in pressure coordinates, with a reference.
-- `obcs_ctrl` has only adjoint inputs.
-
 ## UNRESOLVED: Real versus virtual freshwater flux and free-surface options
 
 **Date Identified**: 2026-10-02T22:30:00Z

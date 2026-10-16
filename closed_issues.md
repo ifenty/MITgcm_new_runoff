@@ -1469,3 +1469,32 @@ Unblocked 2026-10-04: RUNOFF-004 closed (sparse reader, per-tile lists, placemen
 ### Gate acceptance
 
 Accepted by `loop_gate.py --check-done` at 2026-10-15T22:32:01.274133+00:00 for iteration 2026-10-13T23:29:53.843113+00:00. RUNOFF-017 narrowed 2026-10-13 (scout matrix) to the file-side and configuration refusals that run on the existing lab_sea binary; the build-dependent remainder is filed as RUNOFF-048 (open boundary, blank tile), RUNOFF-049 (shelfice) and RUNOFF-050 (restart before first record). Bob enrolled 15 cases in tests/rnf/refusal_check.py (13 refusals and 2 controls): schema major version 2, missing schema attribute, missing grid_ny, missing time/source/target dimensions, zero sources and zero targets, missing source_id/target_source/target_cell/runoff_flux variables, and non-blank addMassFile on the generalized route, with controls schema_major_only and legacy_addmassfile. Finding: the zero-sources/zero-targets refusal could never print, because the WRITE at rnf_init_fixed.F:384 used format '(A,2(A,I8))' for six items and died with a Fortran End of file; corrected to '(A,A,I8,A,I8,A)', the only Fortran change, and tests/runoff/test_write_formats.py now flags a WRITE(msgBuf) with more items than descriptors (negative control on the old format). Default set 94 of 94 serial and --mpi 2 (Bob). On the guard-removed mutant build_esx_mut_cfg017, 13 refusals fail and both controls pass (Richard A and B each re-ran it). Two independent Richards approved; Richard B first rejected on three stale verification_matrix statements, fixed in correction round 2 and re-confirmed. Limits: a series without (time, source) dimensions is still unrun; some mutant failures stop on a different downstream NetCDF error and fail only because the specific message is absent; the write-format checker does not model implied-do items, slash descriptors or double-quoted strings. The framework test test_verification_outcome_is_decided_by_the_runner_not_the_log is timing-sensitive under host load (fixed 3 s sleep): it failed twice and passed on the third structural run, unrelated to this candidate. The first two final verifications were stopped at the 2 h background cap (host load ~50, then 70 of 71 commands); the third passed.
+
+## 🟢 RESOLVED: Survey MITgcm verification experiments as runoff testbeds and build the test matrix
+
+**Date Identified**: 2026-10-02T22:30:00Z
+**Date Resolved**: 2026-10-16T21:12:48.015267+00:00
+**Status**: Resolved
+**UUID**: RUNOFF-011
+**Anchors**: MITgcm/verification/README.md::<module>; docs/verification_matrix.md::<module>
+
+### Issue or research question
+Which verification experiments can host sparse-runoff tests: grid type (lat-lon, cubed sphere, LLC), regional vs global, open boundaries, sea ice, ice shelves/cavities, free-surface and freshwater settings (useRealFreshWaterFlux, nonlinFreeSurf), forcing package (exf vs other), run cost; which have a dense runoff path usable as an oracle.
+
+### Evidence
+Owner direction 2026-10-02 (owner away for several days): develop and test the new runoff program across many MITgcm configurations, with and without T, S and tracer contributions, in every time mode, as a robust, documented MITgcm package following MITgcm coding standards; T/S fluxes follow the shelfice/icefront tendency pattern. Candidates seen: global_ocean.cs32x15, global_ocean.90x40x15, global_oce_latlon (input.yearly), lab_sea, seaice_obcs, obcs_ctrl, isomip (input.icefront), offline_exf_seaice, 1D_ocean_ice_column, tutorial_global_oce_latlon.
+
+### Scientific or engineering impact
+Defines which configurations prove the package works; without it testing stays at two grids.
+
+### Proposed action and acceptance
+docs/verification_matrix.md gains a testbed table (experiment, grid, features, oracle available, cost) and a prioritized list of new input.<X> cases each tied to an issue. Acceptance: Richard confirms the feature classifications against the experiments' data files.
+
+Carry forward from RUNOFF-012:
+- Five verification experiments compile their own `code/` copy of a routine this package hooks, and so will not get the hooks: `tutorial_global_oce_latlon` (ptracers_apply_forcing.F) and four with a local apply_forcing.F, listed in docs/verification_matrix.md. Exclude them as testbeds, or patch their copies in a test variant.
+- cs32 `input.in_p` already runs dense exf runoff and runoff temperature in pressure coordinates, with a reference.
+- `obcs_ctrl` has only adjoint inputs.
+
+### Gate acceptance
+
+Accepted by `loop_gate.py --check-done` at 2026-10-16T21:12:48.015267+00:00 for iteration 2026-10-15T22:36:32.987263+00:00. Surveyed the MITgcm verification experiments as testbeds for sparse runoff and added the result to docs/verification_matrix.md: Table A (grid, domain, open boundaries, ice/shelf, free surface, exf and dense-runoff path) and Table B (ptracers/longstep, local copies of hooked routines, cost, reference, existing sparse test, verdict), the no-candidate classes (LLC: none exists), and eight prioritized new cases, each tied to open issues and a named build change. Two read-only scouts produced leads; Bob verified them against the experiments' own files and corrected them (a sixth hooked-routine copy hs94.128x64x5/code/external_forcing.F; ptracers active in 90x40x15 only in input.dwnslp; staggerTimeStep per experiment, so only 90x40x15 input and isomip/input.obcs can test branch N; an existing blank-tile cubed-sphere tiling s176t_8x4). Richard A rejected round 0 on three wrong statements (the 90x40x15 free-surface cell was wrong for input.dwnslp and input.idemix, case 4 contradicted case 5, and an rnf_check.F line cite was wrong); the matrix was corrected, Richard B's five optional notes folded in, and both Richards approved round 1 after re-reading the files. Documentation only: no Fortran, test or experiment-file change; nothing was built or run for the survey. Unconfirmed items stay marked in the document (seaice_obcs wet cells next to the boundaries, exf fields for added exf builds, isomip input.stic compile path, input.rnfterm_* staggerTimeStep, ALLOW_SHELFICE_REMESHING in isomip, s176t_8x4 with dense cs32 inputs, wall clock for experiments with no retained run). Process: the first scout footers lacked a saved orientation receipt, so the scouts are not counted in the closeout.

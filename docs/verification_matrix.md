@@ -120,7 +120,13 @@ skipped when no cs32 run directory with grid output exists.
   `tutorial_held_suarez_cs` and `tutorial_rotating_tank` the former), which
   carried the tendency hooks until RUNOFF-031 and are now byte-identical to
   `master` in `model/src` and `pkg/ptracers`, so those copies no longer stand
-  in for any `pkg/rnf` hook.
+  in for any `pkg/rnf` hook. (Corrected by RUNOFF-011: that holds for the
+  surface-route files only. Since RUNOFF-046 `model/src/apply_forcing.F`
+  (lines 718-724, 958-964) and `pkg/ptracers/ptracers_apply_forcing.F` call
+  `RNF_TENDENCY_APPLY_*` again, and none of these copies has those calls;
+  a sixth copy, `hs94.128x64x5/code/external_forcing.F`, is not in this list.
+  None of the six experiments has exf, so none can host a test; see the
+  testbed survey below.)
 - Runoff outside exf:
   - `global_oce_latlon/input.ebm`: `pkg/ebm` reads its own `RunoffFile`.
   - `isomip/input.icefront`: the `pkg/icefront` `SGRunOff*` settings are commented
@@ -161,6 +167,219 @@ skipped when no cs32 run directory with grid output exists.
 - The lab_sea runoff-temperature case needs a `-mods` code directory with
   `ALLOW_RUNOFTEMP` defined, because the forward build uses the default
   `EXF_OPTIONS.h`.
+
+**Testbed survey (RUNOFF-011, 2026-10-15).** Which verification experiments
+can host a sparse-runoff test, and which new `input.<X>` cases to add. Nothing
+here was built or run for the survey: every entry was read on 2026-10-15
+from the experiment's own files (`code/packages.conf`, `code/SIZE.h` and
+`SIZE.h_mpi`, `code/CPP_OPTIONS.h`, `code/EXF_OPTIONS.h` or the package default
+`pkg/exf/EXF_OPTIONS.h`, and the `data`, `data.pkg`, `data.exf`, `data.obcs`,
+`data.shelfice` and `data.exch2.mpi` of the input directory) or from a
+retained run. **Confirmed** below means read in such a file; an entry that
+could not be read there says **unconfirmed**. Two scouts' notes were the
+starting point and are corrected where they were wrong (see "Corrections"
+after the tables). Wall-clock figures are the `Wall clock time` line of the
+retained local `output_esx_input*/output.txt` of the experiment, one
+process unless stated, model run only (no compile); an experiment with no
+retained run says so, and its cost is steps x tiles only.
+
+Hard constraints on every testbed, from `pkg/pkg_depend:38` (`rnf +exf`) and
+`pkg/rnf/rnf_check.F`: `pkg/exf` and `ALLOW_RUNOFF` on **both** routes
+(`rnf_check.F:159-180`); the default, generalized route also needs
+`ALLOW_ADDFLUID`, `selectAddFluid` 1 or 2 and a blank `addMassFile`
+(`rnf_check.F:236-262`), while the legacy route (`RNF_applyAsRain = .TRUE.`,
+the one every configured sparse test uses) needs none of the three. A dense twin is always a **separate run without `rnf`**: with `useRNF` true `RNF_CHECK` requires a blank `runofffile` and `runoftempfile`, `runoffconst` 0 and `exf_outscal_sflux` 1 (`rnf_check.F:185-210`), so the dense and sparse runs never share one `data.exf`;
+`useRNF` with `SHI_update_kTopC` and a target under a shelf are refused
+(`rnf_check.F:213-225`, the refusal itself at 216); the runoff-temperature rows need `ALLOW_RUNOFTEMP`.
+`ALLOW_ADDFLUID` is undefined in the model default (`model/inc/CPP_OPTIONS.h:31`)
+and `ALLOW_RUNOFF` defined, `ALLOW_RUNOFTEMP` undefined in the exf default
+(`pkg/exf/EXF_OPTIONS.h:188-189`); the table states each experiment's own value.
+
+*Table A: grid, domain and physics* (all values confirmed unless marked)
+
+| Experiment / input | Grid, Nx x Ny x Nr, tiles (sNx x sNy; nSx x nSy) and the `-mpi` layout of `SIZE.h_mpi` | Domain, open boundaries | Sea ice / shelfice / icefront | Vertical and free surface (`data`; "default" = no line in the file) | exf and dense runoff path |
+| --- | --- | --- | --- | --- | --- |
+| `lab_sea/input` and every `input.rnof_*` | spherical polar, no exch2, 20 x 16 x 23, 4 tiles (10 x 8; 2 x 2); `-mpi 2` = nSy 2, nPx 2 | regional (Labrador Sea, `xgOrigin` 280, `ygOrigin` 46, 2 degrees); no obcs (not in `packages.conf`) | `pkg/seaice` (`useSEAICE`); no shelfice | z; linear free surface, `useRealFreshWaterFlux` and `staggerTimeStep` default (off) | exf and cal; `runoffFile = ' '` in `input`, dense file in `input.rnof_<X>`; `ALLOW_RUNOFF` default (defined), `ALLOW_RUNOFTEMP` undefined (default; `build_esx_roft` redefines it), `ALLOW_ADDFLUID` undefined (`code/CPP_OPTIONS.h:31`; `build_esx_addm` defines it) |
+| `lab_sea/input.longstep`, `input.natl_box` | same | same | `input.longstep`: no `useSEAICE`; `input.natl_box`: neither | as `input` | **no `useEXF`** in either `data.pkg` (confirmed), so no runoff path |
+| `global_ocean.cs32x15/input.icedyn`, `input.seaice` (and `input.rnof_sp_icedyn`) | cubed sphere, exch2, 192 x 32 x 15, 12 tiles (32 x 16; 12 x 1); `-mpi 4` = nSx 3, nPx 4 | global; no obcs | `pkg/seaice` (+ `pkg/thsice` in `input.icedyn` only); no shelfice | z; `select_rStar` 2, `nonlinFreeSurf` 4, `useRealFreshWaterFlux` true, `exactConserv` true, `staggerTimeStep` **true** | exf; dense `runoffFile = core_rnof_1_cs32.bin` (`input.icedyn`), plus `runoftempfile` (`input.seaice`); `code/EXF_OPTIONS.h:185-186` define `ALLOW_RUNOFF` and `ALLOW_RUNOFTEMP`; `ALLOW_ADDFLUID` **defined** (`code/CPP_OPTIONS.h:31`); `-cal` in `packages.conf` |
+| `global_ocean.cs32x15/input.in_p` | as above (192 x 32 x 15, 12 tiles), `buoyancyRelation = 'OCEANICP'`, `bathy_in_P.bin` | global; no obcs | `useSEAICE`, `useGGL90`; no shelfice | pressure coordinates; `select_rStar` 2, `nonlinFreeSurf` 4, `useRealFreshWaterFlux` true, `staggerTimeStep` true | exf with dense runoff and runoff temperature (see "Other experiments"); its `data.exf` and `*.bin` are linked by `prepare_run` from `../input.seaice` (`prepare_run:54-58`); same `code/` as above |
+| `global_ocean.cs32x15/input`, `input.thsice`, `input.viscA4` | as above | global | `input`, `input.viscA4`: none; `input.thsice`: `useThSIce`, `useBulkforce` | `input.viscA4`: `nonHydrostatic`, `selectAddFluid` 1 and `addMassFile` set (`data:31,35,103`), which `RNF_CHECK` would refuse on the generalized route | **no `useEXF`** (`data.pkg`); `input.thsice` has `pkg/bulk_force` with a blank `RunoffFile` |
+| `global_ocean.90x40x15/input` (and `input.dwnslp`, `input.idemix`) | spherical polar via exch2, 90 x 40 x 15, 36 tiles (10 x 10; 9 x 4); `-mpi` = nSx 7, nPy 5, `data.exch2.mpi`: `W2_mapIO` 1, `dimsFacets` 90, 40, `blankList` 30, so 35 tiles and **one blank tile** | global (`ygOrigin` -80, 4 degrees); no obcs | none (no seaice, shelfice or icefront package) | z. `input` (`data:24-28`): `select_rStar` 2, `nonlinFreeSurf` 4, `useRealFreshWaterFlux` true, `exactConserv` true, **no `staggerTimeStep`**. `input.dwnslp` and `input.idemix` have **no `select_rStar` or `nonlinFreeSurf` line** (linear free surface) and `useRealFreshWaterFlux` true (`data:24`, `data:28`); `input.dwnslp` sets `staggerTimeStep` true (`data:27`), `input.idemix` has none | **exf is not in `packages.conf`** (`exch2 oceanic -kpp cd_code down_slope ggl90 ptracers sbo diagnostics`), no `EXF_OPTIONS.h` or `data.exf`; `ALLOW_ADDFLUID` undefined (`code/CPP_OPTIONS.h:31`) |
+| `global_oce_latlon/input`, `input.yearly` (and `input.ebm`) | spherical polar, no exch2, 90 x 40 x 15, 6 tiles (30 x 20; 3 x 2); `-mpi` = nPx 3, nPy 2 | global; no obcs | none (`frazil`, `bbl`, `profiles` only); `input.ebm`: `pkg/ebm` | z; `useRealFreshWaterFlux` true, `useNHMTerms` true; no `select_rStar`/`nonlinFreeSurf` line (linear by default), no `staggerTimeStep` | exf and cal; **`code/EXF_OPTIONS.h:188-189` undefine `ALLOW_RUNOFF` and `ALLOW_RUNOFTEMP`**, and line 169 undefines `ALLOW_ATM_TEMP`, so there is **no dense runoff path**; `data.exf` has no runoff line; `input.yearly` sets `useEXFYearlyFields`; `input.ebm`'s runoff is `pkg/ebm`'s own `RunoffFile`; `ALLOW_ADDFLUID` undefined (no `CPP_OPTIONS.h` in `code/`, model default) |
+| `tutorial_global_oce_latlon/input` | spherical polar, no exch2, 90 x 40 x 15, 2 tiles (45 x 40; 2 x 1); `-mpi 2` | global; no obcs | none | z; `exactConserv`, `useRealFreshWaterFlux` true; no `nonlinFreeSurf` line | **no exf** (`packages.conf`: `gfd cd_code gmredi ptracers mnc`) |
+| `tutorial_advection_in_gyre/input` | Cartesian, 60 x 60 x 1, 4 tiles (30 x 30; 2 x 2); `-mpi` nPx 2, nPy 2 | regional box; no obcs | none | one level, `implicitFreeSurface` | **no exf** (`gfd ptracers diagnostics mnc`) |
+| `seaice_obcs/input` (`input.regDenom`, `input.seaiceSponge`, `input.tides` share its `code/`) | spherical polar, no exch2, 10 x 8 x 23, 2 tiles (5 x 8; 2 x 1); `-mpi 2` = one tile per process | regional (`xgOrigin` 280, `ygOrigin` 46); **open boundaries on all four edges** (`data.obcs`: `OB_Jsouth = 10*1`, `OB_Jnorth = 10*8`, `OB_Iwest = 8*1`, `OB_Ieast = 8*10`), prescribed (`useOBCSprescribe`) | `pkg/seaice` and `salt_plume`, KPP and GMRedi; no shelfice | z; no free-surface line (linear by default); `staggerTimeStep` true | exf and cal; `runoffFile = ' '` (`data.exf:96`); no `EXF_OPTIONS.h` in `code/`, so `ALLOW_RUNOFF` defined and `ALLOW_RUNOFTEMP` undefined by default; `ALLOW_ADDFLUID` undefined (`code/CPP_OPTIONS.h:31`); `packages.conf`: `oceanic obcs exf seaice salt_plume` (no `rnf`) |
+| `offline_exf_seaice/input` (`input.dyn_*`, `input.thermo`, `input.thsice`) | Cartesian, no exch2, 80 x 42 x 1, 4 tiles (40 x 21; 2 x 2); `-mpi` nPx 2, nPy 2 | regional; **no obcs in any forward input** (`OB_` appears in no forward `data`; `input_ad.obcs` is adjoint) | `pkg/seaice` + `pkg/thsice` (`input`); no shelfice | one level; `saltStepping` false; linear, `staggerTimeStep` true | exf; `runoffFile = ' '` (`data.exf:41`); defaults for `ALLOW_RUNOFF`/`RUNOFTEMP`; `ALLOW_ADDFLUID` undefined (no `CPP_OPTIONS.h`); `-cal` in `packages.conf` |
+| `seaice_itd/input` (`input.lipscomb07`, `input.thermo`) | Cartesian, no exch2, 80 x 42 x 1, 4 tiles (40 x 21; 2 x 2); `-mpi` nPx 2, nPy 2 | regional; no obcs | `pkg/seaice` with 7 thickness categories (`SEAICE_SIZE.h:22`); no shelfice | one level; `saltStepping` false; linear, `staggerTimeStep` true | exf; `runoffFile = ' '` (`data.exf:41`); defaults; `ALLOW_ADDFLUID` undefined (no `CPP_OPTIONS.h`) |
+| `1D_ocean_ice_column/input` | Cartesian, no exch2, 1 x 1 x 23, **1 tile**, no `SIZE.h_mpi` | single column | `pkg/seaice`, KPP; no shelfice | z; `useRealFreshWaterFlux` true, no `nonlinFreeSurf` line (linear), `staggerTimeStep` true | exf and cal; `runoffFile = ' '` (`data.exf:96`); defaults; `ALLOW_ADDFLUID` undefined (`code/CPP_OPTIONS.h:31`) |
+| `isomip/input`, `input.icefront`, `input.stic` | spherical polar, no exch2, 50 x 100 x 30, 8 tiles (25 x 25; 2 x 4); `-mpi` = nSy 2, nPx 2, nPy 2 (8 tiles, 4 processes) | regional (`ygOrigin` -80, 0.3 x 0.1 degrees); `pkg/obcs` compiled but **not used** here | `useShelfIce`; `input.icefront`: `useIcefront`; `input.stic`: `useSTIC`. `icetopo.exp1` of `input`: ice draft below zero in **5000 of 5000** columns (-693.75 to -200 m, whole domain a cavity); that of `input.icefront`: 2500 columns with a shelf (the first 50 rows of the file, rows 1 to 50 in y) and 2500 with none | `input.icefront` and `input.stic` have **no `data` of their own** and take `input/data` (confirmed: none in either directory): linear, no `useRealFreshWaterFlux` line, no `select_rStar`; `exactConserv` true | **no exf** (`packages.conf`: `gfd ggl90 cd_code obcs shelfice steep_icecavity icefront diagnostics mnc`); `ALLOW_ADDFLUID` **defined** (`code/CPP_OPTIONS.h:31`); `ALLOW_SHELFICE_REMESHING` undefined (`pkg/shelfice/SHELFICE_OPTIONS.h:32`, no override in `code/`) so `SHI_update_kTopC` is false |
+| `isomip/input.obcs` | as above | regional; **open boundary on the north edge only** (`data.obcs`: `OB_Jnorth = 50*-1`; the reader adds `Ny + 1` to a negative value, `obcs_readparms.F:674-676`, so j = 100, all 50 columns); `useOBCSprescribe`, `useOBCSbalance` | `useShelfIce` (`SHELFICEMassStepping` true, `SHELFICEconserve`); `icetopo.obcs`: 2500 shelf columns and 2500 with none (rows 1 to 50 shelf), `iceMask.obcs` values 1 and 2 | `select_rStar` 2, `nonlinFreeSurf` 4, `useRealFreshWaterFlux` true, `exactConserv` true, **no `staggerTimeStep`**; 12 steps | as `isomip/input`: no exf |
+| `isomip/input.htd` | as above | regional; no obcs | `useShelfIce`; `icetopo.exp1` of `input` | `nonlinFreeSurf` 4 with `select_rStar` and `useRealFreshWaterFlux` **commented out** (`data:32,36`), so `select_rStar` 0 | as `isomip/input`: no exf |
+| `obcs_ctrl` | the directory holds only `build`, `code_ad` and `input_ad` | | | | adjoint only; `ALLOW_RUNOFF` not set by it |
+| `hs94.128x64x5`, `hs94.1x64x5`, `hs94.cs-32x32x5`, `tutorial_held_suarez_cs`, `tutorial_rotating_tank` | various | | | | **no exf** in any `packages.conf`; each keeps its own copy of a hooked routine (below) |
+
+*Table B: tracers, local hook copies, cost, reference, existing sparse tests, verdict*
+
+| Experiment / input | `pkg/ptracers` / `pkg/longstep` | Local `code/` copies of hooked routines | Steps x tiles; wall clock (local retained run) | Committed reference | Used by a sparse test now | Verdict |
+| --- | --- | --- | --- | --- | --- | --- |
+| `lab_sea/input` and `input.rnof_*` | both compiled (`packages.conf`); active in `input.longstep` (`usePTRACERS`, `LS_nIter` 2) and the `input.rnfterm_*` tracer cases; not in `input` | none | `input` 9 x 4, 1.3 s (`-mpi 2` 0.7 s); `input.rnof_const` 48 x 4, 4.8 s | `results/output.txt`, `output.rnof_*.txt`, `output.rnof_sp_*.txt` | yes: the whole configured suite | **usable now** (and the only linear-free-surface, ptracers/longstep testbed) |
+| `global_ocean.cs32x15/input.icedyn`, `input.seaice` | **not compiled** (`packages.conf`) | none | 10 x 12; `input.icedyn` 9.1 s, `input.rnof_sp_icedyn` 8.7 s (4 processes 2.4 s), `input.in_p` 7.5 s | `results/output.icedyn.txt`, `output.seaice.txt`, `output.rnof_sp_icedyn.txt`, `output.in_p.txt` | yes: `input.rnof_sp_icedyn` (sparse = dense) | **usable now** |
+| `global_ocean.cs32x15/input.in_p` | not compiled | none | 10 x 12; 7.5 s | `results/output.in_p.txt` | no (dense, in no configured suite; exf files linked from `input.seaice`) | **usable now** as a dense twin; sparse twin needs only a new input directory |
+| `global_ocean.cs32x15/input`, `input.thsice`, `input.viscA4` | not compiled | none | 10 x 12 | `results/output.txt` etc. | no | **blocked**: no exf in `data.pkg`; `input.viscA4` would also be refused (`addMassFile`) |
+| `global_ocean.90x40x15/input`, `input.idemix` | compiled; **active only in `input.dwnslp`** (`data.pkg:5`); `input.idemix` has a `data.ptracers` but no `usePTRACERS` in its `data.pkg`; no longstep | none | 10 x 36; no retained run (cost not measured) | `results/output.txt`, `output.dwnslp.txt`, `output.idemix.txt` | no | **usable with a stated build change**: add `exf` and `rnf` to `code/packages.conf` (pkg_depend pulls in `cal`), add `useEXF`, `useCAL`, `useRNF` to `data.pkg`, a `data.exf` (every forcing field blank or constant, `runoffFile` for the dense twin), `data.cal`, `data.rnf`; generalized route additionally needs `code/CPP_OPTIONS.h:31` defined and `selectAddFluid` set. The committed references do not apply once exf is on (twin against twin only) |
+| `global_oce_latlon/input`, `input.yearly` | not compiled | none | 20 x 6; no retained run | `results/output.txt`, `output.yearly.txt` | no | **usable with a stated build change**: `code/EXF_OPTIONS.h` `#define ALLOW_RUNOFF` (line 188) for the dense twin and the sparse run, `rnf` in `packages.conf`, `data.rnf`; temperature rows also need `ALLOW_RUNOFTEMP` (line 189) and, for `temp_EvPrRn`, `ALLOW_ATM_TEMP` (undefined at line 169) |
+| `global_oce_latlon/input.ebm` | not compiled | none | | `results/output.ebm.txt` | no | **excluded**: runoff handled by `pkg/ebm` |
+| `tutorial_global_oce_latlon/input` | active (`usePTRACERS`) | **`ptracers_apply_forcing.F` and `ptracers_forcing_surf.F`**, both differing from `pkg/ptracers` (measured by `cmp`) and carrying no `RNF_` call | 20 x 2 | `results/output.txt` | no | **excluded**: no exf, and local ptracer routines that would not get the hooks |
+| `tutorial_advection_in_gyre/input` | active (`usePTRACERS`) | none in `code/` (an unchanged `pkg/ptracers` file; no-change row) | 4 x 4; 0.3 s | `results/output.txt` | no-change row only | **excluded** as a runoff testbed: no exf, one level, closed box |
+| `seaice_obcs/input` | not compiled | none | 5 x 2; 0.25 s | `results/output.txt`, `output.regDenom.txt`, `output.seaiceSponge.txt`, `output.tides.txt` | no-change row only | **usable with a stated build change**: `rnf` added to `code/packages.conf`, `useRNF` in `data.pkg`, `data.rnf`, and for a dense twin a `runoffFile` in `data.exf`; the generalized route also needs `code/CPP_OPTIONS.h:31` defined and `selectAddFluid` |
+| `offline_exf_seaice/input` and variants | not compiled | none | `input` 24 x 4; 10.7 s | `results/output.txt` and one per variant | no-change row only | **usable with a stated build change**: `rnf` in `packages.conf` (this experiment is `-cal`, so its sparse file's time axis is model seconds, as for cs32), `data.rnf`, `runoffFile` for the twin; generalized route: `CPP_OPTIONS.h` |
+| `seaice_itd/input` and variants | not compiled | none | `input` 12 x 4; 11.8 s | `results/output.txt` and one per variant | no-change row only | **usable with a stated build change**: as `offline_exf_seaice` (cal is present through exf) |
+| `1D_ocean_ice_column/input` | not compiled | none | 10 x 1; 0.08 s | `results/output.txt` | no-change row only | **usable with a stated build change** (as `seaice_obcs`), but one tile and one cell: **cannot test tile mapping, MPI or a fraction split across cells** |
+| `isomip/input` | not compiled | none | 20 x 8; 10.6 s | `results/output.txt` | no-change row only | **blocked**: no exf, and every column is under the ice draft, so every target would be refused (`rnf_init_fixed.F`, refuse = 3); adding exf does not unblock it |
+| `isomip/input.icefront`, `input.obcs` | not compiled | none | 12 x 8 (`input.obcs`) | `results/output.icefront.txt`, `output.obcs.txt` | no | **usable with a stated build change**: add `exf` and `rnf` to `packages.conf` plus the exf and rnf data files as for 90x40x15; `ALLOW_ADDFLUID` is already defined, so the generalized route needs only `selectAddFluid`; targets only in the 2500 open-water columns (rows 51 to 100); `input.obcs` also needs a target on the interior side of the north boundary |
+| `isomip/input.htd`, `input.stic` | not compiled | none | `input.htd` 20 x 8 | `results/output.htd.txt`, `output.stic.txt` | no | **unconfirmed**: `input.htd` is the only `nonlinFreeSurf` 4 with `select_rStar` 0 and a shelf (the case `docs/package_design.md` says no experiment runs); `input.stic`'s compile path (`useSTIC`) was not traced |
+| `obcs_ctrl` | not compiled | none | | adjoint only | no | **excluded**: only `input_ad`/`code_ad`; adjoint builds are out of phase 1 |
+| `hs94.*`, `tutorial_held_suarez_cs`, `tutorial_rotating_tank` | none | `hs94.1x64x5`, `hs94.cs-32x32x5`, `tutorial_held_suarez_cs`, `tutorial_rotating_tank`: `apply_forcing.F` (none has the `RNF_TENDENCY_APPLY_T/S` calls of `model/src/apply_forcing.F:718-724,958-964`); `hs94.128x64x5`: **`external_forcing.F`** | not run | | no | **excluded**: no exf, and the local routines replace hooked ones |
+
+*Corrections to the scouts' notes, found by reading the files.* (1) The
+scouts' list of experiments with a hooked routine copy omitted
+`hs94.128x64x5/code/external_forcing.F`; the matrix's earlier list of five
+also did not name it. (2) `ptracers` is active in `global_ocean.90x40x15`
+only in `input.dwnslp`, not `input.idemix`. (3) `global_ocean.90x40x15`'s
+`data.exch2.mpi` (`blankList = 30`) is read only by the `-mpi` build;
+the single-process run has no exch2 file. (4) The scouts' `seaice_obcs` (5 steps) and
+`isomip` grid and cavity figures were confirmed; `lab_sea/input` is 9 steps
+(3600 s to 36000 s), which they did not state. (5) The
+scouts did not read `staggerTimeStep`, which decides which freshwater
+formulation (branch N or L, `package_design.md` decision 3) a case reaches:
+`cs32`, `seaice_obcs`, `offline_exf_seaice`, `seaice_itd`,
+`1D_ocean_ice_column` and `global_ocean.90x40x15/input.dwnslp` all set it
+true, and `global_ocean.90x40x15/input` and `isomip/input.obcs` (with
+`nonlinFreeSurf` 4 and `useRealFreshWaterFlux` true) do not, so they are the
+only candidates for branch N without `staggerTimeStep`. (6) The scouts did
+not find `utils/exch2/code-mods/s176t_8x4` (below). (7) The earlier sentence
+that the five copies "no longer stand in for any `pkg/rnf` hook" holds for
+the surface-route hook files only: since RUNOFF-046 `apply_forcing.F` and
+`ptracers_apply_forcing.F` call `RNF_TENDENCY_APPLY_*` again and the copies
+lack those calls. **Unconfirmed in this survey:** wall-clock cost of every
+experiment with no retained run (`global_ocean.90x40x15`,
+`global_oce_latlon`, `tutorial_global_oce_latlon`); whether a wet interior
+cell exists next to each open boundary of `seaice_obcs` (`bathy.seaice_obcs`
+was not read); which exf fields the added exf builds need to be silent;
+`isomip/input.stic`; the `staggerTimeStep` setting of the `input.rnfterm_*`
+directories; and every experiment of the repository not named above
+(`adjustment.cs-32x32x1` and `solid-body.cs-32x32x1` are cubed-sphere
+without exf and were not examined further).
+
+**Classes with no candidate.** **LLC: none exists.** There is no `*llc*`
+directory in `verification/` and no `dimsFacets` with more than one facet
+outside the cubed-sphere experiments (`grep` of `data.exch2*`). The branch of
+`RNF_INIT_FIXED` for a facet wider than the global array (the fold of a compact
+LLC layout) cannot be reached on cs32 (RUNOFF-021, RUNOFF-023). What would be
+needed: an LLC grid (the five-facet `grid_llc*` files, a `data.exch2` with
+`dimsFacets` of the LLC facets and `W2_mapIO = 1`), a `SIZE.h` for the tiling,
+bathymetry and initial files in the compact layout, and a dense `runoffFile`
+written in that layout; none of it is in this repository. Also with **no
+candidate**: **branch N (nonlinear free surface, real freshwater flux, no
+`staggerTimeStep`) together with sea ice**, since every sea-ice case above
+sets `staggerTimeStep` true; and **open boundaries on a cubed-sphere grid**
+(`seaice_obcs` is lat-lon, `obcs_ctrl` is adjoint only).
+
+**Prioritized new cases,** best value for cost first. Each names the build
+change, the oracle and the issue it serves; none is created by this issue.
+"Cost" is steps x tiles with the measured wall time where there is one.
+
+1. **`seaice_obcs/input.rnof_sp_<X>` (sparse, with a dense twin).**
+   Serves RUNOFF-019 (open boundaries), RUNOFF-048 (refuse = 2: a target
+   with `maskInC = 0` beyond an open boundary), and RUNOFF-024 for the
+   seaice-covered case. Build change: `rnf` in `code/packages.conf`; the legacy route
+   needs nothing more; for the generalized route define `ALLOW_ADDFLUID`
+   in `code/CPP_OPTIONS.h:31` and set `selectAddFluid`. Oracle: dense twin
+   (`runoffFile` in `data.exf`, `ALLOW_RUNOFF` default) for valid targets;
+   the refusal message plus a guard-removed mutant for the beyond-boundary
+   target. Cost 5 x 2, 0.25 s: the cheapest of all. Tests a tile
+   boundary (two tiles, boundary on every edge) and MPI (`-mpi 2`, one
+   tile per process). Unconfirmed: the wet interior cells.
+2. **`global_ocean.cs32x15/input.rnof_sp_seaice`** (sparse twin of
+   `input.seaice`, runoff and runoff temperature, 12 records).
+   Serves RUNOFF-006. Build change: **none** (`ALLOW_RUNOFTEMP` and
+   `ALLOW_ADDFLUID` are already defined; the existing `build_esx` and
+   `build_esx_mpi4` serve). The temperature path relies on that existing
+   `ALLOW_RUNOFTEMP` define (`code/EXF_OPTIONS.h:186`) and on a **blank
+   `runoftempfile`** in the sparse twin's `data.exf` (`RNF_CHECK` refuses a
+   non-blank one), the temperature coming from the sparse file. Oracle: the dense twin `input.seaice` with its
+   committed `results/output.seaice.txt`. Cost 10 x 12, about 9 s; tests the
+   exch2 mapping and `-mpi 4`. Its 12 records are identical, so it does not
+   test timing (the existing coverage limit); it is the only configured
+   candidate for the temperature path on exch2.
+3. **A cs32 build with blank tiles: `global_ocean.cs32x15` with
+   `utils/exch2/code-mods/s176t_8x4/SIZE.h` (176 tiles of 8 x 4, 16 all-land
+   blank tiles) and `utils/exch2/code-mods/data.exch2.16_blk` (`blankList` of
+   16 tiles; it sits one level above `s176t_8x4/`, which holds only `SIZE.h`
+   and `blanklist.txt`),
+   running `input.icedyn` and its sparse twin.** Serves RUNOFF-048 (a target
+   on a blank tile, caught only as a fraction deficit) and RUNOFF-023 (tile
+   layout independence; the layout is not the 12-tile one). Build change:
+   a new `code_alt/code.176t_8x4` (`code_alt/` exists and holds only
+   `code.192t_8x4`) holding that `SIZE.h`, with the data file as the input
+   directory's `data.exch2`; the README of `utils/exch2/code-mods` says only `SIZE.h` is
+   needed plus the data file for the blank case, and that
+   `input.icedyn`'s `bathy_Hmin50.bin` is the bathymetry the 16 tiles were
+   chosen for (confirmed, `input.icedyn/data:86`). Oracle: the dense run in
+   the same layout, and the digits of the committed 12-tile reference as a
+   cross-layout check. Cost 10 x 176; wall time unmeasured (many small
+   tiles). Unconfirmed: that the dense binary inputs are read correctly with
+   `W2_mapIO` -1 in this tiling, and that nothing else needs changing; this
+   is a lead, to be proved by the build.
+4. **`global_ocean.90x40x15` with exf and rnf: `input.rnof_*`.**
+   Serves RUNOFF-018 (global lat-lon, dense twin and sparse = dense),
+   RUNOFF-014 (`input` is one of **two** experiments with a nonlinear free
+   surface, `rStar` and real freshwater flux **without** `staggerTimeStep`,
+   i.e. branch N; the other is `isomip/input.obcs`, case 5),
+   RUNOFF-050 (restart before the first record in that branch), RUNOFF-048
+   (the blank tile of `data.exch2.mpi`, `blankList = 30`, on `-mpi` with nSx 7
+   x nPy 5) and RUNOFF-023. The case is built from `input`; the only
+   variant with `pkg/ptracers` active, `input.dwnslp`, has a **linear** free
+   surface and `staggerTimeStep` true, so it is not a branch N case and a
+   ptracer case there is a linear one. Build change: as in Table B (exf and rnf in
+   `packages.conf`, exf/cal/rnf data files; `CPP_OPTIONS.h:31` for the
+   generalized route). Oracle: dense twin through `runoffFile`; there is no
+   committed reference for the exf build. Cost 10 x 36; not measured. It is
+   the only candidate that tests exch2 on a lat-lon grid with `W2_mapIO` 1.
+5. **`isomip/input.obcs` with exf and rnf (`input.rnof_*`).**
+   Serves RUNOFF-020 and RUNOFF-049 (a target under the ice shelf, refuse = 3,
+   against a control in the open water half), RUNOFF-019 and RUNOFF-048 (open
+   boundary north edge, with the shelf), RUNOFF-014 (second branch N case).
+   Build change: `exf` and `rnf` in `packages.conf` plus data files; to
+   exercise the `SHI_update_kTopC` refusal also define
+   `ALLOW_SHELFICE_REMESHING` in a `SHELFICE_OPTIONS.h` (it is undefined and
+   the refusal needs `SHELFICEMassStepping`, true here; that the remeshing
+   code compiles in this experiment is unconfirmed). Oracle: refusals
+   (message and mutant) and, for the open-water target, a dense twin. Cost
+   12 x 8, about 10 s. It is also the only shelfice build; the
+   generalized route's `addMass` placement at depth is the future path of
+   RUNOFF-025 (referenced by other entries; `open_issues.md` has no entry of
+   its own for it).
+6. **`global_oce_latlon/input.yearly` with `ALLOW_RUNOFF` defined.**
+   Serves RUNOFF-018 (yearly exf forcing on lat-lon, 6 tiles, no exch2).
+   Build change: `code/EXF_OPTIONS.h:188` `#define ALLOW_RUNOFF`, `rnf` in
+   `packages.conf`, rnf data; temperature needs lines 189 and 169 too.
+   Oracle: dense twin. Cost 20 x 6. Lower rank because 4 covers lat-lon
+   global; the added value is the yearly files and the `useRealFreshWaterFlux`
+   with a linear surface.
+7. **`offline_exf_seaice` and `seaice_itd` (`input.rnof_*`).** Serves RUNOFF-024
+   (runoff into ice-covered cells under `pkg/seaice` with and without
+   `pkg/thsice`, with `nITD` 7). Build change as in Table B. Oracle: dense
+   twin and the ice-state outputs. Cost 12 to 24 x 4, 10 to 12 s. Cartesian,
+   one level.
+8. **Restart cases on existing builds: `lab_sea` mid-record restart** (no
+   build change; serves RUNOFF-022 and RUNOFF-023: 2+2 and layout) and
+   **`1D_ocean_ice_column` single-column analytic case** (serves RUNOFF-024;
+   cannot test mapping or MPI). Both cheap (sub-second to seconds).
+
+Issue coverage: RUNOFF-006 (case 2), -014 (4, 5), -018 (4, 6), -019 (1, 5),
+-020 (5), -022 (8, 4), -023 (3, 4, 8), -024 (1, 7, 8), -048 (1, 3, 4, 5),
+-049 (5), -050 (4). RUNOFF-021 (LLC) has **no** candidate (see above).
 
 **Coverage limits:**
 
