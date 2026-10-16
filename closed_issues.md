@@ -1498,3 +1498,29 @@ Carry forward from RUNOFF-012:
 ### Gate acceptance
 
 Accepted by `loop_gate.py --check-done` at 2026-10-16T21:12:48.015267+00:00 for iteration 2026-10-15T22:36:32.987263+00:00. Surveyed the MITgcm verification experiments as testbeds for sparse runoff and added the result to docs/verification_matrix.md: Table A (grid, domain, open boundaries, ice/shelf, free surface, exf and dense-runoff path) and Table B (ptracers/longstep, local copies of hooked routines, cost, reference, existing sparse test, verdict), the no-candidate classes (LLC: none exists), and eight prioritized new cases, each tied to open issues and a named build change. Two read-only scouts produced leads; Bob verified them against the experiments' own files and corrected them (a sixth hooked-routine copy hs94.128x64x5/code/external_forcing.F; ptracers active in 90x40x15 only in input.dwnslp; staggerTimeStep per experiment, so only 90x40x15 input and isomip/input.obcs can test branch N; an existing blank-tile cubed-sphere tiling s176t_8x4). Richard A rejected round 0 on three wrong statements (the 90x40x15 free-surface cell was wrong for input.dwnslp and input.idemix, case 4 contradicted case 5, and an rnf_check.F line cite was wrong); the matrix was corrected, Richard B's five optional notes folded in, and both Richards approved round 1 after re-reading the files. Documentation only: no Fortran, test or experiment-file change; nothing was built or run for the survey. Unconfirmed items stay marked in the document (seaice_obcs wet cells next to the boundaries, exf fields for added exf builds, isomip input.stic compile path, input.rnfterm_* staggerTimeStep, ALLOW_SHELFICE_REMESHING in isomip, s176t_8x4 with dense cs32 inputs, wall clock for experiments with no retained run). Process: the first scout footers lacked a saved orientation receipt, so the scouts are not counted in the closeout.
+
+## 🟢 RESOLVED: Package documentation (MITgcm RST manual, namelist reference, how-to)
+
+**Date Identified**: 2026-10-02T22:30:00Z
+**Date Resolved**: 2026-10-16T23:47:22.353015+00:00
+**Status**: Resolved
+**UUID**: RUNOFF-026
+**Anchors**: MITgcm/doc/phys_pkgs/exf.rst::<module>
+
+### Issue or research question
+MITgcm-manual documentation for the package: purpose, schema summary, namelist parameters, CPP options, diagnostics, examples, the Python tools (checker, builder, converter), and verification cases.
+
+### Evidence
+Owner direction 2026-10-02 (owner away for several days): develop and test the new runoff program across many MITgcm configurations, with and without T, S and tracer contributions, in every time mode, as a robust, documented MITgcm package following MITgcm coding standards; T/S fluxes follow the shelfice/icefront tendency pattern.
+
+### Scientific or engineering impact
+A package without manual documentation will not be accepted upstream or used.
+
+### Proposed action and acceptance
+Acceptance: Sphinx build of the doc section succeeds; Richard reviews accuracy against code and namelist.
+
+Unblocked 2026-10-03: RUNOFF-012 closed (pkg/rnf skeleton, fork ac33291aa).
+
+### Gate acceptance
+
+Accepted by `loop_gate.py --check-done` at 2026-10-16T23:47:22.353015+00:00 for iteration 2026-10-16T21:15:38.364694+00:00. Wrote the MITgcm manual section for pkg/rnf, MITgcm/doc/phys_pkgs/rnf.rst (752 lines), and wired it into the Ocean Packages toctree in phys_pkgs.rst after exf.rst: scope and the two routes, CPP options and array bounds, the input file, the RNF_PARM01 parameters, range checks against pkg/exf, time handling, diagnostics and monitor, examples from the real lab_sea and cs32 verification inputs, the Python tools, and verification and limits. Acceptance met: the whole-manual Sphinx build succeeds with warnings identical to the unmodified baseline (one pre-existing numpy warning from the isolated build venv), reproduced independently by Arch and twice by Richard; Richard re-derived every parameter name and default, CPP option, refusal, diagnostic, monitor name, time mode, example and tool description from the code, the verification inputs and each tool's --help and found no wrong statement. Corrected the USE_OLD_EXTERNAL_FORCING refusal text (refused only on the legacy route, rnf_check.F:337-351) in docs/package_design.md, docs/code_map.md and docs/verification_matrix.md; Bob had also corrected pkg/rnf/README.md, but pkg/rnf is a configuration path, so that edit turned this documentation issue into a scientific change at closeout; Arch reverted it, saved the diff as devel-loop/loop_state/README-rnf-fix-from-RUNOFF-026.patch and filed it as RUNOFF-051. The design's 'no 3D addMass runoff yet' was Arch's error; the section follows the code (RNF_ADD_MASS, schema 1.1 target_level, RUNOFF-046). Limits: documentation only, no model run; MITgcm/doc is outside the esx inventory so rnf.rst and phys_pkgs.rst are in the review candidate only as explicit witness paths and the sealed documentation plan covers the three tracked project docs; the 4 sources / 7 targets and 1189 sources figures come from data.rnf comments, not from opening the .nc files; pkg/rnf/README.md still carries the older unqualified refusal wording (RUNOFF-051). Process: both Bob's and Richard's first footers after text edits were recorded incomplete because they cited focused-suite evidence made stale by the edits; each re-ran the suite and re-emitted. A Sphinx build venv was created at /tmp/sphinx_docs_venv because no Sphinx existed on the host.

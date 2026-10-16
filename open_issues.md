@@ -206,27 +206,6 @@ Inherited residual, **restated for the surface route (RUNOFF-031, 2026-10-09)**.
 
 Carry forward from RUNOFF-010 review B, restated: the scaling above is `pkg/seaice`'s with `SEAICE_EXTERNAL_FLUXES`. Without that option `pkg/seaice` computes its own open-water flux and does not use exf `Qnet` at all (`seaice_budget_ocean.F:110-149`), so none of the exf runoff heat would arrive, on either path; under `pkg/thsice` `Qnet` keeps `opFrac·Qnet` (`thsice_step_fwd.F:273-275`) and thsice adds runoff heat at the surface temperature for the ice-covered share itself (`thsice_map_exf.F:104-121`), so the undelivered part there is `(1 − opFrac)` of the runoff's departure from θ. Measure all three.
 
-## UNRESOLVED: Package documentation (MITgcm RST manual, namelist reference, how-to)
-
-**Date Identified**: 2026-10-02T22:30:00Z
-**Status**: Unresolved
-**UUID**: RUNOFF-026
-**Anchors**: MITgcm/doc/phys_pkgs/exf.rst::<module>
-
-### Issue or research question
-MITgcm-manual documentation for the package: purpose, schema summary, namelist parameters, CPP options, diagnostics, examples, the Python tools (checker, builder, converter), and verification cases.
-
-### Evidence
-Owner direction 2026-10-02 (owner away for several days): develop and test the new runoff program across many MITgcm configurations, with and without T, S and tracer contributions, in every time mode, as a robust, documented MITgcm package following MITgcm coding standards; T/S fluxes follow the shelfice/icefront tendency pattern.
-
-### Scientific or engineering impact
-A package without manual documentation will not be accepted upstream or used.
-
-### Proposed action and acceptance
-Acceptance: Sphinx build of the doc section succeeds; Richard reviews accuracy against code and namelist.
-
-Unblocked 2026-10-03: RUNOFF-012 closed (pkg/rnf skeleton, fork ac33291aa).
-
 ## UNRESOLVED: MITgcm coding standards and TAF-friendliness review
 
 **Date Identified**: 2026-10-02T22:30:00Z
@@ -492,3 +471,22 @@ Without the stop the lagged fields would be wrong or zero on restart. Rare branc
 
 ### Proposed action and acceptance
 Configure branch N (nonlinear free surface, real freshwater flux, no staggerTimeStep) with a restart. Acceptance: the stop fires on a file whose first record is after t - dt and is shown failing on a guard-removed mutant; a control with an earlier record or a repeat cycle runs. May be done together with RUNOFF-022.
+
+## UNRESOLVED: pkg/rnf/README.md misstates the USE_OLD_EXTERNAL_FORCING refusal
+
+**Date Identified**: 2026-10-16T00:00:00Z
+**Status**: Unresolved
+**UUID**: RUNOFF-051
+**Anchors**: MITgcm/pkg/rnf/README.md::<module>; MITgcm/pkg/rnf/rnf_check.F::<module>
+
+### Issue or research question
+The refusal table of `MITgcm/pkg/rnf/README.md` says `USE_OLD_EXTERNAL_FORCING` defined is always refused ("the package has no hooks in the old forcing routines"). `rnf_check.F:337-351` refuses it only when `RNF_applyAsRain` is true (the legacy route); the generalized route has its `RNF_TENDENCY_APPLY_T/S` calls in `external_forcing.F`, so it is not refused.
+
+### Evidence
+Found by Bob during RUNOFF-026 and confirmed by Richard against `rnf_check.F`. The corrected row was written during RUNOFF-026 and saved as `docs/pending_patches/pkg_rnf_README_USE_OLD_EXTERNAL_FORCING.patch` (apply with `git -C MITgcm apply`). It was **not** applied there, because `MITgcm/pkg/rnf` is a configuration path in `esx/project.json`, so editing it turns a documentation issue into a scientific change (final verification, which currently needs more than the 2 h background cap). The new manual section `MITgcm/doc/phys_pkgs/rnf.rst`, `docs/package_design.md`, `docs/code_map.md` and `docs/verification_matrix.md` already state the code's behaviour.
+
+### Scientific or engineering impact
+Documentation inconsistency only: the README overstates a refusal. No code is wrong.
+
+### Proposed action and acceptance
+Apply the saved patch to `pkg/rnf/README.md` (a one-row edit) when the next scientific change to `pkg/rnf` is made, or on its own as a `scientific_change` once the final-verification cap is dealt with. Acceptance: the README row equals the code's behaviour and the other documents; the patch is no longer needed.

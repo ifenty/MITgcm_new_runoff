@@ -732,7 +732,7 @@ Issue coverage: RUNOFF-006 (case 2), -014 (4, 5), -018 (4, 6), -019 (1, 5),
       `EXF_CHECK` stops the run before `RNF_CHECK` is reached. It needs a
       build with that option, such as cs32.
     - `ALLOW_RUNOFF` undefined, `pkg/exf` not compiled, `HAVE_NETCDF`
-      undefined and `USE_OLD_EXTERNAL_FORCING` defined: each needs a build of
+      undefined and `USE_OLD_EXTERNAL_FORCING` defined (refused with `RNF_applyAsRain` true only): each needs a build of
       its own.
     - `SHI_update_kTopC` with `useShelfIce`: no experiment compiles both
       `rnf` and `shelfice`.

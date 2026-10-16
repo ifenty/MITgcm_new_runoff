@@ -259,8 +259,10 @@ the lines to follow or the insertion point.
   (`tools/genmake2:2409`, `2723`, `2741-2748`).
 - `model/src/external_forcing.F` holds the same `ICEFRONT` hooks for the build
   option `USE_OLD_EXTERNAL_FORCING` (`external_forcing.F:569-574`, `773-778`;
-  selected at `apply_forcing.F:448-462`). The package does not add hooks there,
-  and `RNF_CHECK` stops if that option is defined.
+  selected at `apply_forcing.F:448-462`). The legacy route adds no hooks there,
+  and `RNF_CHECK` stops if that option is defined with `RNF_applyAsRain`
+  true; the generalized route does have its `RNF_TENDENCY_APPLY_T/S` calls there
+  (RUNOFF-046, unrun) and is not refused (`rnf_check.F`). The refusal table of `pkg/rnf/README.md` still states the older, unqualified wording; that is tracked as RUNOFF-051.
 
 **Feature off.** Every hook that computes or assigns a field is inside
 `#ifdef ALLOW_RNF` and `IF ( useRNF )`. Three files change in every build:
