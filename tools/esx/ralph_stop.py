@@ -222,9 +222,29 @@ def pause_source(parsed):
     return parsed['header_fields'].get('pause_source') or 'owner'
 
 
+def record_provider_pause(root, start=None, until=None):
+    """Mirror a provider-limit pause start (start truthy) or end (default) into the budget ledger; never fails the hook.
+
+    Only for a configured project: the interval exists so team_budget.reserve can
+    move scope deadlines by it (TEAM-PAUSE-DEADLINE-CLAMP-001).
+    """
+    if not (Path(root) / 'esx/project.json').exists():
+        return
+    try:
+        import team_budget
+        moment = clock()
+        team_budget.record_pause(root, moment, None if start is not None else moment, until)
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        print(f'ESX: could not record the pause interval: {exc}', file=sys.stderr)
+
+
 def set_pause(root, state, parsed, reason, until, source):
     """Write (reason given) or clear (reason None) the pause; return the re-read state and bytes."""
     from project import atomic_bytes
+    if reason is not None and source == 'provider_limit':
+        record_provider_pause(root, start=True, until=until)
+    elif reason is None and pause_source(parsed) == 'provider_limit' and parsed['header_fields'].get('paused') == 'true':
+        record_provider_pause(root)
     header = parsed['header']
     for key in ('paused', 'pause_reason', 'paused_until', 'pause_source'):
         header = set_field(header, key, None)
@@ -520,6 +540,21 @@ def retained_in_flight(root):
     return False
 
 
+def group_notice(root):
+    """Remaining scientific groups of a partly finished grouped verification, as a sentence ('' otherwise).
+
+    Between two groups no process runs, so the Stop hook would otherwise advance the
+    loop as though nothing were pending; the continuation names what is left and the
+    exact command that resumes it.
+    """
+    try:
+        import final_verification
+        text = final_verification.pending_notice(root)
+    except Exception:  # advisory only: never let a notice break the Stop decision
+        return ''
+    return ('ESX: ' + text) if text else ''
+
+
 def finalize(root, state, original, parsed, kind, reason, explain, system_message):
     """End the loop, first reserving one notification-only turn when delivery is owed.
 
@@ -618,7 +653,9 @@ def _step_locked(root, hook_input):
         # no ending. A pending cancel is kept and takes effect after the resume.
         reason, until = paused
         when = ('until ' + dt.datetime.fromtimestamp(until, dt.timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
-                if until is not None else 'until /esx-loop resumes it')
+                if until is not None else
+                'until the usage limit resets; it resumes by itself on the next working turn, or run /esx-loop'
+                if pause_source(parsed) == 'provider_limit' else 'until /esx-loop resumes it')
         log(root, 'PAUSED', n, f'{reason}; {when}; stop allowed, iteration not advanced')
         return {'systemMessage': f'ESX loop paused at iteration {n}/{limit} ({reason}), {when}. Nothing is wrong.'}
     cancelled = cancel_request(parsed)
@@ -687,8 +724,10 @@ def _step_locked(root, hook_input):
         if not untracked:
             log(root, 'HOLD', n, f'verification running: {what}; tracked by this session; '
                                  'stop allowed, iteration not advanced')
+            pending = group_notice(root)
             return {'systemMessage': f'ESX loop holding at iteration {n}/{limit}: {what} still running. '
-                                     'It was launched by this session, which is re-invoked when it finishes.'}
+                                     'It was launched by this session, which is re-invoked when it finishes.'
+                                     + (' ' + pending if pending else '')}
         raw = parsed['header_fields'].get('verify_waits', '0')
         waits = int(raw) if raw.isdigit() else MAX_VERIFY_WAITS
         pid = untracked[0]['pid']
@@ -774,7 +813,8 @@ def _step_locked(root, hook_input):
         if temporary:
             temporary.unlink(missing_ok=True)
     log(root, 'CONTINUE', n + 1, f'budget={limit}')
-    return {'decision': 'block', 'reason': parsed['prompt'],
+    pending = group_notice(root)
+    return {'decision': 'block', 'reason': parsed['prompt'] + ('\n\n' + pending if pending else ''),
             'systemMessage': f'ESX iteration {n + 1}; limit {limit}.'}
 
 

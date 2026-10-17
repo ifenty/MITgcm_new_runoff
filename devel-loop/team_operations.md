@@ -115,6 +115,23 @@ Run `loop_gate.py --check-done`; acceptance moves the entry into closed_issues.m
 closed_at records completion time separately. A successful content-bound start
 receipt is required. Preserve partial/blocked work and its next action.
 
+## Role models
+
+A project may let the owner choose the model of a Bob or Richard dispatch. Configure it in
+`esx/project.json`: `"role_models": {"bob": {"default": "inherit", "allowed": ["opus"]},
+"richard": {"default": "inherit", "allowed": ["opus", "sonnet"]}}`. Absent means every dispatch
+inherits the main session's model (or the role file's `model:` pin), as before.
+
+- Retained dispatch: `agent_runtime.py start --role bob --issue ID --prompt-file F --model opus`.
+  Precedence is `--model`, then the role-file pin, then the configured default, then inherit. A
+  name outside `allowed` is refused. The model is fixed for the identity: `followup` and `message`
+  reuse it and refuse a different `--model`; a different model is a replacement identity
+  (`--replaces-agent` with `--replacement-reason`).
+- Native (Agent tool) dispatch: pass the tool's `model` from the allowed list. The framework
+  cannot enforce it; it records the model seen in the agent transcript at SubagentStop.
+- Closeout reports `MODEL_UNRECORDED` and `MODEL_NOT_ALLOWED` for a configured role's identity.
+  The retrospective's `measured.models` shows dispatches and known cost per model.
+
 ## Accounting and qualification
 
 ```sh

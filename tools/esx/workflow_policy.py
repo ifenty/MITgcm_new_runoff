@@ -135,6 +135,50 @@ def identity(record, key):
     return record.get(key) or (record.get('footer') or {}).get(key)
 
 
+def dispatched_in_iteration(records, role, agent_id, issue_id, iteration_timestamp):
+    """Whether the dispatch log shows ``agent_id`` running as ``role`` for this issue and iteration.
+
+    A footer-bearing record names its iteration; a failed or incomplete one has no
+    footer, so its time must not precede the iteration start.
+    """
+    for record in records:
+        if (record.get('agent_type') != role or record.get('agent_id') != agent_id
+                or identity(record, 'issue_id') != issue_id):
+            continue
+        iteration = identity(record, 'iteration_timestamp')
+        if iteration == iteration_timestamp or (iteration is None and str(record.get('ts', '')) >= str(iteration_timestamp)):
+            return True
+    return False
+
+
+def validate_parallel(continuity):
+    """Shape of agent_continuity.parallel: a list of {role, id, reason (>= 20 characters)}."""
+    entries = continuity.get('parallel', []) if isinstance(continuity, dict) else []
+    if not isinstance(entries, list):
+        return ['agent_continuity.parallel must be a list of {role, id, reason}']
+    errors = []
+    for index, entry in enumerate(entries):
+        if (not isinstance(entry, dict) or entry.get('role') not in ('bob', 'richard')
+                or not isinstance(entry.get('id'), str) or not entry['id'].strip()
+                or not isinstance(entry.get('reason'), str) or len(entry['reason'].strip()) < 20):
+            errors.append(f'agent_continuity.parallel[{index}] needs role (bob or richard), id and a reason of at least 20 characters')
+    return errors
+
+
+def parallel_ids(done, records, role):
+    """Runtime ids of ``role`` declared deliberately parallel AND dispatched for this issue and iteration.
+
+    A second reviewer is normally an unexplained replacement. Declaring it parallel
+    explains it, but only when the dispatch log shows it really ran for this
+    iteration; a declaration alone proves nothing.
+    """
+    continuity = done.get('agent_continuity') if isinstance(done, dict) else None
+    if not isinstance(continuity, dict) or validate_parallel(continuity):
+        return set()
+    return {entry['id'] for entry in continuity.get('parallel', []) if entry['role'] == role
+            and dispatched_in_iteration(records, role, entry['id'], done.get('id'), done.get('timestamp'))}
+
+
 def known_completion_iteration(event, start, histories):
     """Admit current events and exact completions retained by an earlier closeout."""
     if identity(event, 'issue_id') != start.get('id'):

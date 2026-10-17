@@ -17,6 +17,8 @@ import sys
 import audit
 import doc_contract as maintenance
 import final_verification
+import project
+import issue_candidates
 import loop_iteration
 import verify
 import workflow_policy as workflow
@@ -139,10 +141,16 @@ def diagnose(gate, done_path=None):
                  'completed issue must appear in exactly one ledger',
                  'Leave the entry in open_issues.md; --check-done moves it on acceptance.')
             if policy.get('numerical_signature_at_start') and policy.get('kind') != 'scientific_change':
-                need(source_signature(root, scientific=True) == policy['numerical_signature_at_start'],
-                     'KIND_AMENDMENT_REQUIRED', 'workflow.kind',
-                     'scientific source/tests/configuration changed: amend workflow kind',
-                     'Amend the workflow to scientific_change with a recorded reason.')
+                if source_signature(root, scientific=True) != policy['numerical_signature_at_start']:
+                    try:
+                        moved = issue_candidates.moved_scientific(root, start['maintenance']['baseline'], start.get('id'))
+                    except ERRORS:
+                        moved = ''  # the generic finding below still stands
+                    add('KIND_AMENDMENT_REQUIRED', 'workflow.kind',
+                        'scientific source/tests/configuration changed: amend workflow kind'
+                        + (f' (moved since the issue baseline: {moved})' if moved else ''),
+                        'Amend the workflow to scientific_change with a recorded reason '
+                        '(loop_lifecycle.py amend-kind --kind scientific_change --reason "...").')
         elif outcome in ('partial', 'blocked'):
             need(issue in opened and done.get('next_step'), 'OPEN_ENTRY_OR_NEXT_STEP', 'next_step',
                  'incomplete work needs its open entry and next_step', 'Keep the open entry and record next_step.')
@@ -223,6 +231,8 @@ def diagnose(gate, done_path=None):
     continuity = done.get('agent_continuity', {})
     if need(isinstance(continuity, dict), 'CONTINUITY_INVALID', 'agent_continuity', 'must be an object',
             'Record agent_continuity as an object.'):
+        many('CONTINUITY_INVALID', 'agent_continuity.parallel', workflow.validate_parallel(continuity),
+             'Record each deliberate parallel reviewer with loop_lifecycle.py add-parallel.')
         for role in ('bob', 'richard'):
             if not agents.get(role):
                 continue
@@ -232,8 +242,18 @@ def diagnose(gate, done_path=None):
                  f'Set agent_continuity.{role} to exactly the dispatch_ids already in subagents.{role}, '
                  f'originals first: {sorted(agents[role])}.')
             if isinstance(assignment, list):
+                for ident in sorted(agents[role]):
+                    for code, message in project.model_findings(
+                            root, role, [r for r in records if r.get('agent_id') == ident and r.get('agent_type') == role],
+                            gate.cfg.get('role_models') or {}):
+                        add(code, f'agent_continuity.{role}', message,
+                            'Dispatch the role on an allowed model (start --model NAME for a retained turn; the Agent tool model '
+                            'for a native one) or amend esx/project.json role_models.', agent=ident)
                 initial = 1 if role == 'bob' else max(1, policy.get('minimum_reviewers') or 0)
+                parallel = workflow.parallel_ids(done, records, role)
                 for replacement_id in assignment[initial:]:
+                    if replacement_id in parallel:
+                        continue  # declared parallel and dispatched for this iteration: not a replacement
                     need(any(isinstance(r, dict) and r.get('role') == role and r.get('new_id') == replacement_id
                              and r.get('old_id') in agents[role] and r.get('old_id') != replacement_id and r.get('reason')
                              for r in continuity.get('replacements', [])), 'REPLACEMENT_UNEXPLAINED',

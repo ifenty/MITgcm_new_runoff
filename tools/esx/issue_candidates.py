@@ -221,6 +221,29 @@ def stale_paths(captured, current, limit=8):
     return '; '.join(parts)
 
 
+def moved_scientific(root, baseline_ref, issue):
+    """Scientific-inventory files whose bytes differ from the issue baseline.
+
+    Compares the baseline snapshot's recorded file hashes, restricted to what the
+    scientific inventory selects, with a fresh measure of that inventory. Returns
+    the `stale_paths` text, or '' when no file's bytes moved (a mode, link or
+    toolchain change). Names the files that make closeout require scientific_change.
+    """
+    import hashlib
+    import doc_contract
+    from project import config, inventory_paths as scientific_paths, selected
+    root = Path(root).resolve()
+    cfg = config(root, ready=False)
+    recorded = doc_contract.load(root, baseline_ref, 'baseline', issue)['files']
+    before = {name: {'sha256': info['sha256']} for name, info in recorded.items() if selected(name, cfg, True)}
+    after = {}
+    for name in scientific_paths(root, cfg, True):
+        path = safe_path(root, name)
+        if path.is_file():
+            after[name] = {'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+    return stale_paths(before, after)
+
+
 def check_current(root, ref, issue):
     """Reject source, mode, link, addition or deletion changes since capture.
 

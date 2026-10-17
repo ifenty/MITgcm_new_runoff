@@ -1,0 +1,550 @@
+"""Project configuration, path boundaries and reproducible source signatures.
+
+Framework filenames are stable across deployments. Scientific paths, commands,
+inputs and environment probes belong to esx/project.json. No module imports a
+project's scientific code or sends external messages.
+"""
+import datetime as dt
+import hashlib
+import json
+import math
+import os
+from pathlib import Path
+import platform
+import re
+import subprocess
+import sys
+import tempfile
+
+STATE = 'devel-loop/loop_state'
+FRAMEWORK_PATHS = ['tools/esx', '.claude', 'devel-loop', 'docs', 'esx', 'CLAUDE.md', '.gitignore']
+EXCLUDED_PARTS = {'.git', '__pycache__', '.pytest_cache', 'loop_state'}
+ROLES = ('arch', 'bob', 'richard', 'scout', 'prober', 'bisector', 'auditor')
+
+
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+def named_sha(path):
+    """The hash a content-addressed artifact path names (its file stem), for refusal messages."""
+    return Path(str(path)).stem
+
+
+def digest(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def now():
+    return dt.datetime.now(dt.timezone.utc).isoformat()
+
+
+def local(root, name):
+    """Resolve a relative project path; reject traversal and external symlinks."""
+    root = Path(root).resolve()
+    require(isinstance(name, str) and name and name != '.' and not Path(name).is_absolute()
+            and '..' not in Path(name).parts, f'invalid project path: {name!r}')
+    path = root / name
+    require(path.resolve().is_relative_to(root), f'path leaves project: {name}')
+    return path
+
+
+def config(root, ready=True):
+    cfg = json.loads(local(root, 'esx/project.json').read_text())
+    require(isinstance(cfg, dict), 'project.json must be an object')
+    require(cfg.get('version') == 1, 'project.json version must be 1')
+    for key in ('source_paths', 'test_paths', 'configuration_paths', 'output_paths', 'external_inputs', 'environment_variables'):
+        require(isinstance(cfg.get(key), list) and all(isinstance(x, str) and x for x in cfg[key]), f'{key} must be a list of paths/names')
+    for name in cfg['source_paths'] + cfg['test_paths'] + cfg['configuration_paths'] + cfg['output_paths']:
+        local(root, name)
+    for output in cfg['output_paths']:
+        for source in cfg['source_paths'] + cfg['test_paths'] + cfg['configuration_paths'] + FRAMEWORK_PATHS:
+            require(not (source == output or source.startswith(output.rstrip('/') + '/')),
+                    f'output path would hide configured source/framework: {output}')
+    require(isinstance(cfg.get('verification'), dict), 'verification must define named suites')
+    verification = cfg['verification']
+    if 'scientific_groups' in verification:
+        # Grouped scientific suite: ordered, independently runnable and reusable
+        # groups. The flattened command list is "the suite" for fingerprinting and
+        # for every consumer of verification.scientific, so it is stored there.
+        groups = verification['scientific_groups']
+        require(not verification.get('scientific'),
+                'verification.scientific and verification.scientific_groups are mutually exclusive; remove one')
+        require(isinstance(groups, list) and groups, 'verification.scientific_groups must be a non-empty list')
+        names, flat = set(), []
+        for group in groups:
+            require(isinstance(group, dict) and set(group) == {'name', 'commands'},
+                    'each scientific group needs exactly a name and a commands list')
+            require(isinstance(group['name'], str) and re.fullmatch(r'[a-z0-9_-]+', group['name']),
+                    f"scientific group name must match [a-z0-9_-]+: {group['name']!r}")
+            require(group['name'] not in names, f"duplicate scientific group name: {group['name']}")
+            names.add(group['name'])
+            require(isinstance(group['commands'], list) and group['commands'],
+                    f"scientific group {group['name']} needs a non-empty commands list")
+            for argv in group['commands']:
+                require(isinstance(argv, list) and argv and all(isinstance(s, str) and s for s in argv),
+                        f"scientific group {group['name']}: invalid command")
+            flat += group['commands']
+        verification['scientific'] = flat
+    for suite, commands in verification.items():
+        if suite == 'scientific_groups':
+            continue
+        require(isinstance(commands, list), f'verification.{suite} must be a list of argv arrays')
+        for argv in commands:
+            require(isinstance(argv, list) and argv and all(isinstance(s, str) and s for s in argv), f'{suite}: invalid command')
+    require(isinstance(cfg.get('toolchain_commands'), list), 'toolchain_commands must be argv arrays')
+    if 'python' in cfg:
+        require(isinstance(cfg['python'], str) and Path(cfg['python']).is_absolute() and Path(cfg['python']).is_file(),
+                'python must be the absolute path of an existing interpreter')
+    for argv in cfg['toolchain_commands']:
+        require(isinstance(argv, list) and argv and all(isinstance(s, str) and s for s in argv), 'invalid toolchain command')
+    require(type(cfg.get('command_timeout_seconds')) in (int, float) and math.isfinite(cfg['command_timeout_seconds']) and cfg['command_timeout_seconds'] > 0,
+            'command_timeout_seconds must be finite and positive')
+    # Modules the declared suites import; `loop_gate --doctor` checks they import under
+    # the configured interpreter, so a replaced environment fails at iteration start
+    # rather than inside a role's suite run (TEAM-ENV-INTERPRETER-DRIFT-001).
+    require(isinstance(cfg.get('required_imports', []), list)
+            and all(isinstance(x, str) and re.fullmatch(r'[A-Za-z_]\w*(\.[A-Za-z_]\w*)*', x)
+                    for x in cfg.get('required_imports', [])),
+            'required_imports must be a list of module names')
+    validate_role_models(cfg.get('role_models'))
+    require(isinstance(cfg.get('mirrored_paths', []), list), 'mirrored_paths must be a list')
+    for entry in cfg.get('mirrored_paths', []):
+        require(isinstance(entry, dict) and isinstance(entry.get('canonical'), str) and entry['canonical']
+                and isinstance(entry.get('mirrors'), list) and entry['mirrors']
+                and all(isinstance(m, str) and m for m in entry['mirrors']),
+                'each mirrored_paths entry needs a canonical path and a nonempty list of mirror paths')
+        for name in [entry['canonical']] + entry['mirrors']:
+            local(root, name)
+    # Superseded documentation retained for provenance. Its links are expected to
+    # be stale, so audit.py excludes it from instruction-link checking. Keeping
+    # this in configuration means a project never edits framework code to retain
+    # its own archive, and the exclusion stays visible in one reviewed place.
+    require(isinstance(cfg.get('archive_paths', []), list)
+            and all(isinstance(x, str) and x for x in cfg.get('archive_paths', [])),
+            'archive_paths must be a list of project paths')
+    for name in cfg.get('archive_paths', []):
+        local(root, name)
+    # Tests of the framework and of the project's records rather than of the
+    # science (esx-fix.md F1). They stay in the acceptance inventory and run in
+    # `structural`, but leave the scientific execution identity, so an ESX-only
+    # regression edit no longer stales numerical evidence or forces a full
+    # scientific qualification. Absent means the conservative legacy contract:
+    # every test path is scientific.
+    require(isinstance(cfg.get('framework_test_paths', []), list)
+            and all(isinstance(x, str) and x for x in cfg.get('framework_test_paths', [])),
+            'framework_test_paths must be a list of project paths')
+    for name in cfg.get('framework_test_paths', []):
+        local(root, name)
+        require(any(name == t or name.startswith(t.rstrip('/') + '/') for t in cfg['test_paths']),
+                f'framework_test_paths entry {name} must lie inside a configured test_paths root')
+        # Every suite but `structural` fingerprints the scientific inventory, so a
+        # framework test that such a suite executes would drop out of that suite's
+        # own fingerprint. Refuse it rather than silently lose a scientific witness.
+        for suite, commands in cfg['verification'].items():
+            if suite == 'structural':
+                continue
+            require(not any(any(a == name or a.startswith(name.rstrip('/') + '/') for a in argv) for argv in commands),
+                    f'framework_test_paths entry {name} is executed by the {suite} suite, so it is a scientific '
+                    'witness; a test that affects both categories belongs in both')
+    # Documentation kept outside the tracked footprint (for example a vendored model's
+    # doc/ tree). It joins the non-scientific inventory, so candidate capture and the
+    # stale-figure sweeps see it, but never the scientific one: editing it cannot
+    # require a scientific_change.
+    require(isinstance(cfg.get('documentation_paths', []), list)
+            and all(isinstance(x, str) and x for x in cfg.get('documentation_paths', [])),
+            'documentation_paths must be a list of project paths')
+    science = cfg['source_paths'] + cfg['test_paths'] + cfg['configuration_paths']
+    for name in cfg.get('documentation_paths', []):
+        local(root, name)
+        for other in science:
+            require(not nested(name, other) and not nested(other, name),
+                    f'documentation path overlaps a source/test/configuration root: {name} and {other}')
+        for output in cfg['output_paths']:
+            require(not nested(name, output) and not nested(output, name),
+                    f'documentation path overlaps an output path: {name} and {output}')
+    if ready:
+        for key in ('project_id', 'project_name', 'mission'):
+            require(isinstance(cfg.get(key), str) and cfg[key].strip(), f'complete esx/project.json: {key}')
+        require(cfg['source_paths'] and cfg['test_paths'], 'configure source_paths and test_paths')
+        require(cfg['verification'].get('structural') and cfg['verification'].get('scientific'),
+                'configure nonempty structural and scientific acceptance suites')
+        require(cfg.get('toolchain_commands'), 'configure toolchain_commands')
+        for name in cfg['source_paths'] + cfg['test_paths'] + cfg['configuration_paths']:
+            require(local(root, name).exists(), f'configured input is missing: {name}')
+        # mirrored_paths existence/drift is checked by audit.py::audit_mirrors,
+        # which gives a more specific message (what it should mirror, or
+        # whether it's the canonical side that's missing) than a bare
+        # "configured input is missing" would.
+        for name in ('esx/project_profile.md', 'docs/code_map.md'):
+            require('TODO_ESX' not in local(root, name).read_text(), f'complete {name}')
+    return cfg
+
+
+ROLE_MODEL_ROLES = ('bob', 'richard')
+
+
+def validate_role_models(value):
+    """Optional esx/project.json role_models: per-role default and allowed model names."""
+    if value is None:
+        return
+    require(isinstance(value, dict) and value, 'role_models must be a non-empty object keyed by role')
+    for role, entry in value.items():
+        require(role in ROLE_MODEL_ROLES, f'role_models: unknown role {role!r}; known roles are {", ".join(ROLE_MODEL_ROLES)}')
+        require(isinstance(entry, dict) and set(entry) <= {'default', 'allowed'} and 'allowed' in entry,
+                f'role_models.{role} needs "allowed" and may add "default"; no other keys')
+        allowed = entry['allowed']
+        require(isinstance(allowed, list) and allowed and all(isinstance(x, str) and x.strip() and x != 'inherit' for x in allowed),
+                f'role_models.{role}.allowed must be a non-empty list of model names (not "inherit")')
+        default = entry.get('default', 'inherit')
+        require(isinstance(default, str) and default.strip() and (default == 'inherit' or default in allowed),
+                f'role_models.{role}.default must be "inherit" or one of allowed {allowed}')
+
+
+def role_models(root):
+    """The configured role_models, or {} for a project without it (behaviour unchanged)."""
+    try:
+        return json.loads(local(root, 'esx/project.json').read_text()).get('role_models') or {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def model_tokens(name):
+    """Conservative model-name normalisation: lower case, no [qualifier], no -YYYYMMDD, no provider prefix."""
+    name = re.sub(r'\[[^\]]*\]', '', str(name).strip().lower())
+    name = re.sub(r'-\d{8}$', '', name)
+    if 'claude' in name:
+        name = name[name.index('claude'):]
+    return name
+
+
+def model_allowed(recorded, allowed):
+    """Whether a recorded model name matches an allowed entry; returns the entry or None.
+
+    Both sides are normalised (model_tokens). A full configured name must be a prefix of the
+    recorded name on a '-' boundary (claude-opus-4 matches claude-opus-4-5, not claude-opus-40).
+    A bare alias (opus, sonnet, haiku, fable: no hyphen) matches a recorded name that carries it
+    as one of its '-' separated words (claude-opus-4-5)."""
+    got = model_tokens(recorded)
+    for entry in allowed:
+        want = model_tokens(entry)
+        if got == want or got.startswith(want + '-'):
+            return entry
+        if '-' not in want and want in got.split('-'):
+            return entry
+    return None
+
+
+def model_findings(root, role, dispatch_records, cfg_role_models=None):
+    """(code, message) findings for one bob/richard identity; empty without role_models."""
+    configured = role_models(root) if cfg_role_models is None else cfg_role_models
+    if role not in configured:
+        return []
+    models = [r.get('model') for r in dispatch_records if isinstance(r.get('model'), str) and r.get('model').strip()]
+    if not models:
+        return [('MODEL_UNRECORDED', f'{role}: no dispatch-log record of this identity shows its model')]
+    allowed = configured[role]['allowed']
+    out = []
+    for model in sorted(set(models)):
+        if model_allowed(model, allowed) is None:
+            out.append(('MODEL_NOT_ALLOWED', f'{role}: recorded model {model!r} (normalised {model_tokens(model)!r}) matches none of '
+                        f'the allowed names {allowed} (compared after dropping [..] qualifiers, a -YYYYMMDD suffix and any provider '
+                        'prefix; a configured name matches as a prefix on a "-" boundary, a bare alias as one word)'))
+    return out
+
+
+def nested(name, root_path):
+    """Whether ``name`` is ``root_path`` or lies beneath it."""
+    return name == root_path or name.startswith(root_path.rstrip('/') + '/')
+
+
+def mutable_loop_path(name):
+    """Keep local loop state, locks, logs and terminal archives outside candidates."""
+    return name.startswith(('.claude/esx-loop', '.claude/ralph-loop'))
+
+
+def administrative(name):
+    """Exclude records, not policy or executable witnesses, from acceptance."""
+    base = 'devel-loop/self-improvement/'
+    if name in {base + item for item in ('open-ESX-team-issues.md', 'closed-ESX-team-issues.md', 'process_changelog.md')}:
+        return True
+    return ((name.startswith(base + 'assessments/') and Path(name).suffix in ('.md','.json','.txt','.log'))
+            or (name.startswith(base + 'records/') and Path(name).suffix == '.md'))
+
+
+def archived(name, cfg):
+    """Report whether a path sits under a configured `archive_paths` root.
+
+    Archived documentation is superseded material a project keeps for provenance.
+    Its links point at a layout that no longer exists, so link checking would
+    report findings no one intends to fix. A configured scientific root always
+    wins: real source/tests/configuration never become unchecked by being listed
+    here.
+    """
+    science_roots = cfg['source_paths'] + cfg['test_paths'] + cfg['configuration_paths']
+    if any(name == p or name.startswith(p.rstrip('/') + '/') for p in science_roots):
+        return False
+    return any(name == p or name.startswith(p.rstrip('/') + '/') for p in cfg.get('archive_paths', []))
+
+
+def selected(name, cfg, scientific=False):
+    # Explicit scientific roots always win over administrative conventions.
+    science_roots = cfg['source_paths'] + cfg['test_paths'] + cfg['configuration_paths']
+    if administrative(name) and not any(name == p or name.startswith(p.rstrip('/') + '/') for p in science_roots):
+        return False
+    if EXCLUDED_PARTS.intersection(Path(name).parts) or name.endswith(('.pyc', '.pyo')):
+        return False
+    if mutable_loop_path(name):
+        return False
+    # An owner's permission approval rewrites this file; it must not strand a seal.
+    if name == '.claude/settings.local.json' and not any(
+            name == p or name.startswith(p.rstrip('/') + '/') for p in science_roots):
+        return False
+    if name == '.claude/worktrees' or name.startswith('.claude/worktrees/'):
+        return False
+    if any(name == p or name.startswith(p.rstrip('/') + '/') for p in cfg['output_paths']):
+        return False
+    if scientific and any(name == p or name.startswith(p.rstrip('/') + '/')
+                          for p in cfg.get('framework_test_paths', [])):
+        return False
+    roots = cfg['source_paths'] + cfg['test_paths'] + cfg['configuration_paths']
+    roots += ['esx/project.json'] if scientific else FRAMEWORK_PATHS + cfg.get('documentation_paths', [])
+    return any(name == p or name.startswith(p.rstrip('/') + '/') for p in roots)
+
+
+def inventory_paths(root, cfg, scientific=False):
+    """Include additions, deletions and ignored source through explicit path roots.
+
+    Output directories must be separate from source/configuration roots. A source
+    symlink leaving the project is refused; external datasets use external_inputs.
+    """
+    root = Path(root).resolve()
+    roots = cfg['source_paths'] + cfg['test_paths'] + cfg['configuration_paths']
+    roots += ['esx/project.json'] if scientific else FRAMEWORK_PATHS + cfg.get('documentation_paths', [])
+    names = set()
+    for name in roots:
+        path = local(root, name)
+        candidates = []
+        if path.is_dir():
+            require(not path.is_symlink(), f'configure the concrete directory instead of a symlink: {name}')
+            for directory, folders, files in os.walk(path):
+                folders[:] = [f for f in folders if selected((Path(directory) / f).relative_to(root).as_posix(), cfg, scientific)]
+                for folder in folders:
+                    require(not (Path(directory) / folder).is_symlink(), f'source directory symlink is not inventoried: {directory}/{folder}')
+                candidates.extend(Path(directory) / f for f in files)
+        else:
+            candidates = [path]
+        for candidate in candidates:
+            rel = candidate.relative_to(root).as_posix()
+            if selected(rel, cfg, scientific) and (candidate.is_file() or candidate.is_symlink()):
+                local(root, rel)
+                names.add(rel)
+    return sorted(names)
+
+
+def file_hash(path):
+    h = hashlib.sha256()
+    with Path(path).open('rb') as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def source_signature(root, scientific=False):
+    root = Path(root).resolve()
+    cfg = config(root)
+    return digest({p: {'sha256': file_hash(local(root, p)), 'mode': local(root, p).stat().st_mode,
+                       'link': os.readlink(root / p) if (root / p).is_symlink() else None}
+                   for p in inventory_paths(root, cfg, scientific)})
+
+
+def interpreter(cfg=None):
+    """The project's configured Python (`python` in project.json), else the caller's.
+
+    Without the key, `{python}` means whichever interpreter runs the ESX tool, so
+    running a tool with a system python3 silently probes the wrong environment.
+    """
+    return (cfg or {}).get('python') or sys.executable
+
+
+def command(argv, cfg=None):
+    return [interpreter(cfg) if s == '{python}' else s for s in argv]
+
+
+def missing_inputs(root, cfg):
+    """Configured external inputs absent from this checkout (e.g. gitignored captures)."""
+    return [name for name in cfg.get('external_inputs', [])
+            if not (Path(name) if Path(name).is_absolute() else Path(root) / name).is_file()]
+
+
+def environment(root, cfg):
+    """Measure declared tools, environment and actual external-input file bytes.
+
+    Use small qualification datasets for routine checks. No unverified dataset
+    checksum is accepted as a substitute for reading its configured input file.
+    """
+    probes = []
+    for argv in cfg['toolchain_commands']:
+        run = subprocess.run(command(argv, cfg), cwd=root, capture_output=True, text=True, timeout=30)
+        if run.returncode != 0:
+            hint = ('' if cfg.get('python') else
+                    ' `{python}` resolved to the interpreter running this tool; run ESX tools with the project '
+                    'environment (see esx/project_profile.md) or set "python" in esx/project.json.')
+            raise ValueError(f'toolchain probe failed: {argv} using {interpreter(cfg)} (exit {run.returncode}): '
+                             + (run.stderr.strip().splitlines() or [''])[-1][:300] + hint)
+        probes.append({'argv': command(argv, cfg), 'stdout': run.stdout, 'stderr': run.stderr})
+    missing = missing_inputs(root, cfg)
+    if missing:
+        raise ValueError(f'{len(missing)} of {len(cfg["external_inputs"])} configured external_inputs are '
+                         'missing from this checkout, so no verification evidence can be measured: '
+                         + ', '.join(missing[:5]) + (' ...' if len(missing) > 5 else ''))
+    inputs = {}
+    for name in cfg['external_inputs']:
+        path = Path(name) if Path(name).is_absolute() else root / name
+        inputs[str(path.resolve())] = file_hash(path)
+    facts = pinned_facts(cfg)
+    return {'python': facts['version'] if facts else sys.version,
+            'python_optimization': facts['optimize'] if facts else sys.flags.optimize,
+            'executable': interpreter(cfg), 'platform': platform.platform(),
+            'variables': measured_variables(cfg), 'tools': probes, 'inputs': inputs}
+
+
+_PINNED = {}
+
+
+def pinned_facts(cfg):
+    """Version and prefix of the configured interpreter, measured once per process.
+
+    None when the project pins no interpreter. With one pinned, the evidence
+    fingerprint describes that interpreter, not whichever Python or activated
+    shell happens to run the ESX tool. Otherwise the same unchanged candidate is
+    "stale" in one shell and current in another (TEAM-EVIDENCE-SHELL-ENV-001).
+    """
+    path = (cfg or {}).get('python')
+    if not path:
+        return None
+    if path not in _PINNED:
+        try:
+            run = subprocess.run([path, '-c', 'import json, sys; print(json.dumps({"version": sys.version, '
+                                  '"optimize": sys.flags.optimize, "prefix": sys.prefix, "base_prefix": sys.base_prefix}))'],
+                                 capture_output=True, text=True, timeout=30)
+            problem = (run.stderr.strip().splitlines() or [''])[-1][:300] if run.returncode != 0 else None
+        except (OSError, subprocess.SubprocessError) as exc:
+            problem = str(exc)
+        if problem is not None:
+            raise ValueError(f'configured "python" in esx/project.json cannot run ({path}): {problem}')
+        _PINNED[path] = json.loads(run.stdout)
+    return _PINNED[path]
+
+
+_DISTRIBUTIONS = {}
+
+_DISTRIBUTION_PROBE = ('import hashlib, importlib.metadata as m; '
+                       'print(hashlib.sha256("\\n".join(sorted(set((d.metadata["Name"] or "") + "==" + (d.version or "") '
+                       'for d in m.distributions()))).encode()).hexdigest())')
+
+
+def interpreter_identity(cfg):
+    """Who the configured interpreter is: version, executable and installed distributions.
+
+    The version comes from pinned_facts (the interpreter the evidence fingerprint
+    describes); the executable path is the one commands will run, and the digest
+    covers the installed distribution set, measured by one subprocess probe per
+    process. An environment replaced at the same path changes the digest, not the
+    path (TEAM-ENV-INTERPRETER-DRIFT-001). The digest is None when the probe
+    cannot run: this identity is advisory and must never block a gate.
+    """
+    facts = pinned_facts(cfg)
+    path = interpreter(cfg)
+    if path not in _DISTRIBUTIONS:
+        try:
+            run = subprocess.run([path, '-c', _DISTRIBUTION_PROBE], capture_output=True, text=True, timeout=60)
+            _DISTRIBUTIONS[path] = run.stdout.strip() if run.returncode == 0 and run.stdout.strip() else None
+        except (OSError, subprocess.SubprocessError):
+            _DISTRIBUTIONS[path] = None
+    return {'version': facts['version'] if facts else sys.version, 'executable': path,
+            'distributions': _DISTRIBUTIONS[path]}
+
+
+def measured_variables(cfg):
+    """Declared environment variables as the evidence fingerprint records them.
+
+    With a pinned interpreter, the variables an environment activation sets
+    (CONDA_PREFIX, CONDA_DEFAULT_ENV, VIRTUAL_ENV) are taken from that
+    interpreter's own prefix, and PATH is recorded with the conda installation's
+    own bin directories replaced by the pinned environment's. Every other
+    variable, and every variable of a project without a pin, is read from the
+    calling process. Tool identity itself is measured by toolchain_commands.
+    """
+    values = {k: os.environ.get(k) for k in cfg['environment_variables']}
+    facts = pinned_facts(cfg)
+    if not facts:
+        return values
+    prefix = Path(facts['prefix'])
+    conda = (prefix / 'conda-meta').is_dir()
+    root = prefix.parent.parent if prefix.parent.name == 'envs' else prefix
+    derived = {'CONDA_PREFIX': str(prefix) if conda else None,
+               'CONDA_DEFAULT_ENV': (prefix.name if prefix.parent.name == 'envs' else 'base') if conda else None,
+               'VIRTUAL_ENV': str(prefix) if facts['prefix'] != facts['base_prefix'] else None}
+    for name, value in derived.items():
+        if name in values:
+            values[name] = value
+    if conda and values.get('PATH') is not None:
+        def managed(entry):
+            path = Path(entry)
+            return path in (root / 'bin', root / 'condabin') or (
+                path.name == 'bin' and path.parent.parent == root / 'envs')
+        kept = [entry for entry in values['PATH'].split(os.pathsep) if entry and not managed(entry)]
+        values['PATH'] = os.pathsep.join([str(prefix / 'bin')] + kept)
+    return values
+
+
+def atomic_json(path, value):
+    atomic_bytes(path, (json.dumps(value, indent=2, sort_keys=True) + '\n').encode())
+
+
+def atomic_bytes(path, data):
+    """Publish a complete file in its directory; failed replacement keeps old bytes."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(data)
+        temporary.replace(path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def json_file(root, name):
+    return json.loads(local(root, name).read_text())
+
+
+def main():
+    """Print the exact 64-hex signature a footer's candidate_signature field requires.
+
+    Distinct from issue_candidates.py's own content-addressed candidate
+    signature: this is project.py::source_signature(root), the value
+    workflow_policy.py::current_review and final_verification.py actually
+    compare a reviewer's footer against.
+    """
+    import argparse
+    parser = argparse.ArgumentParser(description=main.__doc__)
+    parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[2])
+    sub = parser.add_subparsers(dest='command', required=True)
+    signature = sub.add_parser('signature', help='print source_signature(root) for a footer candidate_signature field')
+    signature.add_argument('--scientific', action='store_true', help='use the narrower scientific-paths inventory')
+    args = parser.parse_args()
+    try:
+        result = {'signature': source_signature(args.root, args.scientific)}
+        print(json.dumps(result, indent=2))
+        return 0
+    except (ValueError, OSError, TypeError, KeyError) as exc:
+        print(f'project signature: {exc}', file=sys.stderr)
+        return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

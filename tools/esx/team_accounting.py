@@ -250,12 +250,17 @@ def summary(root, issue=None, start=None, end=None, *, evidence=None, run_id=Non
     if end:
         selected = [r for r in selected if timestamp(r.get('started_at') or r.get('ts')) <= timestamp(end)]
     roles, components, seen, intervals = {}, [], set(), []
+    by_model = {}
     for r in selected:
         role = r.get('agent_type', 'unknown')
         group = roles.setdefault(role, {'dispatches': 0, 'rounds': set(), 'seconds': 0.,
                                         'reported_usd': 0., 'unknown_cost_events': 0, 'tool_calls': 0,
                                         'unknown_tool_call_events': 0, 'usage': {}})
         group['dispatches'] += 1
+        if 'model' in r:
+            # Recorded model of the dispatch (retained stream or native transcript); None is reported as "unknown", never guessed.
+            bucket = by_model.setdefault(r['model'] or 'unknown', {'dispatches': 0, 'reported_usd': 0., 'unknown_cost_events': 0})
+            bucket['dispatches'] += 1
         group['rounds'].add((r.get('session_id'), r.get('correction_round', 0)))
         if r.get('started_at') and r.get('finished_at'):
             a, b = timestamp(r['started_at']), timestamp(r['finished_at'])
@@ -274,6 +279,9 @@ def summary(root, issue=None, start=None, end=None, *, evidence=None, run_id=Non
                 raise ValueError('invalid cost for ' + key)
             group['reported_usd'] += cost or 0
             group['unknown_cost_events'] += cost is None
+            if 'model' in r:
+                bucket['reported_usd'] += cost or 0
+                bucket['unknown_cost_events'] += cost is None
             calls = c.get('tool_calls')
             group['tool_calls'] += calls or 0
             group['unknown_tool_call_events'] += calls is None
@@ -304,7 +312,7 @@ def summary(root, issue=None, start=None, end=None, *, evidence=None, run_id=Non
     return {'schema_version': 2, 'issue_id': issue, 'start': start, 'end': end,
             'span_seconds': span, 'child_elapsed_seconds': child,
             'outside_child_intervals_seconds': max(0, span - child) if span is not None else None,
-            'by_role': roles, 'reported_usd': sum(c['reported_usd'] or 0 for c in components),
+            'by_role': roles, **({'by_model': by_model} if by_model else {}), 'reported_usd': sum(c['reported_usd'] or 0 for c in components),
             'unknown_cost_event_ids': [c['event_id'] for c in components if c['reported_usd'] is None],
             'coordinator_coverage': arch['coverage'], 'coordinator': arch,
             'billing_status': 'provider_reported_not_invoice_reconciled',
@@ -319,6 +327,7 @@ def measured(report):
             'dispatches': {r: v['dispatches'] for r, v in report['by_role'].items()},
             'rounds': {r: v['rounds'] for r, v in report['by_role'].items()},
             'cost_usd': {r: v['reported_usd'] for r, v in report['by_role'].items()},
+            'models': report.get('by_model'),
             'unknown_cost_event_ids': report['unknown_cost_event_ids'],
             'coordinator_coverage': report['coordinator_coverage'], 'billing_status': report['billing_status'],
             'coordinator': {'tool_measured_minutes': round(c['tool_measured']['effort_seconds'] / 60, 1),

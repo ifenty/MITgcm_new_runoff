@@ -50,6 +50,42 @@ def started(root, event):
     return context
 
 
+def kind_notice(root, event):
+    """One line when an edit makes closeout require a kind amendment, else None.
+
+    The active issue is not scientific_change but the edited file is in the
+    scientific inventory (source, tests, configuration paths and esx/project.json),
+    so the scientific signature moves and closeout will refuse the kind. Seen
+    otherwise only at --check-done. A membership test on one path, not a tree walk.
+    """
+    from project import config, selected
+    root = Path(root).resolve()
+    given = ((event.get('tool_input') or {}).get('file_path') or (event.get('tool_input') or {}).get('notebook_path')
+             if isinstance(event, dict) else None)
+    start_path = local(root, f'{STATE}/issue-start.json')
+    if not isinstance(given, str) or not start_path.is_file():
+        return None
+    start = json.loads(start_path.read_text())
+    kind = (start.get('workflow') or {}).get('kind')
+    if kind == 'scientific_change':
+        return None
+    history = local(root, f'{STATE}/loop_history.jsonl')
+    rows = [json.loads(line) for line in history.read_text().splitlines() if line.strip()] if history.is_file() else []
+    import loop_iteration
+    if loop_iteration.finished(start, rows):
+        return None
+    path = Path(given)
+    try:
+        name = (path if path.is_absolute() else root / path).resolve().relative_to(root).as_posix()
+    except ValueError:
+        return None
+    if not selected(name, config(root, ready=False), True):
+        return None
+    return (f"ESX notice: {name} is in the scientific inventory, but {start.get('id')} is a {kind} issue; closeout will "
+            'require a kind amendment (loop_lifecycle.py amend-kind --kind scientific_change --reason "..."), '
+            'which adds the scientific reviews and final qualification. Revert the edit or plan for that now.')
+
+
 def whoami(root, role):
     """The runtime id of the one running native subagent of ``role``, for --owner.
 
@@ -119,6 +155,13 @@ if __name__ == '__main__':
                       f"{record.get('status')}: {record.get('error')}", file=sys.stderr)
         else:
             validate_records(args.root.resolve())
+            try:
+                event = json.load(sys.stdin) if not sys.stdin.isatty() else {}
+                notice = kind_notice(args.root, event)
+                if notice:
+                    print(notice)
+            except Exception:  # an advisory line must never fail the hook
+                pass
             if os.environ.get('ESX_AGENT_RUNTIME_CHILD') != '1':
                 import notifications
                 notifications.synchronize(args.root.resolve())

@@ -15,7 +15,7 @@ import sys
 
 from doc_inventory import MAP, changes, digest, excerpt, git, local, snapshot
 
-from project import STATE
+from project import STATE, config, named_sha
 STORE = f'{STATE}/maintenance'
 ROLES = ('arch', 'bob', 'richard', 'scout', 'prober', 'bisector', 'auditor')
 
@@ -56,7 +56,8 @@ def load(root, ref, kind, issue):
     require(isinstance(ref, dict), f'{kind} evidence reference is required')
     sha, name = ref.get('sha256'), ref.get('path')
     require(isinstance(sha, str) and len(sha) == 64 and name == f'{STORE}/{sha}.json',
-            f'{kind} must reference a content-addressed maintenance artifact')
+            f'{kind} must reference a content-addressed maintenance artifact: the path names '
+            f'{named_sha(name)} but sha256 is {sha}')
     payload = json.loads(evidence_path(root, name).read_text())
     require(digest(payload) == sha, f'{kind} evidence hash mismatch')
     require(isinstance(payload, dict), f'{kind} evidence must be an object')
@@ -94,6 +95,12 @@ def baseline(root, issue, git_base=None, reason=None):
     payload = envelope('baseline', issue)
     commit = git(root, 'rev-parse', '--verify', git_base + '^{commit}').decode().strip() if git_base else None
     payload.update(files=snapshot(root, commit), recovery={'git_base': commit, 'requested_ref': git_base, 'reason': reason})
+    # The documentation roots in force are part of what this baseline measured; a
+    # later configuration change would make the closeout comparison meaningless.
+    # Recorded only when configured, so projects without the key keep identical baselines.
+    configured = config(root, ready=False).get('documentation_paths')
+    if configured:
+        payload['scope'] = {'documentation_paths': list(configured)}
     if not commit:
         from issue_candidates import capture, load as load_candidate
         source_ref = capture(root, issue)
@@ -755,7 +762,12 @@ def check_start(root, start):
     try:
         state = start.get('maintenance')
         require(isinstance(state, dict), 'issue-start.maintenance is required before implementation')
-        load(root, state.get('baseline'), 'baseline', start.get('id'))
+        recorded = load(root, state.get('baseline'), 'baseline', start.get('id'))
+        was = sorted((recorded.get('scope') or {}).get('documentation_paths', []))
+        now_paths = sorted(config(root, ready=False).get('documentation_paths', []))
+        require(was == now_paths,
+                f'documentation_paths changed since this issue baseline was captured (baseline {was}, '
+                f'configured {now_paths}); change it between issues, or restore the configured list')
         original = original_baseline(root, start.get('id'))
         require(not original or state.get('baseline') == original,
                 'issue-start must preserve the original maintenance baseline across iterations')
@@ -943,6 +955,14 @@ def figure_pattern(old):
     return re.compile(r'(?<![0-9A-Za-z_.,])(?:' + body + r')(?![0-9A-Za-z_]|[.,][0-9])')
 
 
+def bare_figure_warnings(figures):
+    """Warn about a 1-2 digit bare number: it matches namelist values and constants, not the finding."""
+    import re
+    return [f"figure {row['old']!r} is a bare small number and will match unrelated values; write it as in "
+            "prose with its words or unit (\"46 rules\", \"26-41 m\")"
+            for row in figures if re.fullmatch(r'\d{1,2}', row['old'])]
+
+
 def stale_lines(root, figures, limit=200):
     """Every inventoried line that still contains a superseded figure.
 
@@ -987,7 +1007,7 @@ def stale_lines(root, figures, limit=200):
     # KeyError instead of a plausible wrong number. Use `listed()` to read the
     # entries without caring which case applies.
     result = {'figures': len(figures), 'lines': len(hits), 'limit': limit,
-              'truncated': max(len(hits) - limit, 0)}
+              'truncated': max(len(hits) - limit, 0), 'warnings': bare_figure_warnings(figures)}
     result['hits' if result['truncated'] == 0 else 'hits_sample'] = hits[:limit]
     return result
 
@@ -1089,6 +1109,8 @@ def main():
                 print(f"documentation contract: {result['lines']} inventoried line(s) match; "
                       f"'hits_sample' lists the first {result['limit']} and {result['truncated']} are not "
                       "shown. Read 'lines' for the total; do not count the sample.", file=sys.stderr)
+            for warning in result['warnings']:
+                print('documentation contract: warning: ' + warning, file=sys.stderr)
         elif args.command == 'check-orientation':
             validate_orientation(args.root, args.receipt, args.issue, args.baseline, args.role)
             result = {'valid': True, 'evidence': 'reused', 'orientation': args.receipt}

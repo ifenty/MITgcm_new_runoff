@@ -67,6 +67,9 @@ when diagnosing termination. Never edit a counter to conceal failed progress.
 5. Assemble a review packet with exact completion events. For a scientific change,
    the assigned owner uses final_verification.py after readiness passes. Preserve
    its result and receipt. A failed attempt cannot reuse an earlier approval result.
+   A grouped scientific suite is run (and resumed after a kill) group by group with
+   `final_verification.py run [--group NAME]`; the aggregate it seals is the
+   `scientific` evidence ([verification](verification.md#grouped-scientific-suites)).
 6. Prepare the closeout, or retain partial/blocked work with its next step and
    dependency. Complete issue-done.json using the start timestamp. Do not move a
    completed entry out of open_issues.md yourself: the ledger records only accepted work.

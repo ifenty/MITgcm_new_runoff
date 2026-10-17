@@ -179,6 +179,17 @@ reports separate configuration recovery and packet repair from captured role
 turns. Unmeasured orchestration time remains unmeasured; overlapping turns are
 accounted for with the existing interval-union calculation.
 
+## Resume a long grouped verification
+
+When `verification.scientific_groups` is configured ([verification](verification.md#grouped-scientific-suites)),
+a killed, interrupted or failed final run is resumed by running the same
+`final_verification.py run` command again: groups whose evidence is intact and
+current for the same owner are reused, the others run, and the aggregate is sealed
+once every group has passed. `--group NAME` runs one group per background command.
+Between groups no process runs, but the verification is not finished: `--next`
+and the Stop hook list the remaining groups and the exact command to continue. A
+failed or incomplete group supplies no approval and voids the earlier receipt.
+
 ## Reuse execution with fresh acceptance
 
 Session compatibility, orientation freshness, reviewer approval, suite execution

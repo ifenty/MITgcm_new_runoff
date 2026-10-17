@@ -1,0 +1,1137 @@
+#!/usr/bin/env python3
+"""Create and validate issue-local navigation and documentation evidence.
+
+Artifacts are immutable, content-addressed JSON beneath loop_state/maintenance.
+The gate validates identities, coverage and freshness. Authors and reviewers
+remain responsible for whether the recorded explanations match the program.
+"""
+import argparse
+import copy
+import datetime as dt
+import json
+import re
+from pathlib import Path
+import sys
+
+from doc_inventory import MAP, changes, digest, excerpt, git, local, snapshot
+
+from project import STATE, config, named_sha
+STORE = f'{STATE}/maintenance'
+ROLES = ('arch', 'bob', 'richard', 'scout', 'prober', 'bisector', 'auditor')
+
+
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+def explanation(value):
+    return isinstance(value, str) and len(value.strip()) >= 40
+
+
+def evidence_path(root, name):
+    """Resolve stored evidence without traversing symlink parents or leaves."""
+    from issue_candidates import safe_path
+    path = safe_path(root, name)
+    require(not path.is_symlink(), f'evidence path cannot be a symlink: {name}')
+    return path
+
+
+def save(root, payload):
+    """Write once under a digest-derived name; identical payloads reuse one artifact."""
+    sha = digest(payload)
+    ref = {'path': f'{STORE}/{sha}.json', 'sha256': sha}
+    path = evidence_path(root, ref['path'])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open('x') as stream:
+            json.dump(payload, stream, indent=2, sort_keys=True)
+            stream.write('\n')
+    except FileExistsError:
+        require(json.loads(path.read_text()) == payload, 'existing evidence artifact is corrupt')
+    return ref
+
+
+def load(root, ref, kind, issue):
+    require(isinstance(ref, dict), f'{kind} evidence reference is required')
+    sha, name = ref.get('sha256'), ref.get('path')
+    require(isinstance(sha, str) and len(sha) == 64 and name == f'{STORE}/{sha}.json',
+            f'{kind} must reference a content-addressed maintenance artifact: the path names '
+            f'{named_sha(name)} but sha256 is {sha}')
+    payload = json.loads(evidence_path(root, name).read_text())
+    require(digest(payload) == sha, f'{kind} evidence hash mismatch')
+    require(isinstance(payload, dict), f'{kind} evidence must be an object')
+    require(payload.get('version') == 1 and payload.get('kind') == kind,
+            f'invalid {kind} evidence version/type')
+    require(payload.get('issue_id') == issue, f'{kind} evidence belongs to another issue')
+    if kind == 'baseline':
+        require(isinstance(payload.get('files'), dict) and MAP in payload['files'],
+                'baseline must include the code map and source inventory')
+        if payload.get('source_snapshot'):
+            from issue_candidates import load as load_candidate
+            load_candidate(root, payload['source_snapshot'], issue)
+    return payload
+
+
+def envelope(kind, issue):
+    require(isinstance(issue, str) and bool(issue.strip()), 'issue ID is required')
+    return {'version': 1, 'kind': kind, 'issue_id': issue,
+            'created_at': dt.datetime.now(dt.timezone.utc).isoformat()}
+
+
+def baseline(root, issue, git_base=None, reason=None):
+    """Reuse the issue's original baseline across every correction and loop turn.
+
+    A write-once pin prevents a fresh working-tree capture from hiding cumulative
+    edits. Existing issue history supplies the earliest recorded baseline when
+    adopting an issue. Explicit commit recovery is for an absent original only.
+    """
+    require(not git_base or explanation(reason), 'commit recovery requires a substantive recovery reason')
+    original = original_baseline(root, issue)
+    if original:
+        require(not git_base, 'original maintenance baseline already exists; commit recovery cannot replace it')
+        pin_baseline(root, issue, original)
+        return original
+    payload = envelope('baseline', issue)
+    commit = git(root, 'rev-parse', '--verify', git_base + '^{commit}').decode().strip() if git_base else None
+    payload.update(files=snapshot(root, commit), recovery={'git_base': commit, 'requested_ref': git_base, 'reason': reason})
+    # The documentation roots in force are part of what this baseline measured; a
+    # later configuration change would make the closeout comparison meaningless.
+    # Recorded only when configured, so projects without the key keep identical baselines.
+    configured = config(root, ready=False).get('documentation_paths')
+    if configured:
+        payload['scope'] = {'documentation_paths': list(configured)}
+    if not commit:
+        from issue_candidates import capture, load as load_candidate
+        source_ref = capture(root, issue)
+        captured = load_candidate(root, source_ref, issue)['files']
+        require(set(payload['files']).issubset(captured)
+                and all(name in captured and (captured[name]['kind'] == 'symlink'
+                    or captured[name]['sha256'] == info['sha256'])
+                    for name, info in payload['files'].items()),
+                'source changed during baseline capture; capture again after edits finish')
+        payload['source_snapshot'] = source_ref
+    ref = save(root, payload)
+    pin_baseline(root, issue, ref)
+    return ref
+
+
+def pin_path(root, issue):
+    """Key original-baseline registrations by issue identity without path interpolation."""
+    require(isinstance(issue, str) and issue.strip(), 'issue ID is required')
+    return evidence_path(root, f'{STORE}/original/{digest(issue)}.json')
+
+
+def original_baseline(root, issue):
+    """Find the durable original or earliest retained history without changing records."""
+    path = pin_path(root, issue)
+    if path.exists():
+        require(not path.is_symlink(), 'original maintenance baseline pin cannot be a symlink')
+        record = json.loads(path.read_text())
+        require(record.get('issue_id') == issue, 'original baseline pin identity mismatch')
+        ref = record.get('baseline')
+        load(root, ref, 'baseline', issue)
+        return ref
+    history = evidence_path(root, f'{STATE}/loop_history.jsonl')
+    if history.exists():
+        for line in history.read_text().splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            require(isinstance(row, dict), 'baseline history row must be an object')
+            ref = (row.get('maintenance') or {}).get('baseline')
+            if row.get('id') == issue and ref:
+                load(root, ref, 'baseline', issue)
+                return ref
+    start = evidence_path(root, f'{STATE}/issue-start.json')
+    if start.exists():
+        row = json.loads(start.read_text())
+        ref = (row.get('maintenance') or {}).get('baseline')
+        if row.get('id') == issue and ref:
+            load(root, ref, 'baseline', issue)
+            return ref
+    return None
+
+
+def pin_baseline(root, issue, ref):
+    """Write the original registration once; concurrent attempts must agree."""
+    load(root, ref, 'baseline', issue)
+    path = pin_path(root, issue)
+    require(not path.is_symlink(), 'original maintenance baseline pin cannot be a symlink')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {'issue_id': issue, 'baseline': ref}
+    try:
+        with path.open('x') as stream:
+            json.dump(payload, stream, indent=2, sort_keys=True)
+            stream.write('\n')
+    except FileExistsError:
+        require(json.loads(path.read_text()) == payload,
+                'original maintenance baseline is already pinned; preserve cumulative issue changes')
+
+
+def navigate(root, issue, base_ref, role, map_ref, targets, docs, use):
+    import team_accounting
+    with team_accounting.phase(root, issue, 'orientation', role=role):
+        return _navigate(root, issue, base_ref, role, map_ref, targets, docs, use)
+
+
+def _navigate(root, issue, base_ref, role, map_ref, targets, docs, use, reused_from=None):
+    """Print selected references and record how the role will use this dependency slice."""
+    load(root, base_ref, 'baseline', issue)
+    require(role in ROLES, 'unknown orientation role')
+    require(map_ref.startswith(MAP + '#'), 'select a heading in the code map')
+    require(len(set(targets)) >= 2 and all('::' in t for t in targets),
+            'name an owning symbol/file and at least one distinct caller, consumer or test')
+    require(bool(docs), 'name an applicable documentation or instruction contract')
+    require(explanation(use), 'explain how these references guide this issue (at least 40 characters)')
+    refs = list(dict.fromkeys([map_ref, *targets, *docs]))
+    entries = [excerpt(root, r) for r in refs]
+    for entry in entries:
+        # Bound each display. Large symbols still require a focused Read/rg follow-up.
+        lines = entry['text'].splitlines()
+        print(f"\n--- {entry['ref']} ({len(lines)} lines; sha256={entry['sha256']}) ---", file=sys.stderr)
+        print('\n'.join(lines[:65]), file=sys.stderr)
+        if len(lines) > 65:
+            print('Excerpt truncated: use a focused Read/rg for the relevant body.', file=sys.stderr)
+    payload = envelope('orientation', issue)
+    payload.update(baseline=base_ref, role=role, map=map_ref, targets=targets,
+                   documents=docs, use=use,
+                   references=[{k: e[k] for k in ('ref', 'sha256', 'components')} for e in entries])
+    if reused_from is not None:
+        payload['reused_from'] = reused_from
+    return save(root, payload)
+
+
+def reuse_navigate(root, issue, original_ref, use, base_ref=None, role=None):
+    import team_accounting
+    with team_accounting.phase(root, issue, 'orientation'):
+        return _reuse_navigate(root, issue, original_ref, use, base_ref, role)
+
+
+def _reuse_navigate(root, issue, original_ref, use, base_ref=None, role=None):
+    """Re-run a prior orientation's map, targets and documents under a fresh use.
+
+    This removes only the retyping of identical arguments. The current excerpt of
+    every reference is still printed through `_navigate`, and the caller must write
+    a new use explanation; no hash or other value echoed by a stale-orientation
+    refusal is accepted. When a changed reference is not one of the original's
+    declared targets or documents (the map heading), or a declared reference no
+    longer resolves, the slice moved beyond what was read and full navigate is
+    required.
+    """
+    record = load(root, original_ref, 'orientation', issue)
+    require(base_ref is None or record.get('baseline') == base_ref,
+            'reused orientation belongs to another baseline; run full navigate')
+    require(role is None or record.get('role') == role,
+            'reused orientation belongs to another role; run full navigate')
+    validate_orientation(root, original_ref, issue, record.get('baseline'), record.get('role'), fresh=False)
+    require(isinstance(use, str) and use.strip(),
+            'navigate --reuse-args requires a freshly written --use explaining the current excerpts')
+    words = lambda text: ' '.join(str(text).split()).casefold()
+    require(words(use) != words(record['use']),
+            '--use repeats the original orientation; write a fresh explanation after reading the current excerpts')
+    # The map section is declared by this orientation as surely as its targets
+    # and documents are, so a change confined to it is reusable. Testing
+    # membership against targets+documents alone reported an orientation's own
+    # --map as outside its own scope and sent the caller to re-declare, by hand,
+    # the identical arguments the receipt already holds
+    # (TEAM-DOCCONTRACT-NAVIGATE-REUSE-MAP-001: four reproductions across three
+    # agents on RUNOFF-013, with the code map being the document most likely to
+    # change on an issue that touches it).
+    declared = set(record['targets']) | set(record['documents']) | {record['map']}
+    outside, missing, echoed = [], [], {original_ref.get('sha256')}
+    for entry in record['references']:
+        echoed.add(entry['sha256'])
+        try:
+            current = excerpt(root, entry['ref'])
+        except (OSError, ValueError):
+            missing.append(entry['ref'])
+            continue
+        echoed.add(current['sha256'])
+        if current['sha256'] != entry['sha256'] and entry['ref'] not in declared:
+            outside.append(entry['ref'])
+    require(not any(value and value in use for value in echoed),
+            '--use cites orientation hashes; hashes echoed by a stale-orientation refusal are not an '
+            'acknowledgement, so explain what the current excerpts show')
+    require(not outside, 'navigate --reuse-args refused: changed targets lie outside the original orientation\'s '
+            f'declared targets and documents: {json.dumps(outside)}; the dependency slice moved beyond what was read, '
+            'so run full navigate with explicit --map/--target/--doc')
+    require(not missing, f'navigate --reuse-args refused: recorded references no longer resolve: {json.dumps(missing)}; '
+            'run full navigate with the current owning references')
+    return _navigate(root, issue, record['baseline'], record['role'], record['map'], record['targets'],
+                     record['documents'], use, reused_from=original_ref)
+
+
+def latest_orientation(root, issue, base_ref, role):
+    """The newest recorded orientation for this issue/baseline/role that is fresh.
+
+    `--check-start` validates the orientation recorded at `--prepare`. In a
+    correction round that receipt is necessarily stale, because the work has
+    changed the targets it was written against, and the gate then has no honest
+    way to pass: `--late-reason` overwrites an on-time receipt with one that
+    asserts the gate was skipped, and `--prepare` destroys the round's review
+    history (TEAM-LOOPGATE-CHECKSTART-CORRECTION-ROUND-001, reproduced end to
+    end on RUNOFF-013 after an implementer refused both escape hatches).
+
+    Re-navigating is the honest remedy the refusal already recommends, so this
+    finds the receipt that re-navigation produced. Returns None when no fresh
+    orientation exists, which keeps the genuinely-skipped case refusing.
+    """
+    root = Path(root).resolve()
+    directory = root / 'devel-loop' / 'loop_state' / 'maintenance'
+    if not directory.is_dir():
+        return None
+    best = None
+    for path in directory.glob('*.json'):
+        try:
+            record = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        if (record.get('kind') != 'orientation' or record.get('issue_id') != issue
+                or record.get('role') != role or record.get('baseline') != base_ref):
+            continue
+        ref = {'path': str(path.relative_to(root)), 'sha256': path.stem}
+        try:
+            validate_orientation(root, ref, issue, base_ref, role)
+        except (ValueError, OSError):
+            continue
+        if best is None or record.get('created_at', '') > best[0]:
+            best = (record.get('created_at', ''), ref)
+    return best[1] if best else None
+
+
+def latest_seal(root, issue):
+    """The newest sealed documentation report for this issue, or None.
+
+    `footer_contract.validate` can only test a cited report against an
+    `expected_report` that the caller supplies, and only a validated reviewer
+    packet carries one -- so an IMPLEMENTER footer citing a superseded seal
+    passed every capture gate, and the implementer is the role that re-seals
+    every single round, i.e. the one whose citation is most likely to go stale
+    (TEAM-FOOTER-ORIENTATION-FRESHNESS-001, measured on RUNOFF-030 and
+    RUNOFF-040).
+
+    The current seal does not actually need a packet: it is the newest
+    `documentation` record for the issue, which is recoverable here. That makes
+    the check available to both roles and on both capture paths. Mirrors
+    `latest_orientation`'s scan deliberately, so the two stay comparable.
+    """
+    root = Path(root).resolve()
+    directory = root / 'devel-loop' / 'loop_state' / 'maintenance'
+    if not directory.is_dir():
+        return None
+    best = None
+    for path in directory.glob('*.json'):
+        try:
+            record = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        if record.get('kind') != 'documentation' or record.get('issue_id') != issue:
+            continue
+        if best is None or record.get('created_at', '') > best[0]:
+            best = (record.get('created_at', ''), {'path': str(path.relative_to(root)), 'sha256': path.stem})
+    return best[1] if best else None
+
+
+def stale_targets(root, ref, issue, base_ref, role):
+    """Names of the oriented targets that have moved since `ref` was taken.
+
+    Returned for the record rather than raised, because a completion imported
+    from an earlier correction round legitimately keeps its own orientation.
+    The acceptance recorded for TEAM-FOOTER-ORIENTATION-FRESHNESS-001 allows a
+    stale receipt to be accepted at capture *provided the changed targets are
+    named in the recorded completion*, which is what this supplies: capture
+    stays non-fatal and `--check-orientation` remains the strict gate.
+    """
+    try:
+        validate_orientation(root, ref, issue, base_ref, role)
+        return []
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        text = str(exc)
+        if 'stale' not in text:
+            return []
+        return re.findall(r'"target":\s*"([^"]+)"', text) or [text[:200]]
+
+
+def validate_orientation(root, ref, issue, base_ref, role, fresh=True):
+    record = load(root, ref, 'orientation', issue)
+    require(record.get('baseline') == base_ref and record.get('role') == role,
+            f'{role} orientation must belong to this baseline and role')
+    require(explanation(record.get('use')), f'{role} orientation lacks a substantive use explanation')
+    require(isinstance(record.get('map'), str) and record['map'].startswith(MAP + '#'),
+            f'{role} orientation must select a map heading')
+    targets, docs = record.get('targets'), record.get('documents')
+    require(isinstance(targets, list) and all(isinstance(t, str) and '::' in t for t in targets)
+            and len(set(targets)) >= 2, f'{role} orientation needs owner and related code/test targets')
+    require(isinstance(docs, list) and docs and all(isinstance(d, str) for d in docs),
+            f'{role} orientation lacks its documentation contract')
+    entries = record.get('references')
+    require(isinstance(entries, list) and all(isinstance(e, dict) for e in entries),
+            f'{role} orientation lacks reference hashes')
+    require({e.get('ref') for e in entries} == {record['map'], *targets, *docs},
+            f'{role} orientation references are incomplete')
+    stale = []
+    for entry in entries:
+        require(isinstance(entry.get('sha256'), str) and len(entry['sha256']) == 64,
+                f'{role} orientation has invalid hashes')
+        if fresh:
+            try:
+                current = excerpt(root, entry['ref'])
+                if current['sha256'] == entry['sha256']:
+                    continue
+                before, after = entry.get('components', {}), current.get('components', {})
+                components = [key for key in before.keys() | after.keys() if before.get(key) != after.get(key)]
+                stale.append({'target': entry['ref'], 'changed': components or ['legacy_hash'],
+                              'before': entry['sha256'], 'after': current['sha256']})
+            except (OSError, ValueError) as exc:
+                stale.append({'target': entry['ref'], 'before': entry['sha256'], 'after': None, 'error': str(exc)})
+    require(not stale, f'stale {role} orientation: receipt={ref}; changes={json.dumps(stale)}; '
+            f'resume the same {role}, inspect every changed target, navigate again '
+            '(`doc_contract.py navigate --issue <id> --reuse-args <receipt> --use <fresh explanation>` reprints the '
+            'same map, targets and documents), run the affected independent check and return a fresh footer')
+    return record
+
+
+def framework_supplied(root):
+    """Map framework path -> byte states this project's applied upgrades supplied.
+
+    An upgrade changes framework files, which land in every open issue's candidate
+    diff and would otherwise force each issue to disposition symbols it never
+    touched: one issue measured 18 of 18 targets attributable purely to an upgrade.
+    The applied deployment records name each file's before and result digests, so a
+    state an upgrade actually produced is provably framework-supplied rather than
+    project-authored.
+
+    A locally patched framework file does NOT appear here, because its bytes match
+    no recorded upgrade state, so it still requires an explicit judgment.
+    """
+    supplied = {}
+    folder = Path(root) / 'ESX-team-local/deployments'
+    if not folder.is_dir():
+        return supplied
+    for record_path in sorted(folder.glob('*.json')):
+        try:
+            record = json.loads(record_path.read_text())
+        except (ValueError, OSError):
+            continue
+        if record.get('status') != 'applied':
+            continue
+        for entry in record.get('files', []):
+            if entry.get('ownership') != 'framework' or not entry.get('path'):
+                continue
+            for key in ('before_sha256', 'result_sha256', 'master_sha256'):
+                value = entry.get(key)
+                if value:
+                    supplied.setdefault(entry['path'], {})[value] = {
+                        'deployment_id': record.get('deployment_id'),
+                        'record': str(record_path.relative_to(Path(root))),
+                        'from_version': record.get('from_version')}
+    return supplied
+
+
+def upgrade_attribution(root, target, base_files, current, supplied=None):
+    """Return deployment provenance when a target changed only through an upgrade.
+
+    Both endpoints must be states a recorded upgrade supplied; a project edit on
+    either side breaks the chain and the target needs a real judgment.
+    """
+    supplied = framework_supplied(root) if supplied is None else supplied
+    path = target.split('::')[0]
+    states = supplied.get(path)
+    if not states:
+        return None
+    before = (base_files.get(path) or {}).get('sha256')
+    after = (current.get(path) or {}).get('sha256')
+    if not before or not after or before == after:
+        return None
+    if before not in states or after not in states:
+        return None
+    return dict(states[after], path=path, before_sha256=before, after_sha256=after)
+
+
+def judged_elsewhere(root, issue):
+    """Map target -> {state: provenance} already judged under another issue's accepted closeout.
+
+    A pinned baseline means an issue left open while the tree moved inherits every
+    other issue's changes into its own candidate diff: one issue here needed 85
+    judgments, the large majority another issue's work that had already been
+    dispositioned and accepted. Re-judging those adds no integrity and misattributes
+    them.
+
+    The proof is exact rather than by baseline ancestry: a sealed disposition records
+    its target's own byte state in `judgment_inputs.target.sha256`, so a target whose
+    CURRENT state equals a state already judged and accepted elsewhere has genuinely
+    been reviewed. A target that changed since that seal has a different state and
+    still requires a judgment.
+    """
+    judged = {}
+    history = Path(root) / f'{STATE}/loop_history.jsonl'
+    if not history.is_file():
+        return judged
+    for line in history.read_text().splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(row, dict) or row.get('id') == issue or row.get('outcome') != 'completed':
+            continue
+        ref = (row.get('maintenance') or {}).get('documentation')
+        if not ref:
+            continue
+        try:
+            report = load(root, ref, 'documentation', row['id'])
+        except (ValueError, OSError, KeyError, TypeError):
+            continue
+        if 'references' not in report:
+            continue
+        for row_d in report.get('dispositions', []):
+            state = ((row_d.get('judgment_inputs') or {}).get('target') or {}).get('sha256')
+            if state and row_d.get('action') in ('updated', 'reviewed_unchanged', 'removed'):
+                judged.setdefault(row_d['target'], {})[state] = {
+                    'issue': row['id'], 'report': ref, 'action': row_d['action'],
+                    'target_sha256': state}
+    return judged
+
+
+def carried_attribution(root, target, current, judged=None, issue=None):
+    """Return provenance when this exact target state was judged under another issue."""
+    judged = judged_elsewhere(root, issue) if judged is None else judged
+    states = judged.get(target)
+    if not states:
+        return None
+    inputs = unit_inputs(current, target)
+    state = (inputs or {}).get('sha256')
+    if not state or state not in states:
+        return None
+    return states[state]
+
+
+def prefill(root, row, base_files, current, supplied=None, issue=None):
+    """Blank a disposition for judgment, or attribute it to a recorded upgrade."""
+    provenance = upgrade_attribution(root, row['target'], base_files, current, supplied)
+    if provenance is None:
+        carried = carried_attribution(root, row['target'], current, None, issue)
+        if carried is not None:
+            return {**row, 'action': 'carried_forward', 'reason': (
+                'This exact byte state of this target was already judged and accepted under issue '
+                + str(carried['issue']) + ', which dispositioned it as ' + carried['action'] + '. Re-judging it '
+                'here would restate another issue work rather than add review, so its provenance is cited '
+                'instead.'), 'references': [], 'carried': carried}
+        return {**row, 'action': '', 'reason': '', 'references': []}
+    return {**row, 'action': 'upgrade_supplied', 'reason': (
+        'Framework file supplied by a recorded ESX upgrade, not authored by this issue. Both the baseline and '
+        'current bytes are states deployment ' + str(provenance['deployment_id']) + ' recorded, so this target '
+        'carries no project judgment: its documentation is the upgrade\'s own. See ' + provenance['record'] + '.'),
+        'references': [], 'deployment': provenance}
+
+
+PROSE_OR_CONFIG = ('.md', '.rst', '.tex', '.txt', '.json', '.yaml', '.yml', '.toml', '.cfg', '.ini', '')
+
+
+def file_bound(row):
+    """Whether an undeclared judgment may be bound to its own file instead of the whole inventory.
+
+    Only a judgment that describes a code or test unit as it now is (`updated`,
+    `removed`) qualifies. Two kinds of judgment are about OTHER files and never
+    qualify: `reviewed_unchanged`, whose whole claim is that an existing
+    description still fits whatever else changed, and any judgment on a document,
+    map or configuration file, whose text describes code elsewhere. Carrying
+    those forward unexamined is exactly how a document goes stale.
+    """
+    suffix = Path(row.get('target', '').partition('::')[0]).suffix.lower()
+    return row.get('action') in ('updated', 'removed') and suffix not in PROSE_OR_CONFIG
+
+
+def same_judgment(sealed, measured, row=None):
+    """Whether a sealed judgment's own inputs are unchanged in the current tree.
+
+    A judgment with declared dependencies is bound to its target, those
+    dependencies and its cited references. One without them is bound to the whole
+    inventory, with one exception: an `updated` or `removed` judgment on a code or
+    test unit (see file_bound) is bound to the whole FILE that holds the target
+    and to every reference it cites. Between two rounds of one issue something
+    always changes somewhere, so whole-inventory binding reused nothing for those
+    (0 of 136-259 judgments per round in measured use) and pushed coordinators to
+    refill plans by script with no check at all. An edit to a sibling definition
+    in the same file still forces a fresh look at everything in that file. A
+    report sealed before the file state was measured keeps the whole-inventory
+    rule for every judgment.
+    """
+    if not isinstance(sealed, dict) or not isinstance(measured, dict):
+        return False
+    without_file = lambda value: {k: v for k, v in value.items() if k != 'file_sha256'}
+    if sealed.get('dependency_inventory') is None:  # declared dependencies
+        return without_file(sealed) == without_file(measured)
+    if 'file_sha256' not in sealed or row is None or not file_bound(row):
+        return without_file(sealed) == without_file(measured)
+    return all(sealed.get(key) == measured.get(key)
+               for key in ('target', 'references', 'dependency_contexts', 'file_sha256'))
+
+
+def inputs_equal(sealed, measured):
+    """Exact equality, tolerating a report sealed before file_sha256 was measured."""
+    if isinstance(sealed, dict) and isinstance(measured, dict) and 'file_sha256' not in sealed:
+        measured = {k: v for k, v in measured.items() if k != 'file_sha256'}
+    return sealed == measured
+
+
+def draft(root, issue, base_ref, previous_ref=None):
+    """Build complete coverage, optionally retaining measured unchanged judgments.
+
+    With ``previous_ref`` a judgment from the earlier sealed report of this issue
+    is carried forward when its own inputs are unchanged (see same_judgment).
+    Every changed or unmeasured judgment remains blank for human review.
+    """
+    base = load(root, base_ref, 'baseline', issue)
+    current = snapshot(root)
+    payload = envelope('documentation', issue)
+    payload.update(baseline=base_ref, candidate=digest(current),
+                   changes=changes(base['files'], current),
+                   dispositions=[prefill(root, r, base['files'], current, issue=issue)
+                                 for r in changes(base['files'], current)],
+                   map_delta={'status': '', 'reason': '', 'references': []})
+    if previous_ref:
+        previous = load(root, previous_ref, 'documentation', issue)
+        require(previous.get('baseline') == base_ref, 'prior documentation report uses a different baseline')
+        require('references' in previous, 'reuse requires a sealed documentation report')
+        prior_rows = {r['target']: r for r in previous.get('dispositions', [])}
+        for index, row in enumerate(payload['dispositions']):
+            prior = prior_rows.get(row['target'])
+            if prior and prior.get('change') == row['change'] and prior.get('judgment_inputs'):
+                try:
+                    measured = judgment_inputs(root, prior, current)
+                    valid = same_judgment(prior['judgment_inputs'], measured, prior)
+                except (ValueError, OSError, KeyError):
+                    valid = False
+                if valid:
+                    payload['dispositions'][index] = copy.deepcopy(prior)
+                    payload['dispositions'][index]['reused_from'] = previous_ref
+                    # Sealing measures the inputs again against the current tree.
+                    payload['dispositions'][index]['judgment_inputs'] = measured
+        payload['reused'] = sum(bool(r.get('reused_from')) for r in payload['dispositions'])
+        delta = previous.get('map_delta', {})
+        # Map judgments discuss routes across the entire inventory. Their reuse
+        # requires the same inventory, retaining coverage of new dependencies.
+        if previous.get('candidate') == payload['candidate'] and delta:
+            payload['map_delta'] = copy.deepcopy(delta)
+        payload['previous_report'] = previous_ref
+    return payload
+
+
+def unit_inputs(current, target):
+    """Include enclosing definitions that supply closures or class-level values."""
+    path, _, symbol = target.partition('::')
+    units = current.get(path, {}).get('units', {})
+    unit = units.get(symbol)
+    if unit is None:
+        return None
+    result = {k: unit.get(k) for k in ('sha256', 'context', 'docs')}
+    parents = ['.'.join(symbol.split('.')[:n]) for n in range(1, len(symbol.split('.')))]
+    result['parents'] = {name: units[name]['sha256'] for name in parents if name in units}
+    return result
+
+
+def judgment_inputs(root, row, current):
+    """Measure a target's context, explicit dependencies and cited explanations."""
+    target = unit_inputs(current, row['target'])
+    dependencies = row.get('dependencies', [])
+    require(isinstance(dependencies, list) and all(isinstance(d, str) for d in dependencies),
+            f"{row['target']}: dependencies must be a list of references")
+    refs = sorted(set(row.get('references', []) + dependencies))
+    hashes = [{k: entry[k] for k in ('ref', 'sha256', 'components')} for entry in (excerpt(root, r) for r in refs)]
+    return {'target': target, 'references': hashes,
+            'dependency_contexts': {ref: unit_inputs(current, ref) for ref in dependencies if '::' in ref},
+            'dependency_inventory': None if dependencies else digest(current),
+            'file_sha256': current.get(row['target'].partition('::')[0], {}).get('sha256')}
+
+
+def docs_measure(files, ref):
+    """Compare source prose separately from executable text for an 'updated' claim."""
+    path, _, symbol = ref.partition('::')
+    path, sep, anchor = path.partition('#')
+    file = files.get(path, {})
+    if sep:
+        value = file.get('sections', {}).get(anchor)
+        return value, value is not None
+    unit = file.get('units', {}).get(symbol or '<module>', {})
+    return unit.get('docs'), unit.get('has_docs', False)
+
+
+def validate_report(root, report, issue, base_ref, current=None):
+    base = load(root, base_ref, 'baseline', issue)
+    require(report.get('version') == 1 and report.get('kind') == 'documentation' and report.get('issue_id') == issue
+            and report.get('baseline') == base_ref, 'documentation report identity/baseline mismatch')
+    current = snapshot(root) if current is None else current
+    require(report.get('candidate') == digest(current), 'documentation report is stale; regenerate the change inventory')
+    expected = changes(base['files'], current)
+    require(report.get('changes') == expected, 'documentation change inventory omits or misstates affected targets')
+    rows = report.get('dispositions')
+    require(isinstance(rows, list) and all(isinstance(r, dict) for r in rows), 'documentation dispositions are required')
+    require(len(rows) == len(expected) and {r.get('target') for r in rows} == {r['target'] for r in expected},
+            'documentation dispositions must cover every affected function/module exactly once')
+    expected_by_target = {r['target']: r['change'] for r in expected}
+    refs = set()
+    for row in rows:
+        target = row['target']
+        require(row.get('change') == expected_by_target[target], f'{target}: incorrect change kind')
+        action = row.get('action')
+        require(action in ('updated', 'reviewed_unchanged', 'removed', 'upgrade_supplied', 'carried_forward'),
+                f'{target}: missing documentation action')
+        require(action != 'removed' or row['change'] == 'removed', f'{target}: only a removed target can use removed')
+        require(explanation(row.get('reason')), f'{target}: explain the resulting contract or why its descriptions remain accurate')
+        if action == 'carried_forward':
+            # Re-derived, never trusted from the report: the whole force of this
+            # action is that some OTHER accepted closeout already judged this exact
+            # state, and a report cannot be allowed to assert that about itself.
+            proven = carried_attribution(root, target, current, None, issue)
+            require(proven is not None,
+                    f'{target}: carried_forward requires this exact target state to have been judged under '
+                    'another issue accepted closeout; a state judged nowhere needs a real judgment')
+            require(row.get('carried') == proven, f'{target}: carried provenance differs from the sealed record')
+            continue
+        if action == 'upgrade_supplied':
+            # Attribution must be re-derived, never accepted from the report: a
+            # claimed upgrade origin is exactly what a project edit could forge.
+            proven = upgrade_attribution(root, target, base['files'], current)
+            require(proven is not None,
+                    f'{target}: upgrade_supplied requires both byte states to come from a recorded applied '
+                    'upgrade; a locally edited framework file needs a real judgment')
+            require(row.get('deployment') == proven, f'{target}: upgrade provenance differs from the deployment record')
+            # Deliberately not added to `refs`: deployment records live under the
+            # ignored ESX-team-local/ tree, so sealing a reference to one would
+            # break in a fresh clone. Provenance is re-derived here instead, and
+            # absent records fail validation loudly rather than passing silently.
+            continue
+        links = row.get('references')
+        require(isinstance(links, list) and links and all(isinstance(r, str) for r in links), f'{target}: documentation references are required')
+        for link in links:
+            excerpt(root, link)
+            require(docs_measure(current, link)[1], f'{target}: {link} contains no inventoried documentation')
+        if action == 'updated':
+            require(any(docs_measure(base['files'], r)[0] != docs_measure(current, r)[0] for r in links),
+                    f'{target}: updated requires a measured documentation edit; executable edits alone do not qualify')
+        refs.update(links)
+        measured = judgment_inputs(root, row, current)
+        if 'judgment_inputs' in row:
+            require(inputs_equal(row['judgment_inputs'], measured), f'{target}: documentation judgment inputs changed')
+        if row.get('reused_from'):
+            previous = load(root, row['reused_from'], 'documentation', issue)
+            require(previous.get('baseline') == base_ref and 'references' in previous,
+                    f'{target}: invalid documentation reuse source')
+            found = [r for r in previous.get('dispositions', []) if r.get('target') == target]
+            require(len(found) == 1 and same_judgment(found[0].get('judgment_inputs'), measured, found[0]),
+                    f'{target}: reused judgment has changed target, dependencies or references')
+            require(all(row.get(k) == found[0].get(k) for k in
+                        ('action', 'change', 'reason', 'references', 'dependencies')),
+                    f'{target}: reused judgment text differs from its sealed source')
+    delta = report.get('map_delta')
+    require(isinstance(delta, dict) and delta.get('status') in ('updated', 'MAP-OK'), 'map_delta needs updated or MAP-OK status')
+    require(explanation(delta.get('reason')), 'map_delta requires a concrete explanation of the affected route/contracts')
+    mapped = delta.get('references')
+    require(isinstance(mapped, list) and mapped and all(isinstance(r, str) and r.startswith(MAP + '#') for r in mapped),
+            'map_delta must reference the relevant map headings')
+    changed = base['files'].get(MAP, {}).get('sha256') != current.get(MAP, {}).get('sha256')
+    require((delta['status'] == 'updated') == changed, 'map_delta status disagrees with measured map changes')
+    refs.update(mapped)
+    hashes = [{k: e[k] for k in ('ref', 'sha256', 'components')} for e in (excerpt(root, r) for r in sorted(refs))]
+    if 'references' in report:
+        require(report['references'] == hashes, 'documentation reference hashes are stale or incomplete')
+    return hashes
+
+
+def seal(root, report):
+    """Validate a human-authored disposition plan and seal exactly the current candidate."""
+    require(isinstance(report, dict), 'documentation plan must be an object')
+    current = snapshot(root)
+    report['references'] = validate_report(root, report, report.get('issue_id'), report.get('baseline'), current)
+    # A plan cannot be sealed over a map that closeout will reject (TEAM-BRIEF-AUDIT-CHECK-001).
+    from audit import audit_code_map, audit_instructions
+    findings = audit_code_map(Path(root))['findings'] + audit_instructions(Path(root), [MAP])['findings']
+    require(not findings, 'the code map does not audit; fix these references before sealing: '
+            + json.dumps(findings[:5]))
+    for row in report['dispositions']:
+        row['judgment_inputs'] = judgment_inputs(root, row, current)
+    return save(root, report)
+
+
+def check_start(root, start):
+    """Check the recorded initial orientation; it remains historical during corrections."""
+    errors = []
+    try:
+        state = start.get('maintenance')
+        require(isinstance(state, dict), 'issue-start.maintenance is required before implementation')
+        recorded = load(root, state.get('baseline'), 'baseline', start.get('id'))
+        was = sorted((recorded.get('scope') or {}).get('documentation_paths', []))
+        now_paths = sorted(config(root, ready=False).get('documentation_paths', []))
+        require(was == now_paths,
+                f'documentation_paths changed since this issue baseline was captured (baseline {was}, '
+                f'configured {now_paths}); change it between issues, or restore the configured list')
+        original = original_baseline(root, start.get('id'))
+        require(not original or state.get('baseline') == original,
+                'issue-start must preserve the original maintenance baseline across iterations')
+        validate_orientation(root, state.get('orientation'), start.get('id'), state['baseline'], 'arch', fresh=False)
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        errors.append(str(exc))
+    return errors
+
+
+def historical_completion(entry, record, base, base_ref):
+    """Recognize an explicitly retained completion predating commit-based recovery.
+
+    This preserves the original hook evidence. It supplies no navigation or final
+    documentation approval; current reviewers must establish those independently.
+    """
+    history = entry.get('maintenance_history')
+    if history is None:
+        return False
+    recovery = base.get('recovery') or {}
+    require(recovery.get('git_base') and explanation(recovery.get('reason')),
+            'historical completion requires explicit commit-based baseline recovery')
+    require(isinstance(history, dict) and history.get('status') == 'predates_recovery'
+            and history.get('baseline') == base_ref and explanation(history.get('reason')),
+            'invalid maintenance_history disposition')
+    timestamp = record.get('ts')
+    require(isinstance(timestamp, str), 'historical completion needs the captured hook timestamp')
+    captured = dt.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+    recovered = dt.datetime.fromisoformat(base['created_at'])
+    require(captured.tzinfo and recovered.tzinfo and captured + dt.timedelta(seconds=1) <= recovered,
+            'completion does not predate recovered baseline')
+    return True
+
+
+def check_done(root, start, done, records, candidate_signature):
+    """Gate completion for every workflow, including records without a workflow field.
+
+    Earlier role completions retain historical navigation. Current Arch and final
+    approving reviewers need fresh references; every supplied completion needs
+    its own role-bound orientation in the captured hook footer. Report approval
+    is independently captured by each reviewer whose candidate is current.
+    """
+    if done.get('outcome') != 'completed':
+        if not (start or {}).get('maintenance'):
+            return []
+        errors = check_start(root, start)
+        if done.get('maintenance') and done['maintenance'].get('baseline') != start['maintenance'].get('baseline'):
+            errors.append('partial completion must preserve the original maintenance baseline')
+        return errors
+    errors = check_start(root, start or {})
+    try:
+        state = done.get('maintenance')
+        initial = (start or {}).get('maintenance') or {}
+        require(isinstance(state, dict), 'issue-done.maintenance is required for completion')
+        base_ref = initial.get('baseline')
+        require(state.get('baseline') == base_ref, 'completion must preserve the original maintenance baseline')
+        base = load(root, base_ref, 'baseline', done.get('id'))
+        validate_orientation(root, state.get('orientation'), done.get('id'), base_ref, 'arch')
+        report_ref = state.get('documentation')
+        report = load(root, report_ref, 'documentation', done.get('id'))
+        require('references' in report, 'documentation report must be sealed')
+        validate_report(root, report, done.get('id'), base_ref)
+        require(done.get('map_delta') == report['map_delta'], 'issue-done.map_delta must equal the sealed report disposition')
+        from audit import audit_code_map, audit_instructions
+        findings = audit_code_map(Path(root))['findings']
+        findings += audit_instructions(Path(root), [MAP])['findings']
+        require(not findings, f'code map audit has unresolved findings: {findings[:3]}')
+        subs = done.get('subagents') or {}
+        require(isinstance(subs, dict), 'subagents must be an object')
+        receipt_owners = {}
+        confirmed_reviewers = set()
+        for role, entries in subs.items():
+            require(isinstance(entries, list), f'{role}: expected completion list')
+            for entry in entries:
+                require(isinstance(entry, dict), f'{role}: invalid completion')
+                if entry.get('waived'):
+                    continue
+                found = [r for r in records if r.get('agent_id') == entry.get('dispatch_id')
+                         and r.get('event_id') == entry.get('dispatch_event_id')]
+                require(len(found) == 1, f'{role}: documentation evidence needs one exact hook completion')
+                raw_footer = found[0].get('footer')
+                footer = raw_footer if isinstance(raw_footer, dict) else {}
+                if found[0].get('status', 'completed') != 'completed':
+                    from workflow_policy import resolved_dispatch
+                    require(resolved_dispatch(found[0], records, done),
+                            f'{role}: incomplete dispatch needs a completed continuation or explicit replacement')
+                    # A failed or superseded turn may have produced no footer, or a
+                    # malformed one. Its actual status remains in history, and it
+                    # supplies neither navigation nor approval: the completed
+                    # continuation or replacement does, and that one is validated.
+                    continue
+                require(isinstance(raw_footer, dict), f'{role}: completed dispatch needs a structured footer')
+                if historical_completion(entry, found[0], base, base_ref):
+                    continue
+                from workflow_policy import current_review
+                final_review = current_review(found[0], records, done, candidate_signature)
+                validate_orientation(root, footer.get('orientation'), done['id'], base_ref, role, fresh=final_review)
+                receipt_id = footer['orientation']['sha256']
+                owner = receipt_owners.setdefault(receipt_id, entry.get('dispatch_id'))
+                require(owner == entry.get('dispatch_id'), 'distinct agents must record their own navigation')
+                if 'orientation' in entry:
+                    require(entry['orientation'] == footer.get('orientation'), f'{role}: pasted orientation differs from hook')
+                if final_review and footer.get('verdict') in ('APPROVE', 'APPROVE_WITH_FIXES'):
+                    review = footer.get('documentation_review')
+                    require(isinstance(review, dict), 'Richard must include a documentation_review object in the footer')
+                    require(review.get('report') == report_ref,
+                            'documentation_review.report must be the exact sealed report reference, not a copy or a different report')
+                    require(review.get('status') == 'confirmed',
+                            f"documentation_review.status must be the literal string 'confirmed' "
+                            f"(describes the reviewer's own act of confirming the report, not the report's own "
+                            f"'sealed' state); got {review.get('status')!r}")
+                    require(explanation(review.get('notes')), 'documentation_review.notes must be a substantive explanation (40+ characters) of what was confirmed, not a placeholder')
+                    if 'documentation_review' in entry:
+                        require(entry['documentation_review'] == review, 'pasted documentation review differs from hook')
+                    confirmed_reviewers.add(entry.get('dispatch_id'))
+        workflow = done.get('workflow') or {}
+        require(isinstance(workflow, dict), 'workflow must be an object')
+        minimum = workflow.get('minimum_reviewers', 0)
+        require(type(minimum) is int and 0 <= minimum <= 2, 'invalid minimum reviewers')
+        require(len(confirmed_reviewers) >= minimum,
+                'final documentation approval requires the workflow minimum of current reviewers; historical completions cannot supply it')
+    except (ValueError, OSError, KeyError, TypeError, SyntaxError) as exc:
+        errors.append(str(exc))
+    return errors
+
+
+def parse_ref(value):
+    """Accept the JSON reference printed by an evidence-producing command, inline or
+    as the path of a file holding it (relative paths resolve from the current directory)."""
+    text = value.strip()
+    if not text.startswith('{'):
+        path = Path(text)
+        if not path.is_file():
+            raise argparse.ArgumentTypeError('expected an inline {"path","sha256"} JSON reference '
+                                             'or the path of a file containing one: ' + text)
+        text = path.read_text()
+    try:
+        ref = json.loads(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError('reference is not valid JSON: ' + str(exc)) from exc
+    if not (isinstance(ref, dict) and isinstance(ref.get('path'), str) and isinstance(ref.get('sha256'), str)):
+        raise argparse.ArgumentTypeError('reference must be a JSON object with "path" and "sha256"')
+    return ref
+
+
+def parse_receipt(value):
+    """Accept a JSON orientation reference or its bare content digest."""
+    text = value.strip()
+    if len(text) == 64 and all(c in '0123456789abcdef' for c in text):
+        return {'path': f'{STORE}/{text}.json', 'sha256': text}
+    return parse_ref(text)
+
+
+def figures_path(issue):
+    """Where an issue keeps its table of superseded figures."""
+    return f'{STATE}/figures-{issue}.tsv'
+
+
+def read_figures(path):
+    """Rows of a superseded-figures table: ``old<TAB>new<TAB>note`` per line.
+
+    The implementer writes a row for every measured figure or reading the change
+    replaces. ``new`` and ``note`` may be empty. Lines starting with # are comments.
+    """
+    rows = []
+    for number, line in enumerate(Path(path).read_text().splitlines(), 1):
+        if not line.strip() or line.lstrip().startswith('#'):
+            continue
+        cells = [cell.strip() for cell in line.split('\t')]
+        require(cells[0], f'{path}:{number}: a row needs the superseded figure in its first column')
+        rows.append({'old': cells[0], 'new': cells[1] if len(cells) > 1 else '',
+                     'note': cells[2] if len(cells) > 2 else ''})
+    return rows
+
+
+def figure_pattern(old):
+    """Match a figure as a whole token, with or without thousands separators."""
+    import re
+    forms = {old}
+    if re.fullmatch(r'\d{4,}', old):
+        forms.add(f'{int(old):,}')
+    elif re.fullmatch(r'\d{1,3}(,\d{3})+', old):
+        forms.add(old.replace(',', ''))
+    body = '|'.join(re.escape(form) for form in sorted(forms, key=len, reverse=True))
+    # Not part of a longer number or word: "456" must not match "1456", "4567" or "0.456".
+    return re.compile(r'(?<![0-9A-Za-z_.,])(?:' + body + r')(?![0-9A-Za-z_]|[.,][0-9])')
+
+
+def bare_figure_warnings(figures):
+    """Warn about a 1-2 digit bare number: it matches namelist values and constants, not the finding."""
+    import re
+    return [f"figure {row['old']!r} is a bare small number and will match unrelated values; write it as in "
+            "prose with its words or unit (\"46 rules\", \"26-41 m\")"
+            for row in figures if re.fullmatch(r'\d{1,2}', row['old'])]
+
+
+def stale_lines(root, figures, limit=200):
+    """Every inventoried line that still contains a superseded figure.
+
+    A change that re-measures a result leaves the old number, and readings of it,
+    in passages it does not edit. This lists them so the implementer can correct
+    or deliberately keep each one before sealing. It judges nothing: a line that
+    quotes the old figure as history is listed too.
+    """
+    from doc_inventory import paths
+    from project import record_paths
+    root = Path(root).resolve()
+    patterns = [(row, figure_pattern(row['old'])) for row in figures]
+    hits = []
+    # The inventory is the acceptance scope and deliberately omits the project's
+    # record documents, but "outside acceptance" is not "outside every
+    # mechanism": a superseded figure in open_issues.md, lessons_learned.md or a
+    # closed-issue entry has to be findable too
+    # (TEAM-DOCINVENTORY-LEDGER-UNINVENTORIED-001). Sweeping both sets closes
+    # that hole without moving records into acceptance, which is what keeps a
+    # record-only correction round from stranding a reviewer approval.
+    for name in sorted(set(paths(root)) | set(record_paths(root))):
+        path = local(root, name)
+        # The kit's own tools are not the project's documentation.
+        if name.startswith('tools/esx/') or not path.is_file():
+            continue
+        try:
+            text = path.read_text()
+        except (UnicodeDecodeError, OSError):
+            continue
+        for number, line in enumerate(text.splitlines(), 1):
+            for row, pattern in patterns:
+                if pattern.search(line):
+                    hits.append({'figure': row['old'], 'new': row['new'], 'note': row['note'],
+                                 'path': name, 'line': number, 'text': line.strip()[:240]})
+    # A truncated listing must not be countable as a total
+    # (TEAM-DOCCONTRACT-STALE-HITS-TRUNCATION-001). `lines` and the listing
+    # answer different questions, and the listing is the natural thing to count:
+    # on RUNOFF-005 a figure of 199 reached permanent prose in the documentation
+    # contract because someone counted `hits[:200]` (minus one self-reference)
+    # instead of reading `lines`, which was 335. So the key is renamed when the
+    # list is partial: a caller that reads 'hits' and gets a short list is now a
+    # KeyError instead of a plausible wrong number. Use `listed()` to read the
+    # entries without caring which case applies.
+    result = {'figures': len(figures), 'lines': len(hits), 'limit': limit,
+              'truncated': max(len(hits) - limit, 0), 'warnings': bare_figure_warnings(figures)}
+    result['hits' if result['truncated'] == 0 else 'hits_sample'] = hits[:limit]
+    return result
+
+
+def listed(result):
+    """The entries a `stale_lines` result carries, complete or sampled.
+
+    Callers that only want to display the lines use this; callers that report a
+    count must read `result['lines']`, which is always the true total.
+    """
+    return result.get('hits', result.get('hits_sample', []))
+
+
+NAVIGATE_EXAMPLE = '''example:
+  doc_contract.py navigate --issue PROJECT-001 --role bob \\
+    --baseline '{"path": "devel-loop/loop_state/maintenance/<sha>.json", "sha256": "<sha>"}' \\
+    --map 'docs/code_map.md#verification-routes' \\
+    --target 'src/model.py::step' --target 'tests/test_model.py::<module>' \\
+    --doc docs/model_contract.md \\
+    --use 'Trace the update into its oracle before judging the change.'
+
+--map takes the code map path and a heading slug (the heading text lower-cased, with
+spaces as hyphens). Give at least two --target entries, each path::symbol or
+path::<module>, and at least one --doc. --baseline may also be the path of a file
+holding the reference. To repeat an earlier orientation use --reuse-args RECEIPT.
+'''
+
+
+STALE_EXAMPLE = '''example:
+  printf '17934\\t16123\\tisomip tke_after cells above 1%%\\n26-41 m\\t0.029 m\\tlab_sea hbl max\\n' \\
+    > devel-loop/loop_state/figures-PROJECT-001.tsv
+  doc_contract.py stale --issue PROJECT-001
+
+Each row is old<TAB>new<TAB>note. A figure matches as a whole token, with or without
+thousands separators (17934 also finds 17,934). The command lists lines; it judges none.
+'''
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[2])
+    sub = parser.add_subparsers(dest='command', required=True)
+    capture = sub.add_parser('baseline', help='save the working source before issue edits')
+    capture.add_argument('--issue', required=True)
+    capture.add_argument('--git-base', help='recover from a known commit; review every intervening change')
+    capture.add_argument('--reason')
+    nav = sub.add_parser('navigate', help='display a bounded dependency slice and save role evidence',
+                         formatter_class=argparse.RawDescriptionHelpFormatter, epilog=NAVIGATE_EXAMPLE)
+    nav.add_argument('--issue', required=True)
+    nav.add_argument('--baseline', type=parse_ref, help='required unless --reuse-args; must match when both are given')
+    nav.add_argument('--role', choices=ROLES, help='required unless --reuse-args; must match when both are given')
+    nav.add_argument('--map', help='docs/code_map.md#heading-slug: the heading text lower-cased, spaces as hyphens')
+    nav.add_argument('--target', action='append', help='path::qualified.symbol or path::<module>')
+    nav.add_argument('--doc', action='append', help='path#heading or path::symbol')
+    nav.add_argument('--reuse-args', type=parse_receipt, metavar='ORIENTATION_REF',
+                     help='reload map, targets and documents from a prior orientation receipt; requires a fresh --use')
+    nav.add_argument('--use', required=True)
+    reuse = sub.add_parser('check-orientation', help='check whether saved navigation can be reused')
+    reuse.add_argument('--issue', required=True)
+    reuse.add_argument('--baseline', type=parse_ref, required=True)
+    reuse.add_argument('--role', choices=ROLES, required=True)
+    reuse.add_argument('--receipt', type=parse_ref, required=True)
+    plan = sub.add_parser('draft', help='generate a current change inventory with blank dispositions')
+    plan.add_argument('--issue', required=True)
+    plan.add_argument('--baseline', type=parse_ref, required=True)
+    plan.add_argument('--previous', type=parse_ref, help='reuse unchanged judgments from a sealed report')
+    for name in ('seal', 'check'):
+        command = sub.add_parser(name, help='validate a filled documentation plan' if name == 'check' else 'validate and store a filled plan')
+        command.add_argument('plan', type=Path)
+    old = sub.add_parser('stale', help='list inventoried lines that still contain a superseded figure',
+                         formatter_class=argparse.RawDescriptionHelpFormatter, epilog=STALE_EXAMPLE)
+    old.add_argument('--issue', help='use devel-loop/loop_state/figures-ISSUE.tsv')
+    old.add_argument('--figures', type=Path, help='a table of superseded figures: old<TAB>new<TAB>note per line')
+    old.add_argument('--limit', type=int, default=200)
+    args = parser.parse_args()
+    try:
+        if args.command == 'baseline':
+            result = baseline(args.root, args.issue, args.git_base, args.reason)
+        elif args.command == 'navigate' and args.reuse_args is not None:
+            if args.map or args.target or args.doc:
+                parser.error('--reuse-args reloads --map/--target/--doc; omit them or run full navigate')
+            result = reuse_navigate(args.root, args.issue, args.reuse_args, args.use, args.baseline, args.role)
+        elif args.command == 'navigate':
+            missing = [flag for flag, value in (('--baseline', args.baseline), ('--role', args.role), ('--map', args.map),
+                       ('--target', args.target), ('--doc', args.doc)) if value is None]
+            if missing:
+                parser.error('the following arguments are required: ' + ', '.join(missing))
+            result = navigate(args.root, args.issue, args.baseline, args.role, args.map, args.target, args.doc, args.use)
+        elif args.command == 'draft':
+            result = draft(args.root, args.issue, args.baseline, args.previous)
+        elif args.command == 'stale':
+            if (args.issue is None) == (args.figures is None):
+                parser.error('give --issue or --figures')
+            table = args.figures if args.figures else local(args.root, figures_path(args.issue))
+            result = stale_lines(args.root, read_figures(table), args.limit)
+            if result['truncated']:
+                # Say the total next to the listing, so it cannot be inferred by
+                # counting (TEAM-DOCCONTRACT-STALE-HITS-TRUNCATION-001).
+                print(f"documentation contract: {result['lines']} inventoried line(s) match; "
+                      f"'hits_sample' lists the first {result['limit']} and {result['truncated']} are not "
+                      "shown. Read 'lines' for the total; do not count the sample.", file=sys.stderr)
+            for warning in result['warnings']:
+                print('documentation contract: warning: ' + warning, file=sys.stderr)
+        elif args.command == 'check-orientation':
+            validate_orientation(args.root, args.receipt, args.issue, args.baseline, args.role)
+            result = {'valid': True, 'evidence': 'reused', 'orientation': args.receipt}
+        else:
+            report = json.loads(args.plan.read_text())
+            require(isinstance(report, dict), 'documentation plan must be an object')
+            result = seal(args.root, report) if args.command == 'seal' else {
+                'valid': True, 'references': validate_report(args.root, report, report.get('issue_id'), report.get('baseline'))}
+            table = local(args.root, figures_path(str(report.get('issue_id'))))
+            if args.command == 'seal' and table.is_file():
+                # Advisory: the seal stands, but the implementer should have looked at each of these.
+                found = stale_lines(args.root, read_figures(table))
+                if found['lines']:
+                    print(f"documentation contract: {found['lines']} inventoried line(s) still contain a superseded "
+                          f"figure from {figures_path(str(report.get('issue_id')))}; list them with "
+                          f"`doc_contract.py stale --issue {report.get('issue_id')}` and correct or keep each one "
+                          'deliberately.', file=sys.stderr)
+        print(json.dumps(result, indent=2, sort_keys=True))
+    except (ValueError, OSError, KeyError, TypeError, SyntaxError) as exc:
+        parser.exit(1, f'documentation contract: {exc}\n')
+
+
+if __name__ == '__main__':
+    main()

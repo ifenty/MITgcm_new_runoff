@@ -1,0 +1,421 @@
+#!/usr/bin/env python3
+"""Generate bounded role briefs with exact assignment and evidence interfaces."""
+import argparse
+import json
+import os
+from pathlib import Path
+import re
+import shlex
+import subprocess
+import sys
+import doc_contract
+import footer_contract
+from project import STATE, json_file, require
+import project
+
+SWEEP_LIMIT = 50
+SWEEP_MAX_BYTES = 2 * 1024 * 1024
+SWEEP_LINES_PER_FILE = 20
+
+
+def current_seal(packet):
+    """Standalone reviewer section naming the current sealed documentation report.
+
+    Implementer corrections re-seal, so a confirming reviewer may still hold an
+    earlier seal in context. This section is the required footer input.
+    """
+    report = packet['maintenance']['documentation']
+    return ('# Current sealed documentation report (required footer input)\n'
+            'path: ' + report['path'] + '\nsha256: ' + report['sha256'] + '\n'
+            'Set documentation_review.report to exactly ' + json.dumps(report, sort_keys=True) + '. '
+            'Read that exact file now. Do not assume it matches a report you saw in an earlier round: every '
+            'correction re-seals, and a footer citing any other sha256 is rejected when your report is captured.')
+
+
+def _sweep_candidates(root, cfg):
+    """List project text files a symbol sweep reads, independent of the candidate.
+
+    Stale documents are by definition ones the change did not touch, and they
+    often live outside the scientific inventory (validation reports, notes), so
+    the sweep covers the whole project tree: Git's tracked and unignored files
+    when available, else a walk. Loop state, VCS internals, worktrees, output and
+    archive roots and ESX self-improvement records are excluded.
+    """
+    names = None
+    if (root / '.git').exists():
+        run = subprocess.run(['git', '-C', str(root), 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+                             capture_output=True)
+        if run.returncode == 0:
+            names = [n for n in run.stdout.decode('utf-8', 'surrogateescape').split('\0') if n]
+    if names is None:
+        names = []
+        for directory, folders, files in os.walk(root):
+            base = Path(directory).relative_to(root)
+            folders[:] = sorted(f for f in folders if f not in project.EXCLUDED_PARTS
+                                and not (base / f).is_symlink())
+            names.extend((base / f).as_posix() for f in files)
+    skipped = cfg.get('output_paths', []) + cfg.get('archive_paths', []) + ['.claude/worktrees']
+    for name in sorted(set(names)):
+        if (project.EXCLUDED_PARTS.intersection(Path(name).parts) or project.mutable_loop_path(name)
+                or project.administrative(name)
+                or any(name == p or name.startswith(p.rstrip('/') + '/') for p in skipped)):
+            continue
+        path = root / name
+        if path.is_file() and not path.is_symlink() and path.stat().st_size <= SWEEP_MAX_BYTES:
+            yield name, path
+
+
+def sweep(root, symbols, limit=SWEEP_LIMIT):
+    """Return (files, omitted) for every whole-word mention of the declared symbols.
+
+    Each file entry keeps all of its mentioning line numbers; the cap applies to
+    files, so one verbose file cannot push another mentioning file out of view.
+    """
+    root = Path(root).resolve()
+    symbols = list(dict.fromkeys(symbols or ()))
+    for symbol in symbols:
+        require(isinstance(symbol, str) and symbol.strip() == symbol and symbol, f'invalid sweep symbol: {symbol!r}')
+    if not symbols:
+        return [], 0
+    try:
+        cfg = project.config(root, ready=False)
+    except (ValueError, OSError):
+        cfg = {}
+    pattern = re.compile('(?<![A-Za-z0-9_])(?:' + '|'.join(re.escape(s) for s in symbols) + ')(?![A-Za-z0-9_])')
+    files = []
+    for name, path in _sweep_candidates(root, cfg):
+        data = path.read_bytes()
+        if b'\0' in data[:8192]:
+            continue
+        try:
+            text = data.decode('utf-8')
+        except UnicodeDecodeError:
+            continue
+        lines = [number for number, line in enumerate(text.splitlines(), 1) if pattern.search(line)]
+        if lines:
+            files.append({'path': name, 'lines': lines})
+    return files[:limit], max(0, len(files) - limit)
+
+
+def sweep_section(root, symbols, limit=SWEEP_LIMIT, lines_per_file=SWEEP_LINES_PER_FILE):
+    """Render the declared-symbol enumeration, or None when nothing is declared."""
+    symbols = list(dict.fromkeys(symbols or ()))
+    if not symbols:
+        return None
+    files, omitted = sweep(root, symbols, limit)
+    names = ', '.join('`' + s + '`' for s in symbols)
+    out = ['# Documents mentioning ' + names,
+           'The coordinator declared that this change affects the meaning of ' + names + '. Every file below '
+           'currently mentions it at the listed lines (whole-word match across the project tree, whether or not '
+           'your change touches the file). Each is an explicit target: update every stale statement, or say in '
+           'your report why it remains correct. A mention left stating the old meaning is a defect, not a follow-up.']
+    for entry in files:
+        shown = entry['lines'][:lines_per_file]
+        more = len(entry['lines']) - len(shown)
+        out.append('  ' + entry['path'] + ':' + ','.join(map(str, shown))
+                   + (' (+%d more line(s) in this file)' % more if more else ''))
+    if not files:
+        out.append('  (no mentions found)')
+    if omitted:
+        out.append('  ... %d further mentioning file(s) omitted at the %d-file cap; run a whole-word search for the '
+                   'full list.' % (omitted, limit))
+    return '\n'.join(out)
+
+
+WORKING_RULES = {
+    False: '# Working rules\n'
+           '- A comparison against an existing quantity calls or cites the function and line that computes it. '
+           'Do not re-derive the formula: a re-derivation that differs by a factor passes a loose assertion and '
+           'puts wrong figures in the record.\n'
+           '- A characterization test asserts the measured figure with a stated margin, not only a loose bound '
+           'that would also hold for a wrong figure.\n'
+           '- After your last edit, search the repository for statements your change makes stale, including in '
+           'files you did not otherwise touch (READMEs, contracts, validation reports), and correct them.\n'
+           '- When your change replaces a measured figure or a reading of one, add a row for it to '
+           'devel-loop/loop_state/figures-ISSUE.tsv (old<TAB>new<TAB>note) and, before sealing, run '
+           '`doc_contract.py stale --issue ISSUE` and deal with every line it lists. '
+           'Write figures as in prose ("46 rules", "26-41 m"), never a bare 1-2 digit number.\n'
+           '- You draft and seal the documentation plan from the live source, reusing the last sealed report with '
+           '`doc_contract.py draft --previous`, and report the sealed reference. Give each changed target its own '
+           'judgment; do not copy one reason across targets.\n'
+           '- Write each finished unit to disk before starting the next, so an interrupted turn loses one unit.',
+    True: '# Working rules\n'
+          '- Review against the supported input classes stated in the design. A real defect in a supported class '
+          'is a must_fix. A real case outside them is a note with your evidence: the coordinator records it as a '
+          'documented limit or a separate issue, and it does not block this one.\n'
+          '- Check every reference quantity against the source line that computes it, not against the '
+          'implementer\'s description of it.\n'
+          '- Search for statements the change makes stale in files outside the change set; a stale statement the '
+          'change caused is a must_fix.\n'
+          '- Run your orientation command last, after your reading and checks.'}
+
+
+def figures_section(root, issue, figures=()):
+    """Lines that still contain a superseded figure, for the implementer and the reviewer.
+
+    Uses the issue's figures table when it exists, plus any figures given directly.
+    """
+    table = project.local(Path(root), doc_contract.figures_path(issue))
+    rows = doc_contract.read_figures(table) if table.is_file() else []
+    rows += [{'old': figure, 'new': '', 'note': ''} for figure in figures]
+    if not rows:
+        return ''
+    found = doc_contract.stale_lines(root, rows, limit=60)
+    out = ['# Superseded figures still present',
+           f"{found['lines']} inventoried line(s) contain a figure this issue supersedes "
+           f"({len(rows)} figure(s) checked). Correct each line, or keep it deliberately when it quotes the old "
+           'value as history and says so.']
+    out += [f"  {hit['path']}:{hit['line']}: [{hit['figure']}"
+            + (f" -> {hit['new']}" if hit['new'] else '') + f"] {hit['text'][:160]}"
+            for hit in doc_contract.listed(found)]
+    out += ['  warning: ' + warning for warning in found['warnings']]
+    if found['truncated']:
+        out.append(f"  ... {found['truncated']} more; run doc_contract.py stale --issue {issue}")
+    return '\n'.join(out)
+
+
+# Each command runs from its script name up to the next script, end of line, a
+# closing backtick, or a closing quote. The lookahead stops at any following
+# `.py`, not just at the next `tools/esx/` one: a brief legitimately names
+# project scripts too (`tests/rnf/tendency_term_check.py --build`), and a
+# narrower boundary blamed their flags on the preceding ESX command. Both false
+# positives this check produced early were of that shape.
+#
+# The quote characters are in the terminator set because `build` embeds the
+# whole reviewed packet as JSON, so a command in a captured footer is followed
+# by that footer's own prose. On RUNOFF-040 an implementer's `independent_check`
+# recorded `tools/esx/verify.py --suite focused --owner ... --fresh` and its
+# `coverage` then said "refusal_check --mpi 2 was run outside verify.py"; with
+# no `.py` in between, the span swallowed the prose and the brief was refused
+# for naming `--mpi` on `verify.py`, which it never did. This check exists to
+# validate commands a brief tells an agent to RUN, not payload it quotes, and a
+# false refusal is worse than a miss -- so a span that ends at the quote and
+# checks fewer flags is the right trade (TEAM-BRIEF-COMMAND-SPAN-QUOTES-001).
+COMMAND_PATTERN = re.compile(r'tools/esx/([a-z_]+\.py)((?:(?!\.py)[^\n`"\'])*)')
+
+
+def tool_flags(root, script, subcommand=None):
+    """Flags `script` (optionally its subcommand) accepts, from its own argparse.
+
+    Introspected by running `--help` rather than by importing, so a tool with
+    side effects at import is not executed. A subcommand's flags are not listed
+    by the top-level parser, so they are looked up separately; without that,
+    every legitimate `doc_contract.py navigate --issue ...` in a brief would be
+    refused, and a false refusal is worse than a miss.
+    """
+    import subprocess
+    command = [sys.executable, str(Path(root) / 'tools/esx' / script)]
+    if subcommand:
+        command.append(subcommand)
+    command.append('--help')
+    try:
+        proc = subprocess.run(command, capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    return set(re.findall(r'(--[a-z][\w-]*)', proc.stdout))
+
+
+def interface_errors(root, text):
+    """Every ESX command flag a brief names that the tool does not accept.
+
+    A brief that tells an agent to run a command with flags that do not exist is
+    discovered only by the agent, and only if the agent measures rather than
+    complies. On RUNOFF-013 a brief instructed the implementer to run
+    `loop_gate.py --check-start --issue X --agent bob`; none of `--issue` or
+    `--agent` exists on that command, and the gate is Arch's own rather than a
+    per-agent permission check. A less careful agent would have stalled or used
+    an escape hatch that corrupts a receipt
+    (TEAM-BRIEF-UNVALIDATED-INTERFACE-001).
+
+    Subcommand-only flags are accepted, because `--help` of the top-level parser
+    lists them for most of these tools and a false refusal is worse than a miss.
+    """
+    errors, known = [], {}
+    for match in COMMAND_PATTERN.finditer(text or ''):
+        script, rest = match.groups()
+        # A path used as a flag value (`--target tools/esx/x.py::f`) is not a command.
+        if re.search(r'--(?:target|doc)\s+$', (text or '')[:match.start()]):
+            continue
+        if not (Path(root) / 'tools/esx' / script).is_file():
+            errors.append(f'{script}: no such tool under tools/esx/')
+            continue
+        tokens = rest.split()
+        subcommand = tokens[0] if tokens and re.fullmatch(r'[a-z][a-z-]*', tokens[0]) else None
+        for key in [(script, subcommand), (script, None)]:
+            if key not in known:
+                known[key] = tool_flags(root, key[0], key[1])
+        # A flag is acceptable to either the subcommand or the top-level parser.
+        accepted = set()
+        for key in [(script, subcommand), (script, None)]:
+            if known[key]:
+                accepted |= known[key]
+        if not accepted:
+            continue
+        for flag in re.findall(r'(--[a-z][\w-]*)', rest):
+            if flag not in accepted:
+                errors.append(f'{script} does not accept {flag}'
+                              + (f' for {subcommand}' if subcommand else ''))
+    return sorted(set(errors))
+
+
+#: Placeholders for the quoted review packet and the orientation command while the
+#: instructions are checked. The orientation command is generated from the oriented
+#: targets, so its `--target tools/esx/...` values are paths, not commands
+#: (TEAM-BRIEF-ORIENTATION-SELFCOLLISION-001).
+PACKET_SLOT = '\x00ESX-PACKET\x00'
+ORIENT_SLOT = '\x00ESX-ORIENT\x00'
+
+
+# A `dir/file.ext:LINE` or `dir/file.ext:LINE-LINE` citation. A directory part is
+# required: a bare `file.F:57` is ambiguous between trees, and a false refusal is
+# worse than a miss.
+CITATION_PATTERN = re.compile(r'((?:[\w.-]+/)+[\w.-]+\.(?:py|F|h|md|rst|json|tsv|sh|txt)):(\d+)(?:-(\d+))?\b')
+
+
+def citation_errors(root, design):
+    """Every `path:line` in the coordinator's design that does not resolve.
+
+    Checked in the DESIGN only, which is the text Arch writes and the one place
+    a citation becomes a requirement; the packet quotes agent footers whose
+    references are historical by nature. A path is tried at the project root and
+    under ``MITgcm/``, since model citations are written relative to that tree.
+
+    This is the mechanical edge of TEAM-ARCH-UNVERIFIED-CLAIM-001, and it is
+    narrow on purpose: of the twelve instances that issue records, none was a
+    citation that failed to resolve -- they were inferences relayed as
+    measurements, results asserted without being run, and exhaustive claims. A
+    citation that points nowhere is the one shape of an unchecked claim a
+    program can see. It is reported to Arch as a WARNING, never a refusal:
+    esx-fix.md E -- unknown free-text claims need review, not a machine refusal
+    that could be false.
+    """
+    errors = []
+    for path, first, last in CITATION_PATTERN.findall(design or ''):
+        candidates = [Path(root) / path, Path(root) / 'MITgcm' / path]
+        target = next((c for c in candidates if c.is_file()), None)
+        if target is None:
+            errors.append(f'{path}:{first}: no such file')
+            continue
+        try:
+            with target.open('rb') as stream:
+                length = sum(1 for _ in stream)
+        except OSError:
+            continue
+        line = int(last or first)
+        if line > length:
+            errors.append(f'{path}:{first}{"-" + last if last else ""}: the file has {length} lines')
+    return sorted(set(errors))
+
+
+def build(root, role, issue, design, question=None, packet=None, correction_round=0, sweep_symbols=(),
+          sweep_figures=()):
+    start = json_file(root, STATE + '/issue-start.json')
+    require(start['id'] == issue, 'brief must name the active issue')
+    require(isinstance(design, str) and design.strip(), 'provide the bounded design and acceptance tests')
+    if role == 'richard':
+        require(question and packet, 'Richard needs a distinct question and reviewed packet')
+        import agent_runtime
+        agent_runtime.review_context(root, packet, issue, start['maintenance']['baseline'])
+    context = packet or start
+    nav = doc_contract.load(root, context['maintenance']['orientation'], 'orientation', issue)
+    command = [sys.executable, 'tools/esx/doc_contract.py', 'navigate', '--issue', issue,
+               '--baseline', json.dumps(nav['baseline']), '--role', role, '--map', nav['map']]
+    for target in nav['targets']:
+        command += ['--target', target]
+    for doc in nav['documents']:
+        command += ['--doc', doc]
+    command += ['--use', 'Inspect the assigned owner and test to evaluate the bounded design and independent acceptance question.']
+    footer = footer_contract.example(root, role)
+    reseal = ('# Reseal before reporting\n'
+              'Implementation normally edits the very targets this orientation was taken against, which '
+              'invalidates the receipt and leaves an otherwise complete turn unreviewable. So as the FINAL steps '
+              'after your last edit, in this order: re-run the orientation command above with your own --use '
+              'sentence, then run ' + shlex.join([sys.executable, 'tools/esx/project.py', 'signature']) + '. Put '
+              'both results in your footer. Running them before your last edit does not count; the receipt must '
+              'bind to the bytes a reviewer will see.\nOriented targets, any of which triggers this:\n'
+              + '\n'.join('  ' + target for target in nav['targets']))
+    footer.update(issue_id=issue, iteration_timestamp=start['timestamp'], correction_round=correction_round)
+    if role == 'richard':
+        footer['documentation_review']['report'] = dict(packet['maintenance']['documentation'])
+    swept = sweep_section(root, sweep_symbols)
+    figures = figures_section(root, issue, sweep_figures)
+    text = '\n\n'.join([
+        '# ' + role + ': ' + issue, '# Design and acceptance\n' + design, *([swept] if swept else []),
+        *([figures] if figures else []),
+        '# Question\n' + (question or 'Implement the bounded design and report actual focused checks.'),
+        '# Expected cost and effort\n' + json.dumps(start.get('budget', {})) +
+        '\nThese are recorded expectations, not caps: nothing will stop you at them, and exceeding one is measured '
+        'rather than refused. Report a partial handoff when the work genuinely reaches a clean stopping point, not '
+        'because a number was reached. If you do exceed an expectation, say by how much and why -- that measurement '
+        'is how the expectation gets corrected.',
+        '# Own orientation\n' + ORIENT_SLOT + '\nUse the returned orientation receipt, not the baseline.',
+        reseal,
+        WORKING_RULES[role == 'richard'],
+        '# Evidence\nUse tools/esx/project.py signature for candidate_signature. Execute independent checks through '
+        'tools/esx/verify.py --suite focused --owner YOUR_RUNTIME_AGENT_ID --fresh and cite its returned evidence. '
+        'After your last edit also run ' + shlex.join([sys.executable, 'tools/esx/audit.py']) + ' and report its '
+        'result verbatim: a candidate that fails the audit cannot be reviewed. '
+        'If the declared suite cannot run because the environment is broken (for example a module no longer '
+        'imports), say so plainly in limits with the failing import instead of citing evidence you do not have. '
+        'Your runtime agent id is the agent_id in your dispatcher assignment (retained session) or the id stated '
+        'in your session-start context (native subagent); `' + shlex.join([sys.executable, 'tools/esx/hooks.py',
+        'whoami', '--role', role]) + '` prints it. Evidence sealed under any other owner is refused at closeout. '
+        'Richard confirms the exact sealed documentation reference in this packet: ' + PACKET_SLOT,
+        *([current_seal(packet)] if role == 'richard' else []),
+        '# Report\nKeep actual identity, evidence and limitations. Required values cannot be invented.\n'
+        'The "agent" field must be exactly ' + json.dumps(role) + ': it is compared against your registered '
+        'agent_type at capture, and any other value -- including a descriptive name that distinguishes you from '
+        'another reviewer -- records the whole turn as `incomplete` and makes it unavailable to closeout, '
+        'silently. Every reference you cite must resolve before you answer; the orientation receipt, '
+        'independent_check.evidence (which must be owned by you) and documentation_review.report are checked at '
+        'capture.\n```json\n'
+        + json.dumps(footer, indent=2) + '\n```']) + '\n'
+    # A brief that names a flag the tool does not accept is a defect in the
+    # brief, not in the agent that receives it
+    # (TEAM-BRIEF-UNVALIDATED-INTERFACE-001). Only the INSTRUCTIONS are checked:
+    # the embedded packet and the current-seal section quote earlier agents'
+    # footers, whose commands and prose are history, not orders, and the
+    # orientation command's `--target`/`--doc` values are paths.
+    instructions = text.replace(PACKET_SLOT, '').replace(ORIENT_SLOT, '')
+    if role == 'richard':
+        instructions = instructions.replace(current_seal(packet), '')
+    problems = interface_errors(root, instructions)
+    require(not problems, 'brief names ESX commands that do not exist: ' + '; '.join(problems))
+    return text.replace(PACKET_SLOT, json.dumps(packet)).replace(ORIENT_SLOT, shlex.join(command))
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[2])
+    p.add_argument('--role', choices=('bob', 'richard'), required=True)
+    p.add_argument('--issue', required=True)
+    p.add_argument('--design', type=Path, required=True)
+    p.add_argument('--question')
+    p.add_argument('--packet', type=Path)
+    p.add_argument('--round', type=int, default=0)
+    p.add_argument('--output', type=Path)
+    p.add_argument('--sweep-symbol', action='append', default=[], metavar='NAME',
+                   help='a default, symbol or contract name whose meaning this change affects; repeatable. '
+                        'The brief lists every file:line in the project that mentions it as an explicit target.')
+    p.add_argument('--sweep-figure', action='append', default=[], metavar='OLD',
+                   help='a measured figure or reading this change supersedes; repeatable. The brief lists every '
+                        'inventoried line that still contains it. The issue table '
+                        'devel-loop/loop_state/figures-ISSUE.tsv is always included when present.')
+    a = p.parse_args()
+    design = (a.root / a.design).read_text()
+    value = build(a.root.resolve(), a.role, a.issue, design, a.question,
+                  json.loads((a.root / a.packet).read_text()) if a.packet else None, a.round,
+                  a.sweep_symbol, a.sweep_figure)
+    # To Arch, on stderr, so it never enters the brief an agent receives.
+    for problem in citation_errors(a.root.resolve(), design):
+        print('brief warning: the design cites a location that does not exist: ' + problem, file=sys.stderr)
+    if a.output:
+        (a.root / a.output).write_text(value)
+    else:
+        print(value, end='')
+
+
+if __name__ == '__main__':
+    main()

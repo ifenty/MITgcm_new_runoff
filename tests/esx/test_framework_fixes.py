@@ -587,8 +587,10 @@ def test_provider_limit_pause_is_not_lifted_before_a_known_reset():
     assert conditions, "the provider-limit pause branch is gone from ralph_stop"
 
     # The branch that lifts the pause must also require an unknown reset time.
+    # The branch that handles a working turn; kit 1.6.7 added an earlier, unrelated provider_limit
+    # branch (the pause-clock record), so the first match is no longer the lift branch.
     lift = [seg for seg in source.split("elif ")
-            if "pause_source(parsed) == 'provider_limit'" in seg]
+            if "pause_source(parsed) == 'provider_limit'" in seg and "turn == 'working'" in seg]
     assert lift, "no elif branch lifts a provider-limit pause"
     assert "paused[1] is None" in lift[0], (
         "the auto-lift does not require an unknown reset time, so a 'working' "
@@ -628,8 +630,10 @@ def test_manual_pause_is_never_auto_lifted():
     bounds TEAM-PAUSE-EARLY-LIFT-001 to provider-limit pauses.
     """
     source = (TOOLS / "ralph_stop.py").read_text()
+    # The branch that handles a working turn; kit 1.6.7 added an earlier, unrelated provider_limit
+    # branch (the pause-clock record), so the first match is no longer the lift branch.
     lift = [seg for seg in source.split("elif ")
-            if "pause_source(parsed) == 'provider_limit'" in seg]
+            if "pause_source(parsed) == 'provider_limit'" in seg and "turn == 'working'" in seg]
     assert lift, "no elif branch lifts a provider-limit pause"
     assert "pause_source(parsed) == 'provider_limit'" in lift[0], (
         "the auto-lift no longer restricts itself to provider-limit pauses, so an "

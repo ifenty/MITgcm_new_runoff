@@ -133,7 +133,8 @@ WORKING_RULES = {
            'files you did not otherwise touch (READMEs, contracts, validation reports), and correct them.\n'
            '- When your change replaces a measured figure or a reading of one, add a row for it to '
            'devel-loop/loop_state/figures-ISSUE.tsv (old<TAB>new<TAB>note) and, before sealing, run '
-           '`doc_contract.py stale --issue ISSUE` and deal with every line it lists.\n'
+           '`doc_contract.py stale --issue ISSUE` and deal with every line it lists. '
+           'Write figures as in prose ("46 rules", "26-41 m"), never a bare 1-2 digit number.\n'
            '- You draft and seal the documentation plan from the live source, reusing the last sealed report with '
            '`doc_contract.py draft --previous`, and report the sealed reference. Give each changed target its own '
            'judgment; do not copy one reason across targets.\n'
@@ -167,6 +168,7 @@ def figures_section(root, issue, figures=()):
     out += [f"  {hit['path']}:{hit['line']}: [{hit['figure']}"
             + (f" -> {hit['new']}" if hit['new'] else '') + f"] {hit['text'][:160]}"
             for hit in doc_contract.listed(found)]
+    out += ['  warning: ' + warning for warning in found['warnings']]
     if found['truncated']:
         out.append(f"  ... {found['truncated']} more; run doc_contract.py stale --issue {issue}")
     return '\n'.join(out)
@@ -231,7 +233,11 @@ def interface_errors(root, text):
     lists them for most of these tools and a false refusal is worse than a miss.
     """
     errors, known = [], {}
-    for script, rest in COMMAND_PATTERN.findall(text or ''):
+    for match in COMMAND_PATTERN.finditer(text or ''):
+        script, rest = match.groups()
+        # A path used as a flag value (`--target tools/esx/x.py::f`) is not a command.
+        if re.search(r'--(?:target|doc)\s+$', (text or '')[:match.start()]):
+            continue
         if not (Path(root) / 'tools/esx' / script).is_file():
             errors.append(f'{script}: no such tool under tools/esx/')
             continue
@@ -254,8 +260,12 @@ def interface_errors(root, text):
     return sorted(set(errors))
 
 
-#: Placeholder for the quoted review packet while the instructions are checked.
+#: Placeholders for the quoted review packet and the orientation command while the
+#: instructions are checked. The orientation command is generated from the oriented
+#: targets, so its `--target tools/esx/...` values are paths, not commands
+#: (TEAM-BRIEF-ORIENTATION-SELFCOLLISION-001).
 PACKET_SLOT = '\x00ESX-PACKET\x00'
+ORIENT_SLOT = '\x00ESX-ORIENT\x00'
 
 
 # A `dir/file.ext:LINE` or `dir/file.ext:LINE-LINE` citation. A directory part is
@@ -289,7 +299,8 @@ def citation_errors(root, design):
             errors.append(f'{path}:{first}: no such file')
             continue
         try:
-            length = sum(1 for _ in target.open('rb'))
+            with target.open('rb') as stream:
+                length = sum(1 for _ in stream)
         except OSError:
             continue
         line = int(last or first)
@@ -339,13 +350,15 @@ def build(root, role, issue, design, question=None, packet=None, correction_roun
         'rather than refused. Report a partial handoff when the work genuinely reaches a clean stopping point, not '
         'because a number was reached. If you do exceed an expectation, say by how much and why -- that measurement '
         'is how the expectation gets corrected.',
-        '# Own orientation\n' + shlex.join(command) + '\nUse the returned orientation receipt, not the baseline.',
+        '# Own orientation\n' + ORIENT_SLOT + '\nUse the returned orientation receipt, not the baseline.',
         reseal,
         WORKING_RULES[role == 'richard'],
         '# Evidence\nUse tools/esx/project.py signature for candidate_signature. Execute independent checks through '
         'tools/esx/verify.py --suite focused --owner YOUR_RUNTIME_AGENT_ID --fresh and cite its returned evidence. '
         'After your last edit also run ' + shlex.join([sys.executable, 'tools/esx/audit.py']) + ' and report its '
         'result verbatim: a candidate that fails the audit cannot be reviewed. '
+        'If the declared suite cannot run because the environment is broken (for example a module no longer '
+        'imports), say so plainly in limits with the failing import instead of citing evidence you do not have. '
         'Your runtime agent id is the agent_id in your dispatcher assignment (retained session) or the id stated '
         'in your session-start context (native subagent); `' + shlex.join([sys.executable, 'tools/esx/hooks.py',
         'whoami', '--role', role]) + '` prints it. Evidence sealed under any other owner is refused at closeout. '
@@ -363,16 +376,14 @@ def build(root, role, issue, design, question=None, packet=None, correction_roun
     # brief, not in the agent that receives it
     # (TEAM-BRIEF-UNVALIDATED-INTERFACE-001). Only the INSTRUCTIONS are checked:
     # the embedded packet and the current-seal section quote earlier agents'
-    # footers, whose commands and prose are history, not orders. Checking them
-    # is what produced the false refusals the quote terminator in
-    # COMMAND_PATTERN was added to suppress; esx-fix.md E asks for the
-    # separation instead of a longer regex.
-    instructions = text.replace(PACKET_SLOT, '')
+    # footers, whose commands and prose are history, not orders, and the
+    # orientation command's `--target`/`--doc` values are paths.
+    instructions = text.replace(PACKET_SLOT, '').replace(ORIENT_SLOT, '')
     if role == 'richard':
         instructions = instructions.replace(current_seal(packet), '')
     problems = interface_errors(root, instructions)
     require(not problems, 'brief names ESX commands that do not exist: ' + '; '.join(problems))
-    return text.replace(PACKET_SLOT, json.dumps(packet))
+    return text.replace(PACKET_SLOT, json.dumps(packet)).replace(ORIENT_SLOT, shlex.join(command))
 
 
 def main():

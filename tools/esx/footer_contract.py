@@ -163,6 +163,11 @@ def reference_errors(root, role, footer, start, agent_id=None):
                               f'reporting agent {agent_id}')
         except (ValueError, OSError, KeyError, TypeError) as exc:
             errors.append('independent_check.evidence: ' + str(exc))
+            # The owner is reported even when the record is stale or otherwise refused.
+            owner = verify.intact_owner(Path(root), cited)
+            if agent_id and owner is not None and owner != agent_id:
+                errors.append(f'independent_check.evidence is owned by {owner}, not by the '
+                              f'reporting agent {agent_id}')
     report = (footer.get('documentation_review') or {}).get('report')
     if isinstance(report, dict) and (report.get('path') or report.get('sha256')):
         try:

@@ -21,11 +21,19 @@ Read the active lessons index; open detailed evidence only when its trigger appl
 
 Bob implements; Richard reviews independently. Scout, Prober, Bisector and Auditor
 have bounded specialist duties. Keep runtime identities through corrections.
+Before resuming an agent after a `failed` notification, run `tools/esx/agent_runtime.py turn-status` (see retained execution).
 Use [retained execution](../devel-loop/execution.md) to dispatch, resume and deliver
 peer findings, and [the framework map](../docs/esx_framework_map.md) to locate the
 workflow mechanisms without repeatedly reading their entire implementations.
 Required scientific review must run on a runtime supporting independent agents;
 record an unavailable runtime as a blocker. Do not invent agent completions.
+
+Launch a verification that may run longer than a tool call with the Bash tool and
+`run_in_background` (a background command is capped at 2 h). If the scientific suite
+needs more than that, configure `verification.scientific_groups` and run one group per
+background command (`final_verification.py run --group NAME`), then `run` to seal the
+aggregate; re-running resumes at the group that did not pass. Groups must be
+independent: a group that needs a build contains the build command itself.
 
 Follow verification stages and the single final-run owner. Preserve exact inputs,
 commands, working directory, toolchain and logs. Label reused evidence. A successful
@@ -56,3 +64,9 @@ Keep records economical. Default budgets are 60 lines per open/closed issue,
 short statement plus a trigger of at most 12 words. A resume block contains at
 most 12 lines of stable navigation links; disk records own changing state. The
 owner can adjust these budgets in the project profile for a specific workflow.
+
+Role models: the owner's standing choice of model for Bob and Richard is the optional
+`role_models` object in `esx/project.json` (see [team operations](../devel-loop/team_operations.md#role-models)).
+Dispatch a retained role with `agent_runtime.py start --model NAME`; a native Agent-tool
+dispatch records its model but the framework cannot enforce it. Record the owner's directive
+in the project profile.

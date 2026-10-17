@@ -3,7 +3,7 @@
   "master_repository": "supplied-by-installer-or-upgrader",
   "project_configuration": "esx/project.json",
   "project_id": "MITGCM-NEW-RUNOFF",
-  "project_name": "MITgcm new runoff: sparse source-based runoff forcing in pkg/exf",
+  "project_name": "MITgcm new runoff: sparse source-based runoff forcing in pkg/rnf (feeding pkg/exf)",
   "project_root": ".",
   "schema_version": 1
 }

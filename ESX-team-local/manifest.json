@@ -2,7 +2,7 @@
   "files": {
     ".claude/ESX-team/ARCHITECT.md": {
       "baseline_sha256": "9d94c7fc754d5be5a9324986b1adbe5da75214052d48af0763507d9928df96cc",
-      "installed_sha256": "9d94c7fc754d5be5a9324986b1adbe5da75214052d48af0763507d9928df96cc",
+      "installed_sha256": "9d10a860858cade09e1ba3f205db00e873cca08e326acf6cfcafdee9ec801de0",
       "master_sha256": "9d94c7fc754d5be5a9324986b1adbe5da75214052d48af0763507d9928df96cc",
       "ownership": "framework"
     },
@@ -103,20 +103,20 @@
       "ownership": "project"
     },
     "CLAUDE.md": {
-      "baseline_sha256": "229043310da9ec78a4ca78906ab2065e11de742bb1ec746f2e759cf106fc3a9e",
-      "installed_sha256": "229043310da9ec78a4ca78906ab2065e11de742bb1ec746f2e759cf106fc3a9e",
+      "baseline_sha256": "b08da67040084280361df3d67f081f9798c62007d2144343a1067692934a87d6",
+      "installed_sha256": "b08da67040084280361df3d67f081f9798c62007d2144343a1067692934a87d6",
       "master_sha256": "723522fbc8f31be85edaed21218b3549689cec96c58f7a610f057b952ade0a94",
       "ownership": "project"
     },
     "closed_issues.md": {
-      "baseline_sha256": "d2c38f1828a12d5e7058710e606ebb5e0402b139074cbe5749ac743b48522a48",
-      "installed_sha256": "d2c38f1828a12d5e7058710e606ebb5e0402b139074cbe5749ac743b48522a48",
+      "baseline_sha256": "14fe8f642a97d89f71c723d3cae1f3f68e975f71b4afa22025aa527fda652206",
+      "installed_sha256": "14fe8f642a97d89f71c723d3cae1f3f68e975f71b4afa22025aa527fda652206",
       "master_sha256": "d2af86b91de5a03d50fb6b4197f2f98f86e7ae654ee0317d949b2c5605a171b5",
       "ownership": "project"
     },
     "current_status.md": {
-      "baseline_sha256": "d6a0cb2125b88d4e8bcbff3af68ee40edd9edaaf684ab838c4cefdc68786be60",
-      "installed_sha256": "d6a0cb2125b88d4e8bcbff3af68ee40edd9edaaf684ab838c4cefdc68786be60",
+      "baseline_sha256": "9f20f12885e8f464a2068ed400550992e2010e49786944fb87183f9955e4486f",
+      "installed_sha256": "9f20f12885e8f464a2068ed400550992e2010e49786944fb87183f9955e4486f",
       "master_sha256": "d6a0cb2125b88d4e8bcbff3af68ee40edd9edaaf684ab838c4cefdc68786be60",
       "ownership": "project"
     },
@@ -134,14 +134,14 @@
     },
     "devel-loop/documentation_contract.md": {
       "baseline_sha256": "d324b8a9ac7815e927d7c09500f81a2ca961038e309e12aba5215efec9815f49",
-      "installed_sha256": "d324b8a9ac7815e927d7c09500f81a2ca961038e309e12aba5215efec9815f49",
+      "installed_sha256": "a334118b8886a9bb7ad358ebd010d889ae42b11c092bedd68e9d5618f8e99c61",
       "master_sha256": "d324b8a9ac7815e927d7c09500f81a2ca961038e309e12aba5215efec9815f49",
       "ownership": "framework"
     },
     "devel-loop/execution.md": {
-      "baseline_sha256": "400fb33f3252e51f6961d599029532f8341577641fa1315a889dd0148c90443e",
-      "installed_sha256": "400fb33f3252e51f6961d599029532f8341577641fa1315a889dd0148c90443e",
-      "master_sha256": "400fb33f3252e51f6961d599029532f8341577641fa1315a889dd0148c90443e",
+      "baseline_sha256": "b054fad3c9a6903f583f108172375dc0c10d81402e703c622f185f93f02de1ef",
+      "installed_sha256": "b054fad3c9a6903f583f108172375dc0c10d81402e703c622f185f93f02de1ef",
+      "master_sha256": "b054fad3c9a6903f583f108172375dc0c10d81402e703c622f185f93f02de1ef",
       "ownership": "framework"
     },
     "devel-loop/issue_json_schema.md": {
@@ -157,9 +157,9 @@
       "ownership": "framework"
     },
     "devel-loop/loop_contract.md": {
-      "baseline_sha256": "ad2c27163fe924b3ac172a099ead3a49de8529be19f648a9da7acb55ee83324d",
-      "installed_sha256": "ad2c27163fe924b3ac172a099ead3a49de8529be19f648a9da7acb55ee83324d",
-      "master_sha256": "ad2c27163fe924b3ac172a099ead3a49de8529be19f648a9da7acb55ee83324d",
+      "baseline_sha256": "3ee7d45986279736d692abecd643c3718e8d7f125dd53eb0428f1b724ce88f4e",
+      "installed_sha256": "3ee7d45986279736d692abecd643c3718e8d7f125dd53eb0428f1b724ce88f4e",
+      "master_sha256": "3ee7d45986279736d692abecd643c3718e8d7f125dd53eb0428f1b724ce88f4e",
       "ownership": "framework"
     },
     "devel-loop/loop_rules.md": {
@@ -169,14 +169,14 @@
       "ownership": "project"
     },
     "devel-loop/recovery.md": {
-      "baseline_sha256": "d4ec756652d03d94262567caf0b5dc077532361dae5065d8fc9650ca2ddf5f8c",
-      "installed_sha256": "d4ec756652d03d94262567caf0b5dc077532361dae5065d8fc9650ca2ddf5f8c",
-      "master_sha256": "d4ec756652d03d94262567caf0b5dc077532361dae5065d8fc9650ca2ddf5f8c",
+      "baseline_sha256": "82ef08240d2449a1302fd43acdb3e2d91a08442b71994a6f55d1495610df1826",
+      "installed_sha256": "82ef08240d2449a1302fd43acdb3e2d91a08442b71994a6f55d1495610df1826",
+      "master_sha256": "82ef08240d2449a1302fd43acdb3e2d91a08442b71994a6f55d1495610df1826",
       "ownership": "framework"
     },
     "devel-loop/self-improvement/README.md": {
       "baseline_sha256": "e7729dccde752b20ce38ad63d6f8234f302059cf2081bafa129eb1d60ef7186e",
-      "installed_sha256": "e7729dccde752b20ce38ad63d6f8234f302059cf2081bafa129eb1d60ef7186e",
+      "installed_sha256": "dda2723c6bb7a276c77a2a9f4704fe9530451b69abbbd63d0ad885c14731228a",
       "master_sha256": "e7729dccde752b20ce38ad63d6f8234f302059cf2081bafa129eb1d60ef7186e",
       "ownership": "framework"
     },
@@ -193,8 +193,8 @@
       "ownership": "project"
     },
     "devel-loop/self-improvement/open-ESX-team-issues.md": {
-      "baseline_sha256": "c737bd53bc9e8f23956a01593ac3564868c50705346684f0ebd92d4af7f47f12",
-      "installed_sha256": "c737bd53bc9e8f23956a01593ac3564868c50705346684f0ebd92d4af7f47f12",
+      "baseline_sha256": "e6d0532c062c4d31f8f1e37cc0b4f7ca9ec341d718c9a4465f516b7a075d302c",
+      "installed_sha256": "e6d0532c062c4d31f8f1e37cc0b4f7ca9ec341d718c9a4465f516b7a075d302c",
       "master_sha256": "d8e59c101eabdf729c3d08dcf6be255c0ef0666355bb7b2cf4d3137958ece2ee",
       "ownership": "project"
     },
@@ -205,20 +205,20 @@
       "ownership": "project"
     },
     "devel-loop/team_operations.md": {
-      "baseline_sha256": "5843bbc2c3c999ba409625d4fbc7dd26a2533aa93fa50fc19713c9f84377aba4",
-      "installed_sha256": "5843bbc2c3c999ba409625d4fbc7dd26a2533aa93fa50fc19713c9f84377aba4",
-      "master_sha256": "5843bbc2c3c999ba409625d4fbc7dd26a2533aa93fa50fc19713c9f84377aba4",
+      "baseline_sha256": "d7ee1f97182a5d6fbc571a124a6752408476137e57b545147ff13725e03fdfc9",
+      "installed_sha256": "d7ee1f97182a5d6fbc571a124a6752408476137e57b545147ff13725e03fdfc9",
+      "master_sha256": "d7ee1f97182a5d6fbc571a124a6752408476137e57b545147ff13725e03fdfc9",
       "ownership": "framework"
     },
     "devel-loop/verification.md": {
-      "baseline_sha256": "d2bd24319c7dff597c3fcaf3a6fc2f1cf60b0251c7a06065e358c36c268be43a",
-      "installed_sha256": "d2bd24319c7dff597c3fcaf3a6fc2f1cf60b0251c7a06065e358c36c268be43a",
-      "master_sha256": "d2bd24319c7dff597c3fcaf3a6fc2f1cf60b0251c7a06065e358c36c268be43a",
+      "baseline_sha256": "ce63bb27edb1093d353f97f73ec9815886d8799923afb5696d35fc682055732d",
+      "installed_sha256": "ce63bb27edb1093d353f97f73ec9815886d8799923afb5696d35fc682055732d",
+      "master_sha256": "ce63bb27edb1093d353f97f73ec9815886d8799923afb5696d35fc682055732d",
       "ownership": "framework"
     },
     "docs/code_map.md": {
-      "baseline_sha256": "0e4531c5657e6cb58ea6f6bf3f7b93b6b52f9445cd819978a47037c4db05399f",
-      "installed_sha256": "0e4531c5657e6cb58ea6f6bf3f7b93b6b52f9445cd819978a47037c4db05399f",
+      "baseline_sha256": "3bdeee86040167206b5ae9ad049112c3855953832a2562cd0023b72ebc5e1118",
+      "installed_sha256": "3bdeee86040167206b5ae9ad049112c3855953832a2562cd0023b72ebc5e1118",
       "master_sha256": "e8c17e527b26c6761e11689c9c006cd55f9d6228af924e00a7f36088c6bd4a95",
       "ownership": "project"
     },
@@ -235,26 +235,26 @@
       "ownership": "framework"
     },
     "docs/model_contract.md": {
-      "baseline_sha256": "b432a73ec16a49dc9f2583d0db5bc6fc11d94a0e4e8018f6a3d1598185f58c9d",
-      "installed_sha256": "b432a73ec16a49dc9f2583d0db5bc6fc11d94a0e4e8018f6a3d1598185f58c9d",
+      "baseline_sha256": "daf6b94ae63a86b4f2077679e9b8ac5eca3658e0232fe28157ee38899b7d8bd0",
+      "installed_sha256": "daf6b94ae63a86b4f2077679e9b8ac5eca3658e0232fe28157ee38899b7d8bd0",
       "master_sha256": "fc16bd9971a00938ef5e63224c599da29d6a28f446eae36cf86b4ebabfe10933",
       "ownership": "project"
     },
     "esx/project.json": {
-      "baseline_sha256": "cf376bccf77e244a3485e2646b5d25a1b7d77bfc623b09e43f17e2ea268bb78d",
-      "installed_sha256": "cf376bccf77e244a3485e2646b5d25a1b7d77bfc623b09e43f17e2ea268bb78d",
+      "baseline_sha256": "4713e431ff88bde9f98455934326702acda7cc088f40cadb37da816d2891cdbe",
+      "installed_sha256": "4713e431ff88bde9f98455934326702acda7cc088f40cadb37da816d2891cdbe",
       "master_sha256": "0c097bb3f1432d65244ad0e3caa4cdcd6f1b0c8ffd9fce1bbc776f86c8fbc558",
       "ownership": "project"
     },
     "esx/project_instructions.md": {
-      "baseline_sha256": "876bc60758970acfeba5c49d40f674831252ae2a35e2451b1b7fae61f6f41790",
-      "installed_sha256": "876bc60758970acfeba5c49d40f674831252ae2a35e2451b1b7fae61f6f41790",
-      "master_sha256": "876bc60758970acfeba5c49d40f674831252ae2a35e2451b1b7fae61f6f41790",
+      "baseline_sha256": "0cb20920a0c365dec000cc8c541d18a8fcb766540bcda73b7fc8e0c30351373c",
+      "installed_sha256": "6c98fb9cf5a15b7aeb3985b58edc776a8285a7c0da79fd1b14e2edc15a9870e3",
+      "master_sha256": "0cb20920a0c365dec000cc8c541d18a8fcb766540bcda73b7fc8e0c30351373c",
       "ownership": "framework"
     },
     "esx/project_profile.md": {
-      "baseline_sha256": "5cdac07f1c71adde1ec1b58b970940bf3b6041e0b6e0ba5d85df8f03dc138df2",
-      "installed_sha256": "5cdac07f1c71adde1ec1b58b970940bf3b6041e0b6e0ba5d85df8f03dc138df2",
+      "baseline_sha256": "917bb585d7b034a703233cd47c5ea6ffd7ba3ed3128060ae3477c18fcd3cadbd",
+      "installed_sha256": "917bb585d7b034a703233cd47c5ea6ffd7ba3ed3128060ae3477c18fcd3cadbd",
       "master_sha256": "95ccc52632b116865bab01ecf01572b80b957ce8968e3cf38444b2b834be7438",
       "ownership": "project"
     },
@@ -319,20 +319,20 @@
       "ownership": "framework"
     },
     "lessons_learned.md": {
-      "baseline_sha256": "bfd5a1134eb78878a2242f036754dd7f4a23a147859419662e566029c1073644",
-      "installed_sha256": "bfd5a1134eb78878a2242f036754dd7f4a23a147859419662e566029c1073644",
+      "baseline_sha256": "81e3779ae617a911f644983c6b2dea8852b6525afd90755a4bcd1691de9d0df6",
+      "installed_sha256": "81e3779ae617a911f644983c6b2dea8852b6525afd90755a4bcd1691de9d0df6",
       "master_sha256": "58807865bffcc45253a16858a9ce3444a3088bd3d03141d4172beac32aa58997",
       "ownership": "project"
     },
     "lessons_learned_evidence.md": {
-      "baseline_sha256": "5a84059c19f370f58177e87623e4df50b884316aa148b422e533f7d1b23b2e73",
-      "installed_sha256": "5a84059c19f370f58177e87623e4df50b884316aa148b422e533f7d1b23b2e73",
+      "baseline_sha256": "7a68bde545eb3c1936dc498337edbf2e22d26dc1f5aa6f3def854e48ddda366d",
+      "installed_sha256": "7a68bde545eb3c1936dc498337edbf2e22d26dc1f5aa6f3def854e48ddda366d",
       "master_sha256": "c3192f188392e2a517506e8e3e05bb53cf6e7f7b7bb690b793aa7d486ca5e69f",
       "ownership": "project"
     },
     "long_term_goals.md": {
-      "baseline_sha256": "c18474720fd3ea531594416ede76352a3e7bf0246208ab07f0dc07eab970fe2c",
-      "installed_sha256": "c18474720fd3ea531594416ede76352a3e7bf0246208ab07f0dc07eab970fe2c",
+      "baseline_sha256": "9bfad1d1c0ca10a6d9de92b4a297848644f23617e747a3b3fdc6e020ba7275b9",
+      "installed_sha256": "9bfad1d1c0ca10a6d9de92b4a297848644f23617e747a3b3fdc6e020ba7275b9",
       "master_sha256": "698c02b48b3e3f4c1920321e5869a23e6406b003ceaceeac683125ae84115448",
       "ownership": "project"
     },
@@ -343,21 +343,21 @@
       "ownership": "project"
     },
     "open_issues.md": {
-      "baseline_sha256": "9eaa190a61569a0bee104eba9bd35d11083b45c4a06df93587eec1fd7395ee09",
-      "installed_sha256": "9eaa190a61569a0bee104eba9bd35d11083b45c4a06df93587eec1fd7395ee09",
+      "baseline_sha256": "9d6a431441ec741c170fc69b726f3460d4feb5813eaf8ce8a9c2310273daaf01",
+      "installed_sha256": "9d6a431441ec741c170fc69b726f3460d4feb5813eaf8ce8a9c2310273daaf01",
       "master_sha256": "6faa9cc0821ef684c47301a55053d37d72cf4115b51e50c208da30a2d3a83a7c",
       "ownership": "project"
     },
     "tools/esx/agent_runtime.py": {
-      "baseline_sha256": "8b31c21dd9da38469fcfc4af5224c0714b9bfe4b16033503218229592d01f1cc",
-      "installed_sha256": "8b31c21dd9da38469fcfc4af5224c0714b9bfe4b16033503218229592d01f1cc",
-      "master_sha256": "8b31c21dd9da38469fcfc4af5224c0714b9bfe4b16033503218229592d01f1cc",
+      "baseline_sha256": "d078c0ef1811c4538ac439b11c42d193c718359f05ab3acc9156b57ebbadfef3",
+      "installed_sha256": "5321d4b189232b7eb5680b55e4751d848e4e163927c1445c6c234579984a987a",
+      "master_sha256": "d078c0ef1811c4538ac439b11c42d193c718359f05ab3acc9156b57ebbadfef3",
       "ownership": "framework"
     },
     "tools/esx/audit.py": {
-      "baseline_sha256": "c7d0a93bde035f6c6c9061b587e67b2e0f38fceb6d882b07fa61c09f6251528f",
-      "installed_sha256": "c7d0a93bde035f6c6c9061b587e67b2e0f38fceb6d882b07fa61c09f6251528f",
-      "master_sha256": "c7d0a93bde035f6c6c9061b587e67b2e0f38fceb6d882b07fa61c09f6251528f",
+      "baseline_sha256": "50f955af0bba121a0f6c62b2359b0773b03774d45d8279d6c7a304402b20c2a8",
+      "installed_sha256": "50f955af0bba121a0f6c62b2359b0773b03774d45d8279d6c7a304402b20c2a8",
+      "master_sha256": "50f955af0bba121a0f6c62b2359b0773b03774d45d8279d6c7a304402b20c2a8",
       "ownership": "framework"
     },
     "tools/esx/bounded_command.py": {
@@ -367,9 +367,9 @@
       "ownership": "framework"
     },
     "tools/esx/brief.py": {
-      "baseline_sha256": "bd8195b706eac11609913c815a9f65a1c23adeeb16f9fb4dd9c2074ce765a8ab",
-      "installed_sha256": "bd8195b706eac11609913c815a9f65a1c23adeeb16f9fb4dd9c2074ce765a8ab",
-      "master_sha256": "bd8195b706eac11609913c815a9f65a1c23adeeb16f9fb4dd9c2074ce765a8ab",
+      "baseline_sha256": "c12126b58fd4680afe75c8062b30b5b42fed0d14700aa9cfa3346c99ae4c6b60",
+      "installed_sha256": "c12126b58fd4680afe75c8062b30b5b42fed0d14700aa9cfa3346c99ae4c6b60",
+      "master_sha256": "c12126b58fd4680afe75c8062b30b5b42fed0d14700aa9cfa3346c99ae4c6b60",
       "ownership": "framework"
     },
     "tools/esx/check_ralph_hook.py": {
@@ -379,45 +379,45 @@
       "ownership": "framework"
     },
     "tools/esx/closeout_doctor.py": {
-      "baseline_sha256": "ea949f83e13d97ffaf0b1e663f6faeb772a730eec1133b6ca810e32ac6ade6f6",
-      "installed_sha256": "ea949f83e13d97ffaf0b1e663f6faeb772a730eec1133b6ca810e32ac6ade6f6",
-      "master_sha256": "ea949f83e13d97ffaf0b1e663f6faeb772a730eec1133b6ca810e32ac6ade6f6",
+      "baseline_sha256": "896dbe1bfb65a9960d334bb117481a3dc101109874dd7114936bc12868226af6",
+      "installed_sha256": "896dbe1bfb65a9960d334bb117481a3dc101109874dd7114936bc12868226af6",
+      "master_sha256": "896dbe1bfb65a9960d334bb117481a3dc101109874dd7114936bc12868226af6",
       "ownership": "framework"
     },
     "tools/esx/doc_contract.py": {
-      "baseline_sha256": "dcc23cee6d7ca5c39341fff718fcd10d1499fcd0817b0b408f101d00201d0987",
-      "installed_sha256": "dcc23cee6d7ca5c39341fff718fcd10d1499fcd0817b0b408f101d00201d0987",
-      "master_sha256": "dcc23cee6d7ca5c39341fff718fcd10d1499fcd0817b0b408f101d00201d0987",
+      "baseline_sha256": "c11e1c9317178c726dc3cefb1fa20a0a0935c85501c0c7ac3128e0495d8837ad",
+      "installed_sha256": "6498fca522881e8a5cf39f0c190a574bb78ed0038cd9791ca5ea8cfb702944fe",
+      "master_sha256": "c11e1c9317178c726dc3cefb1fa20a0a0935c85501c0c7ac3128e0495d8837ad",
       "ownership": "framework"
     },
     "tools/esx/doc_inventory.py": {
       "baseline_sha256": "ad18b13710528cb4700b576011e0e6b2bb5cc0b069faacd21b962e668fb54d3a",
-      "installed_sha256": "ad18b13710528cb4700b576011e0e6b2bb5cc0b069faacd21b962e668fb54d3a",
+      "installed_sha256": "a1565fd07d2157490d3ccf39f6b415fff4bad72b464e1aa8608e6e2b164c90dc",
       "master_sha256": "ad18b13710528cb4700b576011e0e6b2bb5cc0b069faacd21b962e668fb54d3a",
       "ownership": "framework"
     },
     "tools/esx/final_verification.py": {
-      "baseline_sha256": "bce247b8b2c2eb5f5e2a8720205dc43a710ad73aa004e79812ad4f42aaf5cb29",
-      "installed_sha256": "bce247b8b2c2eb5f5e2a8720205dc43a710ad73aa004e79812ad4f42aaf5cb29",
-      "master_sha256": "bce247b8b2c2eb5f5e2a8720205dc43a710ad73aa004e79812ad4f42aaf5cb29",
+      "baseline_sha256": "a93e18018c44c5345b578744f171d3bbf9f3b3ce76643f24571e2acbcc144231",
+      "installed_sha256": "a93e18018c44c5345b578744f171d3bbf9f3b3ce76643f24571e2acbcc144231",
+      "master_sha256": "a93e18018c44c5345b578744f171d3bbf9f3b3ce76643f24571e2acbcc144231",
       "ownership": "framework"
     },
     "tools/esx/footer_contract.py": {
-      "baseline_sha256": "150593d7b90c7b516c7161a215925e3cb17a8ea3869dd21e29f064c477ac9f0a",
-      "installed_sha256": "150593d7b90c7b516c7161a215925e3cb17a8ea3869dd21e29f064c477ac9f0a",
-      "master_sha256": "150593d7b90c7b516c7161a215925e3cb17a8ea3869dd21e29f064c477ac9f0a",
+      "baseline_sha256": "265cb9e94a800779be9d04215ed39c16957ec88ba9705e1471758bc5d4820092",
+      "installed_sha256": "a6dfb93dc69322bbfa39b34580f66d093b9196a04646a363444fdeef46ec80d5",
+      "master_sha256": "265cb9e94a800779be9d04215ed39c16957ec88ba9705e1471758bc5d4820092",
       "ownership": "framework"
     },
     "tools/esx/hooks.py": {
-      "baseline_sha256": "80c56bea5929dcb6061742275471f43584eaf1c09aafb4f19e63a377c2a371fd",
-      "installed_sha256": "80c56bea5929dcb6061742275471f43584eaf1c09aafb4f19e63a377c2a371fd",
-      "master_sha256": "80c56bea5929dcb6061742275471f43584eaf1c09aafb4f19e63a377c2a371fd",
+      "baseline_sha256": "f70e0d4be8df44632bd65e75db2dbb5e97a69df3828f45be29a61050fd55392a",
+      "installed_sha256": "f70e0d4be8df44632bd65e75db2dbb5e97a69df3828f45be29a61050fd55392a",
+      "master_sha256": "f70e0d4be8df44632bd65e75db2dbb5e97a69df3828f45be29a61050fd55392a",
       "ownership": "framework"
     },
     "tools/esx/issue_candidates.py": {
-      "baseline_sha256": "d8a49456ea123a89b5523d4b8cf0c2e60b4fe3ce7705344fcbf9458961964419",
-      "installed_sha256": "d8a49456ea123a89b5523d4b8cf0c2e60b4fe3ce7705344fcbf9458961964419",
-      "master_sha256": "d8a49456ea123a89b5523d4b8cf0c2e60b4fe3ce7705344fcbf9458961964419",
+      "baseline_sha256": "bda359548ed2b56e47fe10fb027a76cce8f82a6503384734405793bce0909b33",
+      "installed_sha256": "bda359548ed2b56e47fe10fb027a76cce8f82a6503384734405793bce0909b33",
+      "master_sha256": "bda359548ed2b56e47fe10fb027a76cce8f82a6503384734405793bce0909b33",
       "ownership": "framework"
     },
     "tools/esx/ledger_transaction.py": {
@@ -427,15 +427,15 @@
       "ownership": "framework"
     },
     "tools/esx/loop_control.py": {
-      "baseline_sha256": "664b11bcc797b00fb95cc089ce1d9a4696ff6e6fe3f5d57afe4c4f80e7d1113c",
-      "installed_sha256": "664b11bcc797b00fb95cc089ce1d9a4696ff6e6fe3f5d57afe4c4f80e7d1113c",
-      "master_sha256": "664b11bcc797b00fb95cc089ce1d9a4696ff6e6fe3f5d57afe4c4f80e7d1113c",
+      "baseline_sha256": "31519184ae0a68648c4e154b7f0f99ed6ab750b0ae537ef19b0e293b57e44c3b",
+      "installed_sha256": "31519184ae0a68648c4e154b7f0f99ed6ab750b0ae537ef19b0e293b57e44c3b",
+      "master_sha256": "31519184ae0a68648c4e154b7f0f99ed6ab750b0ae537ef19b0e293b57e44c3b",
       "ownership": "framework"
     },
     "tools/esx/loop_gate.py": {
-      "baseline_sha256": "5201713a983e2719359f947df2c05c297aa93145161bc7799fd1b4d823971e89",
-      "installed_sha256": "5201713a983e2719359f947df2c05c297aa93145161bc7799fd1b4d823971e89",
-      "master_sha256": "5201713a983e2719359f947df2c05c297aa93145161bc7799fd1b4d823971e89",
+      "baseline_sha256": "47feef49fafdfaeb38d0c8d03511663927a05570744adaa363d5811585de11dd",
+      "installed_sha256": "9237ee3ca2d8cade81e9ce33b08d559afec8766a8b2dc2bf8db7892cc0562d4c",
+      "master_sha256": "47feef49fafdfaeb38d0c8d03511663927a05570744adaa363d5811585de11dd",
       "ownership": "framework"
     },
     "tools/esx/loop_iteration.py": {
@@ -445,14 +445,14 @@
       "ownership": "framework"
     },
     "tools/esx/loop_lifecycle.py": {
-      "baseline_sha256": "84cd633d3caa1d5ac028c064a1523e576dc0680fb94c8b12f3a7a1fa9db7c5df",
-      "installed_sha256": "84cd633d3caa1d5ac028c064a1523e576dc0680fb94c8b12f3a7a1fa9db7c5df",
-      "master_sha256": "84cd633d3caa1d5ac028c064a1523e576dc0680fb94c8b12f3a7a1fa9db7c5df",
+      "baseline_sha256": "ff734b9be87d7c4bf7fcaa4bad4885d0bca9ff1e7b5b5c0ffecd3c24f5a3f844",
+      "installed_sha256": "3242266398c4794e67613a43b782e9ab6860402f111fd13ab533d5e5532d6a9b",
+      "master_sha256": "ff734b9be87d7c4bf7fcaa4bad4885d0bca9ff1e7b5b5c0ffecd3c24f5a3f844",
       "ownership": "framework"
     },
     "tools/esx/notifications.py": {
       "baseline_sha256": "ed530f75f0e0cc72a4c08a1fd6fcfa3a1989c493915fc76f45c10a93a691de58",
-      "installed_sha256": "ed530f75f0e0cc72a4c08a1fd6fcfa3a1989c493915fc76f45c10a93a691de58",
+      "installed_sha256": "bba40a093342fdf65a9e45b646b3ee191087776f4ee7d8a0d31340c6c353b431",
       "master_sha256": "ed530f75f0e0cc72a4c08a1fd6fcfa3a1989c493915fc76f45c10a93a691de58",
       "ownership": "framework"
     },
@@ -475,15 +475,15 @@
       "ownership": "framework"
     },
     "tools/esx/project.py": {
-      "baseline_sha256": "be54b58817ae92f5a0f4cbd69549f4b72d9a44452783728ed66cc67579ac778e",
-      "installed_sha256": "be54b58817ae92f5a0f4cbd69549f4b72d9a44452783728ed66cc67579ac778e",
-      "master_sha256": "be54b58817ae92f5a0f4cbd69549f4b72d9a44452783728ed66cc67579ac778e",
+      "baseline_sha256": "e4dbf9295e3f5eb0c180be7c67bbc9620257fe2d9073a9f8c045924c9dc08aba",
+      "installed_sha256": "620ec9a3eb012c5a2a0706a1d962a58f73a0caa4c7ae71bccf2dadc92f8d2441",
+      "master_sha256": "e4dbf9295e3f5eb0c180be7c67bbc9620257fe2d9073a9f8c045924c9dc08aba",
       "ownership": "framework"
     },
     "tools/esx/ralph_stop.py": {
-      "baseline_sha256": "b0f3c721e9706801bf5f9010d4e2c6090aa996d6465b7d9dcef55d1613e39e9a",
-      "installed_sha256": "b0f3c721e9706801bf5f9010d4e2c6090aa996d6465b7d9dcef55d1613e39e9a",
-      "master_sha256": "b0f3c721e9706801bf5f9010d4e2c6090aa996d6465b7d9dcef55d1613e39e9a",
+      "baseline_sha256": "2d19804595889bb3bdc9cdccaebb3bbc0c5aa2eb1d5f751a2da79bf53546d44c",
+      "installed_sha256": "fded96580b92cf5d8969f99ac6088bc15caa23f9ad387ff62e00c6595588ba04",
+      "master_sha256": "2d19804595889bb3bdc9cdccaebb3bbc0c5aa2eb1d5f751a2da79bf53546d44c",
       "ownership": "framework"
     },
     "tools/esx/records.py": {
@@ -494,7 +494,7 @@
     },
     "tools/esx/runtime_recovery.py": {
       "baseline_sha256": "e6c5ccc1a082a4a07aa55982da893d33e96db9d5018ae0ba8173e9262f2d71c9",
-      "installed_sha256": "e6c5ccc1a082a4a07aa55982da893d33e96db9d5018ae0ba8173e9262f2d71c9",
+      "installed_sha256": "1a1e8440042cd98649e21992d7c13e2d6c898359acaa374b721fce3d0822ddec",
       "master_sha256": "e6c5ccc1a082a4a07aa55982da893d33e96db9d5018ae0ba8173e9262f2d71c9",
       "ownership": "framework"
     },
@@ -506,20 +506,20 @@
     },
     "tools/esx/self_improvement.py": {
       "baseline_sha256": "987b6aed2d28e3cd4dbccf69505a16a17788f186dd574d5d3760d7426111ef10",
-      "installed_sha256": "987b6aed2d28e3cd4dbccf69505a16a17788f186dd574d5d3760d7426111ef10",
+      "installed_sha256": "5160d3f54ae636bc5004b1eb562ea4d33ded53c9cc6646e8d4c12e4426959d7e",
       "master_sha256": "987b6aed2d28e3cd4dbccf69505a16a17788f186dd574d5d3760d7426111ef10",
       "ownership": "framework"
     },
     "tools/esx/team_accounting.py": {
-      "baseline_sha256": "d7c776df580982e966fc2da582a20f3af44ba2c0d860dae6bd4285f9cf2d080a",
-      "installed_sha256": "d7c776df580982e966fc2da582a20f3af44ba2c0d860dae6bd4285f9cf2d080a",
-      "master_sha256": "d7c776df580982e966fc2da582a20f3af44ba2c0d860dae6bd4285f9cf2d080a",
+      "baseline_sha256": "23b63e671708198f8eb25450b73d6673a80ad681d08e03676ba10e9be8983f42",
+      "installed_sha256": "23b63e671708198f8eb25450b73d6673a80ad681d08e03676ba10e9be8983f42",
+      "master_sha256": "23b63e671708198f8eb25450b73d6673a80ad681d08e03676ba10e9be8983f42",
       "ownership": "framework"
     },
     "tools/esx/team_budget.py": {
-      "baseline_sha256": "962be71a159c6bd99843025706b3ee2db98a4b7a5c7ef5dbc34589067fb68808",
-      "installed_sha256": "962be71a159c6bd99843025706b3ee2db98a4b7a5c7ef5dbc34589067fb68808",
-      "master_sha256": "962be71a159c6bd99843025706b3ee2db98a4b7a5c7ef5dbc34589067fb68808",
+      "baseline_sha256": "847bc12ae29bc6095a30fd1767c33ab700a7878fdebd1bb4b75eed08ff757cf4",
+      "installed_sha256": "847bc12ae29bc6095a30fd1767c33ab700a7878fdebd1bb4b75eed08ff757cf4",
+      "master_sha256": "847bc12ae29bc6095a30fd1767c33ab700a7878fdebd1bb4b75eed08ff757cf4",
       "ownership": "framework"
     },
     "tools/esx/team_driver.py": {
@@ -530,14 +530,14 @@
     },
     "tools/esx/team_retrospective.py": {
       "baseline_sha256": "b684d770d16e4d1643a590a91115b82d6a10ad86022ace684d24190d12cb0038",
-      "installed_sha256": "b684d770d16e4d1643a590a91115b82d6a10ad86022ace684d24190d12cb0038",
+      "installed_sha256": "377c4314f07cd954bdd9ab0cf9fa9f689cca57f67ad6276080d0e4897f33f348",
       "master_sha256": "b684d770d16e4d1643a590a91115b82d6a10ad86022ace684d24190d12cb0038",
       "ownership": "framework"
     },
     "tools/esx/verify.py": {
-      "baseline_sha256": "a78ffd00ea3bc1c77f592dc826913558f03dcfa6a3379e99163be70c138402b7",
-      "installed_sha256": "a78ffd00ea3bc1c77f592dc826913558f03dcfa6a3379e99163be70c138402b7",
-      "master_sha256": "a78ffd00ea3bc1c77f592dc826913558f03dcfa6a3379e99163be70c138402b7",
+      "baseline_sha256": "da6cd08e6130e09fe97da6388e4c0992d8620872a7acca0ddd998c7dc7450746",
+      "installed_sha256": "da6cd08e6130e09fe97da6388e4c0992d8620872a7acca0ddd998c7dc7450746",
+      "master_sha256": "da6cd08e6130e09fe97da6388e4c0992d8620872a7acca0ddd998c7dc7450746",
       "ownership": "framework"
     },
     "tools/esx/workflow_handoff.py": {
@@ -547,21 +547,21 @@
       "ownership": "framework"
     },
     "tools/esx/workflow_policy.py": {
-      "baseline_sha256": "98aa5564c68f4994204a1ea0d7fa569a40c2f1116a0951714f4aef7f5f0de9ae",
-      "installed_sha256": "98aa5564c68f4994204a1ea0d7fa569a40c2f1116a0951714f4aef7f5f0de9ae",
-      "master_sha256": "98aa5564c68f4994204a1ea0d7fa569a40c2f1116a0951714f4aef7f5f0de9ae",
+      "baseline_sha256": "5be4f823d10a5b8d3481f1ab5f5cc4dec416b3c17f91fd49c5000b0618b13d89",
+      "installed_sha256": "5be4f823d10a5b8d3481f1ab5f5cc4dec416b3c17f91fd49c5000b0618b13d89",
+      "master_sha256": "5be4f823d10a5b8d3481f1ab5f5cc4dec416b3c17f91fd49c5000b0618b13d89",
       "ownership": "framework"
     },
     "tools/esx/workflow_records.py": {
-      "baseline_sha256": "9d9e06b09d5d0b51b1351b65d1233cfae6e42f7c3d48fbd0e9298c92d949657f",
-      "installed_sha256": "9d9e06b09d5d0b51b1351b65d1233cfae6e42f7c3d48fbd0e9298c92d949657f",
-      "master_sha256": "9d9e06b09d5d0b51b1351b65d1233cfae6e42f7c3d48fbd0e9298c92d949657f",
+      "baseline_sha256": "6f1ade6e91be79f5623a0d86ddcee361c13e35258353f5d6889e3d036632f28c",
+      "installed_sha256": "6f1ade6e91be79f5623a0d86ddcee361c13e35258353f5d6889e3d036632f28c",
+      "master_sha256": "6f1ade6e91be79f5623a0d86ddcee361c13e35258353f5d6889e3d036632f28c",
       "ownership": "framework"
     }
   },
-  "master_fingerprint": "d5f156070bd98cdc0b2fab5ff4dff85927f810cb0139729f4b134b2c66bed578",
+  "master_fingerprint": "751299f4dd5c12d23b78094190549002fcc058e94f8d07d678c7430cfec9cff1",
   "master_repository": "external-master",
   "schema_version": 1,
-  "updated_at": "2026-10-03T03:01:48.834039+00:00",
-  "version": "1.6.3"
+  "updated_at": "2026-10-17T15:29:04.275769+00:00",
+  "version": "1.7.2"
 }

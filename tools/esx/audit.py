@@ -7,8 +7,9 @@ import argparse
 import json
 from pathlib import Path
 import re
+import subprocess
 import sys
-from project import ROLES, config, local, require, mutable_loop_path
+from project import ROLES, config, interpreter, local, require, mutable_loop_path
 from records import validate_records
 
 
@@ -88,6 +89,19 @@ def audit_instructions(root, files=None, cfg=None):
 def check(root, overrides=None):
     cfg = config(root)
     validate_records(root, overrides)
+    imports = cfg.get('required_imports', [])
+    if imports:
+        run = subprocess.run([interpreter(cfg), '-c', 'import ' + ', '.join(imports)], capture_output=True, text=True,
+                             timeout=120)
+        if run.returncode != 0:
+            missing = []
+            for module in imports:
+                probe = subprocess.run([interpreter(cfg), '-c', 'import ' + module], capture_output=True, text=True,
+                                       timeout=120)
+                if probe.returncode != 0:
+                    missing.append(module)
+            require(not missing, f'required_imports cannot be imported by {interpreter(cfg)}: ' + ', '.join(missing or imports)
+                    + ' (see esx/project.json; the configured environment may have changed)')
     import self_improvement
     if (root / self_improvement.OPEN).exists():
         errors = self_improvement.validate(root, overrides)

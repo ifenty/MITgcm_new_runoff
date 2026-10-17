@@ -251,8 +251,100 @@ def rebind(root, review, owner):
             raise ValueError('cannot reuse the current execution: ' + str(exc)) from exc
 
 
-def run(root, review, owner, fresh=False):
-    """Serialize final runs and rebind unchanged execution to current acceptance."""
+def record_failure(root, identity, exc):
+    failure = {'version': 1, 'status': attempt_status(exc), 'identity': identity,
+               'error': type(exc).__name__ + ': ' + str(exc), 'finished_at': now()}
+    log = getattr(exc, 'log', None)
+    if log:
+        failure['log'] = log
+        try:
+            failure['failure_lines'] = verify.failure_lines(local(root, log).read_text(errors='replace'))
+        except OSError:
+            pass
+    sha = digest(failure)
+    atomic_json(local(root, f'{STATE}/final-verification/{sha}.json'), failure)
+    atomic_json(local(root, f'{STATE}/final-verification/latest.json'),
+                {'path': f'{STATE}/final-verification/{sha}.json', 'sha256': sha})
+
+
+def run_group(root, review, owner, name, fresh=False):
+    """Run exactly one scientific group under the prepared owner's lease; seal no receipt.
+
+    The group is reused when its intact PASS is current and owned by ``owner``.
+    Executing it voids any earlier receipt (verify.run does this); run
+    ``final_verification.py run`` afterwards to reuse every group and seal the aggregate.
+    """
+    root = Path(root).resolve()
+    require(verify.groups_of(config(root)), 'this project configures no scientific_groups')
+    lock = local(root, f'{STATE}/final-verification/owner.lock')
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with lock.open('a') as stream:
+        fcntl.flock(stream, fcntl.LOCK_EX)
+        identity = ready(root, review, owner)
+        token = object()
+        _LEASES[token] = (review, owner, identity)
+        try:
+            result = verify.run(root, 'scientific', owner, fresh=fresh, _lease=token, group=name)
+            try:
+                after = ready(root, review, owner)
+            except ValueError as exc:
+                raise verify.SourceChanged(f'candidate no longer ready after scientific group {name}: {exc}') from exc
+            if identity != after:
+                raise verify.SourceChanged(f'source or review changed during scientific group {name}')
+        except BaseException as exc:
+            record_failure(root, identity, exc)
+            raise
+        finally:
+            _LEASES.pop(token, None)
+        return {'status': result['status'], 'group': name, 'evidence': result['evidence'],
+                'groups': verify.group_status(root, owner),
+                'next': group_notice(root, owner) or None}
+
+
+def group_notice(root, owner, rows=None):
+    """Which scientific groups still lack current evidence, with the exact command to continue; '' when none apply."""
+    if not verify.groups_of(config(root)):
+        return ''
+    rows = verify.group_status(root, owner) if rows is None else rows
+    remaining = [r['name'] for r in rows if r['status'] != 'current']
+    if not remaining:
+        return ''
+    done = [r['name'] for r in rows if r['status'] == 'current']
+    return ('grouped scientific verification is incomplete, not finished: '
+            f"current groups: {', '.join(done) or 'none'}; remaining groups: {', '.join(remaining)}. "
+            'Continue (current groups are reused, only the remaining ones run) with: python3 tools/esx/final_verification.py run '
+            f'--review devel-loop/loop_state/review.json --owner {owner} (one group per background command: add --group NAME)')
+
+
+def pending_notice(root):
+    """The group notice for the active scientific iteration while it is partly done, else ''."""
+    try:
+        start = active_start(root)
+        if not start or start.get('workflow', {}).get('kind') != 'scientific_change':
+            return ''
+        owner = start['workflow'].get('final_verify_owner')
+        if not owner or not verify.groups_of(config(root)):
+            return ''
+        if local(root, f'{STATE}/final-verification/current.json').exists():
+            return ''
+        rows = verify.group_status(root, owner)
+        ref, record = latest_attempt(root)
+        mine = record is not None and (record.get('identity') or {}).get('issue_id') == start.get('id')
+        if not mine and not any(r['status'] == 'current' for r in rows):
+            return ''
+        return group_notice(root, owner, rows)
+    except (ValueError, OSError, KeyError, TypeError):
+        return ''
+
+
+def run(root, review, owner, fresh=False, group=None):
+    """Serialize final runs and rebind unchanged execution to current acceptance.
+
+    With ``scientific_groups`` the groups run in order, each reusing its own intact
+    current evidence, then one aggregate is sealed; ``group`` runs exactly one.
+    """
+    if group is not None:
+        return run_group(root, review, owner, group, fresh)
     root = Path(root).resolve()
     lock = local(root, f'{STATE}/final-verification/owner.lock')
     lock.parent.mkdir(parents=True, exist_ok=True)
@@ -260,28 +352,39 @@ def run(root, review, owner, fresh=False):
         fcntl.flock(stream, fcntl.LOCK_EX)
         identity = ready(root, review, owner)
         index = local(root, f'{STATE}/final-verification/current.json')
+        # Why reuse was not possible, kept for the operator: a silent fall-through to
+        # a multi-hour fresh run is otherwise indistinguishable from "nothing matched"
+        # (TEAM-FINALVERIFY-FINGERPRINT-REUSE-001). Behaviour is unchanged.
+        reuse_refused = []
+        if not fresh and not index.exists():
+            reuse_refused.append('current.json missing')
         if not fresh and index.exists():
             try:
                 old_ref = json.loads(index.read_text())
                 packet = dict(review, verification={'receipt': old_ref, 'scientific': json_file(root, old_ref['path']).get('scientific')})
                 old = check_receipt(root, packet)
                 return {'status': 'REUSED EVIDENCE', 'receipt': old_ref, 'scientific': old['scientific']}
-            except (ValueError, OSError, KeyError, TypeError):
-                pass
+            except (ValueError, OSError, KeyError, TypeError) as exc:
+                reuse_refused.append(f'check_receipt refused: {type(exc).__name__}: {exc}')
             # Separate fresh acceptance from the immutable scientific execution.
             # Reuse requires current approvals and matching source/config/toolchain.
             try:
                 return _reissue(root, review, owner, identity, index)
-            except (ValueError, OSError, KeyError, TypeError):
-                pass
+            except (ValueError, OSError, KeyError, TypeError) as exc:
+                reuse_refused.append(f'_reissue refused: {type(exc).__name__}: {exc}')
+        if reuse_refused:
+            print('ESX final verification: no matching execution was reused, so the scientific suite runs fresh. Reasons: '
+                  + ' | '.join(reuse_refused), file=sys.stderr, flush=True)
         index.unlink(missing_ok=True)
         token = object()
         _LEASES[token] = (review, owner, identity)
         try:
             # A new approved identity receives a fresh scientific run. Only the
             # wrapper's intact exact-state receipt permits final result reuse.
-            result = verify.run(root, 'scientific', owner, fresh=True, _lease=token)
-            log = json_file(root, result['evidence']['path'])['log']
+            # Grouped: each group's reuse is decided by its own evidence, so a resumed
+            # run keeps the groups that already passed.
+            result = verify.run(root, 'scientific', owner, fresh=fresh if verify.groups_of(config(root)) else True, _lease=token)
+            log = result.get('log') or json_file(root, result['evidence']['path'])['log']
             try:
                 after = ready(root, review, owner)
             except ValueError as exc:
@@ -291,19 +394,7 @@ def run(root, review, owner, fresh=False):
             record = {'version': 1, 'status': 'PASS', 'identity': identity,
                       'scientific': result['evidence'], 'finished_at': now()}
         except BaseException as exc:
-            failure = {'version': 1, 'status': attempt_status(exc), 'identity': identity,
-                       'error': type(exc).__name__ + ': ' + str(exc), 'finished_at': now()}
-            log = getattr(exc, 'log', None)
-            if log:
-                failure['log'] = log
-                try:
-                    failure['failure_lines'] = verify.failure_lines(local(root, log).read_text(errors='replace'))
-                except OSError:
-                    pass
-            sha = digest(failure)
-            atomic_json(local(root, f'{STATE}/final-verification/{sha}.json'), failure)
-            atomic_json(local(root, f'{STATE}/final-verification/latest.json'),
-                        {'path': f'{STATE}/final-verification/{sha}.json', 'sha256': sha})
+            record_failure(root, identity, exc)
             raise
         finally:
             _LEASES.pop(token, None)
@@ -312,7 +403,9 @@ def run(root, review, owner, fresh=False):
         atomic_json(local(root, ref['path']), record)
         atomic_json(index, ref)
         atomic_json(local(root, f'{STATE}/final-verification/latest.json'), ref)
-        return {'status': 'EXECUTED PASS', 'receipt': ref, 'scientific': result['evidence']}
+        return {'status': result['status'] if verify.groups_of(config(root)) else 'EXECUTED PASS', 'receipt': ref,
+                'scientific': result['evidence'], 'reuse_refused': reuse_refused,
+                **({'groups': result['groups']} if 'groups' in result else {})}
 
 
 def main():
@@ -322,11 +415,17 @@ def main():
     parser.add_argument('--review', required=True, help='read-only prepared review JSON; absolute paths accepted')
     parser.add_argument('--owner', required=True)
     parser.add_argument('--fresh', action='store_true')
+    parser.add_argument('--group', help='run exactly one scientific group (projects with verification.scientific_groups)')
     args = parser.parse_args()
     try:
         from workflow_handoff import input_file
         review = json.loads(input_file(args.root, args.review).read_text())
-        result = ready(args.root, review, args.owner) if args.action == 'check' else run(args.root, review, args.owner, args.fresh)
+        if args.action == 'check':
+            result = ready(args.root, review, args.owner)
+            if verify.groups_of(config(args.root)):
+                result['scientific_groups'] = verify.group_status(args.root, args.owner)
+        else:
+            result = run(args.root, review, args.owner, args.fresh, args.group)
         print(json.dumps(result, indent=2))
     except (ValueError, OSError, KeyError, TypeError, InterruptedError) as exc:
         parser.exit(1, f'ESX final verification: {exc}\n')

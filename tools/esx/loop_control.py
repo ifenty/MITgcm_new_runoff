@@ -142,6 +142,8 @@ def clear_pause(root):
             return False
         parsed = parse_state(state.read_text())
         was = parsed['header_fields'].get('paused') == 'true'
+        if was and ralph_stop.pause_source(parsed) == 'provider_limit':
+            ralph_stop.record_provider_pause(root)
         header = parsed['header']
         for key in ('paused', 'pause_reason', 'paused_until', 'pause_source'):
             header = set_field(header, key, None)
@@ -194,6 +196,8 @@ def pause(root, reason, minutes=None, until=None, source=None):
         header = set_field(header, 'paused_until', None if deadline is None else f'{deadline:.0f}')
         # A provider-limit pause lifts itself when work resumes; an owner's pause never does.
         header = set_field(header, 'pause_source', source)
+        if source == 'provider_limit':
+            ralph_stop.record_provider_pause(root, start=True, until=deadline)
         atomic_bytes(state, ('---\n' + header + '\n---\n' + parsed['prompt']).encode())
         log(root, 'PAUSE_REQUESTED', parsed['iteration'], reason.strip())
         return {'status': 'paused', 'state': STATE, 'iteration': parsed['iteration'],

@@ -111,6 +111,41 @@ def transaction(root, write=True):
             accounting.atomic(path, value)
 
 
+def record_pause(root, start, end=None, until=None):
+    """Record a provider-limit pause interval in the budget ledger (owner pauses are not recorded).
+
+    With ``end`` None the interval is opened (a second open call while one is open
+    is ignored); with ``end`` the latest open interval is closed, or a complete
+    interval is appended if none was open. The scope deadline is shifted by these
+    intervals at reserve time (an open one counts up to ``until`` when the pause
+    was set to lift by itself, else up to now), so waiting for a usage limit to reset does not spend
+    nominal minutes (TEAM-PAUSE-DEADLINE-CLAMP-001). The stored deadline never moves.
+    """
+    with transaction(root) as ledger:
+        pauses = ledger.setdefault('pauses', [])
+        open_ones = [p for p in pauses if p.get('end') is None]
+        if end is None:
+            if not open_ones:
+                pauses.append({'start': start, 'end': None, 'source': 'provider_limit',
+                               **({'until': until} if until is not None else {})})
+        elif open_ones:
+            open_ones[-1]['end'] = max(end, open_ones[-1]['start'])
+        else:
+            pauses.append({'start': start, 'end': end, 'source': 'provider_limit'})
+
+
+def pause_shift(ledger, started, now):
+    """Seconds of recorded provider-limit pause inside [started, now]; an open interval counts to now."""
+    total = 0.0
+    for pause in ledger.get('pauses', []):
+        if pause.get('source') != 'provider_limit':
+            continue
+        first = max(pause['start'], started)
+        last = min(pause['end'] if pause.get('end') is not None else pause.get('until', now), now)
+        total += max(0.0, last - first)
+    return total
+
+
 def reserve(root, event, issue, budget, *, run=None, run_budget=None, correction=0, amount=None, turn_seconds=None, turn_calls=None):
     budget = limits(override=budget)
     amount = budget['turn_usd'] if amount is None else amount
@@ -136,7 +171,8 @@ def reserve(root, event, issue, budget, *, run=None, run_budget=None, correction
             if effort is not None and effort > cap['minutes']:
                 observe(saved, 'minutes', cap['minutes'], effort,
                         'summed dispatch duration exceeds its expected allocation')
-            deadline = saved.get('deadline', saved['started'] + cap['minutes'] * 60)
+            deadline = (saved.get('deadline', saved['started'] + cap['minutes'] * 60)
+                        + pause_shift(ledger, saved['started'], time.time()))
             if time.time() >= deadline:
                 observe(saved, 'calendar_minutes', cap['minutes'], (time.time() - saved['started']) / 60,
                         'elapsed time since this scope first dispatched; includes work on other issues '
@@ -156,10 +192,13 @@ def reserve(root, event, issue, budget, *, run=None, run_budget=None, correction
         now = time.time()
         horizon = now + turn_seconds if turn_seconds is not None else now + min(c['minutes'] for _, c in scopes) * 60
         soft_horizon = now + turn_seconds * .8 if turn_seconds is not None else now + min(c['minutes'] for _, c in scopes) * 48
+        # Provider-limit pause time does not count against the nominal minutes: both
+        # deadlines move by the measured pause overlap, the stored ones do not.
+        shifts = {k: pause_shift(ledger, ledger['scopes'][k]['started'], now) for k, _ in scopes}
         deadlines = [horizon] + [d for d in (ledger['scopes'][k].get('deadline', ledger['scopes'][k]['started'] + c['minutes'] * 60)
-                                            for k, c in scopes) if d > now]
+                                            + shifts[k] for k, c in scopes) if d > now]
         soft_deadlines = [soft_horizon] + [d for d in (ledger['scopes'][k].get('soft_deadline', ledger['scopes'][k]['started'] + c['minutes'] * 48)
-                                                      for k, c in scopes) if d > now]
+                                                      + shifts[k] for k, c in scopes) if d > now]
         receipt = {'event_id': event, 'scopes': [k for k, _ in scopes], 'reserved_usd': amount,
                    'charged_usd': amount, 'reported_usd': None, 'status': 'reserved',
                    'deadline': min(deadlines), 'soft_deadline': min(soft_deadlines),
@@ -276,9 +315,12 @@ def extend(root, authorization, apply=False):
         for name, amount in additions.items():
             updated['limits'][name] += amount
         updated['limits'] = limits(override=updated['limits'])
-        begun = max(time.time(), scope.get('deadline', scope['started'] + scope['limits']['minutes'] * 60))
-        updated['deadline'] = begun + additions['minutes'] * 60
-        updated['soft_deadline'] = begun + additions['minutes'] * 48
+        # Extend from the SHIFTED deadline (provider-limit pauses do not count), and store
+        # the result minus the shift already applied, since reserve adds the shift again.
+        shift = pause_shift(ledger, scope['started'], time.time())
+        begun = max(time.time(), scope.get('deadline', scope['started'] + scope['limits']['minutes'] * 60) + shift)
+        updated['deadline'] = begun + additions['minutes'] * 60 - shift
+        updated['soft_deadline'] = begun + additions['minutes'] * 48 - shift
         updated.setdefault('extensions', []).append({'request': request, 'authorization': authorization,
                                                     'applied_at': accounting.now()})
         if apply:

@@ -157,11 +157,18 @@ issue and their own correction round. New selections must follow its start time.
     return result
 
 
-def prepare_done(start, records, selections, prior=None):
+def prepare_done(start, records, selections, prior=None, packet=None):
     """Return a draft with verbatim footers and explicitly pending human judgments.
 
 The optional prior record carries earlier completions and continuity across
 iterations. It supplies no fresh outcome, approval, verification, or delivery claim.
+Earlier iterations' completions are history, not current approvals: a completed
+reviewer turn from another iteration is listed under preparation.prior and kept out
+of subagents, because the gate refuses it as a current review. Failed turns and
+non-reviewer completions stay in subagents, marked carried_from_prior_iteration,
+since the gate resolves replacement and continuity identities against subagents.
+The optional review packet supplies candidate, map_delta and the documentation and
+orientation references verbatim, and the stable agent identities for agent_continuity.
 """
     require(isinstance(start, dict) and start.get('id') and start.get('title'),
             'start needs an issue id and title')
@@ -208,7 +215,21 @@ iterations. It supplies no fresh outcome, approval, verification, or delivery cl
                'milestone, lesson and rule decisions (defaulted to none; override if there is a real one)',
                'git and communication disposition (defaulted to not-committed/pending; override if there is a real disposition)',
                'verification and documentation evidence']
-    selected = []
+    selected, earlier = [], set()
+    if packet is not None:
+        require(isinstance(packet, dict) and (packet.get('id'), packet.get('timestamp')) == (start['id'], start['timestamp']),
+                'review packet belongs to another issue or iteration')
+        packet_maintenance = packet.get('maintenance') or {}
+        require(packet_maintenance.get('baseline', (start.get('maintenance') or {}).get('baseline'))
+                == (start.get('maintenance') or {}).get('baseline'), 'review packet uses a different issue baseline')
+        for key in ('candidate', 'map_delta'):
+            if key in packet:
+                draft[key] = deepcopy(packet[key])
+        maintenance = draft.setdefault('maintenance', {})
+        for key in ('documentation', 'orientation'):
+            if key in packet_maintenance:
+                maintenance[key] = deepcopy(packet_maintenance[key])
+        pending[-1] = 'verification evidence (structural; scientific and receipt for scientific_change)'
     if prior is not None:
         require(isinstance(prior, dict) and prior.get('id') == start['id'],
                 'prior closeout belongs to another issue')
@@ -237,6 +258,7 @@ iterations. It supplies no fresh outcome, approval, verification, or delivery cl
                         continue
                     require(key not in entry or entry[key] == value,
                             f'prior completion disagrees with captured {key}')
+                earlier.add(imported['dispatch_event_id'])
                 selected.append(imported if imported.get('status') in ('incomplete', 'failed', 'running')
                                 else {**imported, **deepcopy(entry)})
         for key in ('scope_decisions', 'review_supersessions', 'deliverables'):
@@ -245,11 +267,13 @@ iterations. It supplies no fresh outcome, approval, verification, or delivery cl
     retained = {entry['dispatch_event_id'] for entry in selected}
     # A pre-iteration event already retained from the prior closeout needs no
     # second, current-iteration import; the prior carries its exact record.
+    chosen = [selection for selection in selections
+              if not (prior is not None and isinstance(selection, dict) and selection.get('dispatch_event_id') in retained)]
     selected += [import_completion(start, records, selection, selection.get('selection_scope') == 'history')
-                 for selection in selections
-                 if not (prior is not None and isinstance(selection, dict)
-                         and selection.get('dispatch_event_id') in retained)]
-    by_event = {}
+                 for selection in chosen]
+    earlier.update(selection['dispatch_event_id'] for selection in chosen
+                   if isinstance(selection, dict) and selection.get('selection_scope') == 'history')
+    by_event, history = {}, []
     for entry in selected:
         event = entry['dispatch_event_id']
         if event in by_event:
@@ -257,6 +281,16 @@ iterations. It supplies no fresh outcome, approval, verification, or delivery cl
             continue
         by_event[event] = entry
         role = entry.get('agent') or entry['agent_name']
+        if event in earlier:
+            terminal = entry.get('status') in ('incomplete', 'failed', 'running')
+            history.append({'agent': role, 'dispatch_id': entry.get('dispatch_id'), 'dispatch_event_id': event,
+                            'status': entry.get('status', 'completed'), 'correction_round': entry.get('correction_round'),
+                            'iteration_timestamp': entry.get('iteration_timestamp'), 'verdict': entry.get('verdict'),
+                            'candidate_signature': entry.get('candidate_signature'),
+                            'disposition': 'kept_in_subagents' if terminal or role != 'richard' else 'history_only'})
+            if not terminal and role == 'richard':
+                continue  # the gate refuses another iteration's review as a current approval
+            entry = {**entry, 'carried_from_prior_iteration': True}
         draft['subagents'].setdefault(role, []).append(entry)
         if entry.get('status') in ('incomplete', 'failed', 'running'):
             if entry['status'] == 'running':
@@ -270,6 +304,17 @@ iterations. It supplies no fresh outcome, approval, verification, or delivery cl
             missing.append('independent_check')
         if missing:
             pending.append(f'{event}: ' + ', '.join(missing))
+    if packet is not None:
+        # The gate requires agent_continuity.<role> to list exactly the dispatch_ids in subagents.<role>.
+        continuity = draft.setdefault('agent_continuity', {})
+        for role in ('bob', 'richard'):
+            have = [e['dispatch_id'] for e in draft['subagents'].get(role, []) if e.get('dispatch_id')]
+            ordered = [e.get('dispatch_id') for e in (packet.get('subagents') or {}).get(role, []) if isinstance(e, dict)]
+            ids = list(dict.fromkeys([i for i in ordered if i in have] + have))
+            if ids:
+                continuity[role] = ids
+            for missing in [i for i in ordered if i and i not in have]:
+                pending.append(f'agent_continuity.{role}: the packet lists {missing}, which --select did not select')
     skeleton = replacement_skeleton(start, records, draft)
     if skeleton:
         continuity = draft.setdefault('agent_continuity', {})
@@ -284,6 +329,8 @@ iterations. It supplies no fresh outcome, approval, verification, or delivery cl
                            f"(or select a later completed continuation of the same agent instead)")
     draft['preparation'] = {'status': 'draft', 'start_timestamp': start['timestamp'],
                             'imported_event_ids': list(by_event), 'pending': pending, 'shapes': shapes}
+    if history or prior is not None:
+        draft['preparation']['prior'] = {'completions': history}
     return draft
 
 
@@ -313,8 +360,10 @@ until the closer supplies them. Nothing here resolves a turn by itself.
             continue  # Only closeout-referenced implementation turns are validated.
         if workflow_policy.resolved_dispatch(event, records, draft):
             continue
+        # A deliberately declared parallel reviewer is not a replacement for anyone.
+        parallel = workflow_policy.parallel_ids(dict(draft, id=issue, timestamp=iteration), records, role)
         later = [r for r in candidates[position + 1:] if r.get('agent_type') == role
-                 and workflow_policy.completed(r) and r.get('agent_id') != old
+                 and workflow_policy.completed(r) and r.get('agent_id') != old and r.get('agent_id') not in parallel
                  and workflow_policy.identity(r, 'iteration_timestamp') == iteration]
         chosen = {r.get('agent_id') for r in later if r.get('event_id') in referenced} or {r.get('agent_id') for r in later}
         # A same-agent continuation resolves the turn without a replacement.
@@ -663,6 +712,8 @@ def main(argv=None):
     prepare.add_argument('--select', required=True, help='JSON array of exact completion identities')
     prepare.add_argument('--prior', help='previous closeout to preserve earlier completion records '
                          '(default: the latest accepted closeout of this issue in loop_state/closed/)')
+    prepare.add_argument('--packet', help='review packet JSON: copies its candidate, map_delta and maintenance '
+                         'documentation/orientation verbatim and fills agent_continuity from its subagents')
     prepare.add_argument('--no-prior', action='store_true', help='do not locate a prior closeout automatically')
     prepare.add_argument('--output', help='create this new relative JSON path; default prints only')
     packet = sub.add_parser('continuation', help='print compact current issue assignments and findings')
@@ -704,18 +755,22 @@ def main(argv=None):
                 prior_path = input_file(root, args.prior) if args.prior else (
                     None if args.no_prior else locate_prior(root, start))
                 try:
+                    packet_path = input_file(root, args.packet) if args.packet else None
                     payload = prepare_done(start, records, read_json(selected_path),
-                                           read_json(prior_path) if prior_path else None)
+                                           read_json(prior_path) if prior_path else None,
+                                           read_json(packet_path) if packet_path else None)
                 except ValueError as exc:
                     if prior_path and not args.prior:
                         raise ValueError(f'{exc} (using the automatically located prior closeout '
                                          f'{prior_path.relative_to(root)}; pass --prior or --no-prior to override)') from exc
                     raise
                 if prior_path and not args.prior:
-                    payload['preparation']['prior'] = {'path': str(prior_path.relative_to(root)), 'located': 'automatic'}
+                    payload['preparation'].setdefault('prior', {}).update(
+                        path=str(prior_path.relative_to(root)), located='automatic')
                 if args.output:
                     write_output(root, args.output, payload,
-                                 [start_path, selected_path, *([prior_path] if prior_path else [])])
+                                 [start_path, selected_path, *([prior_path] if prior_path else []),
+                                  *([packet_path] if packet_path else [])])
         print(json.dumps(payload, indent=2, ensure_ascii=False))
         return 0
     except (ValueError, OSError, TypeError) as exc:

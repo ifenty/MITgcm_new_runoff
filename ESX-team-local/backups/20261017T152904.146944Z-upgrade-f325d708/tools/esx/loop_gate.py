@@ -1,0 +1,878 @@
+"""Disk-backed ESX issue loop: selection, preparation, evidence and closeout.
+
+The coordinator supplies scientific judgments; this gate checks their records,
+current source, captured agent completions and executed verification evidence.
+Successful closeout saves history. It never commits or sends external messages.
+"""
+import argparse
+import datetime as dt
+import json
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+import audit
+import project
+import notifications
+import doc_contract as maintenance
+import workflow_policy as workflow
+import verify
+import workflow_records
+import loop_iteration
+import team_retrospective
+import team_budget
+import team_accounting
+from project import (STATE, ROLES, atomic_json, config, json_file, local, now,
+                     require, source_signature)
+from records import json_lines, save_history, validate_records
+
+PROMISE = 'ESX-LOOP-NO-ACTIONABLE-WORK'
+
+
+def record_error(error):
+    """One-line form of a capture error for the gate's screen."""
+    text = ' '.join(str(error).split())
+    return text if len(text) <= 160 else text[:157] + '...'
+SELF_ASSESSMENT_WINDOW = 10
+
+
+def announcement(record):
+    ts = record.get('slack_ts')
+    if ts is not None:
+        require(isinstance(ts, str) and re.fullmatch(r'\d{10}\.\d{6}', ts), 'invalid returned Slack timestamp')
+    else:
+        communication = record.get('communication')
+        require(bool(record.get('slack_error')) or isinstance(communication, dict)
+                and communication.get('status') in ('pending', 'sent', 'unavailable', 'unauthorized', 'disabled')
+                and bool(communication.get('detail')), 'record the communication result or non-delivery reason')
+        if isinstance(communication, dict) and communication.get('status') == 'sent':
+            require(communication.get('receipt'), 'successful communication needs its returned receipt/link')
+
+
+def kind_contradiction(root, cfg, kind, targets):
+    """Why `kind` cannot be right for work owned by ``targets[0]``, or None.
+
+    Closeout refuses a non-scientific kind once the scientific signature has
+    moved. An owning target inside that inventory makes the move LIKELY, not
+    certain: an investigation reads its owner without changing it, so this only
+    informs; closeout, which measures the files that actually changed, decides.
+    It was found late once: a harness_change prepared with all three targets under
+    tests/ was refused only at --check-done, after two implementation rounds and
+    four reviews (TEAM-PREPARE-KIND-UNCHECKED-001).
+
+    Only the OWNING target -- the first, by the convention --prepare already
+    states -- is held to this: a documentation issue may orient on a test as its
+    consumer without editing it, and a notice for that would be noise.
+    """
+    if kind == 'scientific_change' or not targets:
+        return None
+    from project import inventory_paths
+    owning = targets[0].split('::', 1)[0]
+    if owning not in set(inventory_paths(Path(root), cfg, True)):
+        return None
+    return (f'the owning target {owning} is in the scientific inventory, so changing it requires --kind '
+            f'scientific_change, not {kind}; closeout would refuse {kind} once the scientific signature moves. '
+            'Name the owning symbol first if it is a different file')
+
+
+class Gate:
+    def __init__(self, root, ledger_overrides=None):
+        self.ledger_overrides = ledger_overrides
+        self.notices = []
+        self.root = Path(root).resolve()
+        self.cfg = config(self.root)
+
+    def read(self, name):
+        return json_file(self.root, f'{STATE}/{name}')
+
+    def prepare(self, issue, kind, risks, owner, priority, map_ref, targets, docs, use, diagnosis=None, budget_kind=None):
+        team_retrospective.require_clear(self.root)
+        team_retrospective.require_followup(self.root, issue, kind)
+        audit.check(self.root, self.ledger_overrides)
+        opened, _, _ = validate_records(self.root, self.ledger_overrides)
+        require(issue in opened and opened[issue]['state'] != 'blocked', 'select an actionable open issue')
+        require(opened[issue]['anchors'], 'file source/test anchors in the issue before preparing work')
+        # A NOTICE, never a refusal: whether the work will EDIT its owning target is
+        # unknown here, and an investigation legitimately orients on a scientific
+        # source it only reads. Closeout remains the authoritative refusal.
+        contradiction = kind_contradiction(self.root, self.cfg, kind, targets)
+        if contradiction:
+            self.notices.append('KIND NOTICE: ' + contradiction + '. Ignore this if the work only reads it.')
+        hist = json_lines(local(self.root, f'{STATE}/loop_history.jsonl'))
+        state = local(self.root, f'{STATE}/issue-start.json')
+        if state.exists():
+            old = json.loads(state.read_text())
+            hist = json_lines(local(self.root, f'{STATE}/loop_history.jsonl'))
+            require(hist and (hist[-1]['id'], hist[-1]['timestamp']) == (old['id'], old['timestamp']),
+                    'finish the active iteration before preparing another')
+        base = maintenance.baseline(self.root, issue)
+        nav = maintenance.navigate(self.root, issue, base, 'arch', map_ref, targets, docs, use)
+        policy = workflow.default_workflow(kind, source_signature(self.root), risks,
+                                           source_signature(self.root, scientific=True))
+        first = next((row for row in hist if row.get('id') == issue), None)
+        if first:
+            for key in ('verify_signature_at_start', 'numerical_signature_at_start'):
+                policy[key] = first['workflow'][key]
+        policy['final_verify_owner'] = owner
+        require(priority and priority.strip(), 'record the selection reason')
+        start = {'state_version': 2, 'budget': team_budget.limits(budget_kind or kind), 'id': issue, 'title': opened[issue]['title'], 'timestamp': now(),
+                 'priority_reason': priority, 'workflow': policy,
+                 'iteration': 1 + sum(row.get('id') == issue for row in hist),
+                 'maintenance': {'baseline': base, 'orientation': nav},
+                 'communication': {'status': 'pending', 'detail': 'Arch will record authorized delivery or its disposition.'}}
+        if diagnosis is not None:
+            start['diagnosis_checkpoint'] = diagnosis
+        # Optional: start files written before 1.6.7 carry no identity and stay valid.
+        start['interpreter'] = project.interpreter_identity(self.cfg)
+        changed = self.interpreter_notice(start, hist)
+        if changed:
+            self.notices.append(changed)
+        self.check_diagnosis(start, hist)
+        require(not workflow.validate_workflow(policy), 'invalid workflow decision')
+        previous_done = local(self.root, f'{STATE}/issue-done.json')
+        if previous_done.exists():
+            from project import file_hash
+            archived = local(self.root, f'{STATE}/closed/issue-done-{file_hash(previous_done)}.json')
+            if not archived.exists():
+                from project import atomic_bytes
+                atomic_bytes(archived, previous_done.read_bytes())
+            previous_done.unlink()
+        atomic_json(state, start)
+        return start
+
+    @staticmethod
+    def interpreter_notice(start, history):
+        """Advisory line when the interpreter differs from the last recorded iteration's.
+
+        Compares with the newest loop_history row that carries an identity;
+        iterations recorded before 1.6.7 carry none and are skipped. Never a
+        refusal: a deliberate environment change is legitimate, an unnoticed one
+        is what failed RUNOFF-008 hours in (TEAM-ENV-INTERPRETER-DRIFT-001).
+        """
+        now_id = start.get('interpreter')
+        before = next((row['interpreter'] for row in reversed(history)
+                       if row.get('interpreter') and (row.get('id'), row.get('timestamp')) != (start.get('id'), start.get('timestamp'))),
+                      None)
+        if not now_id or not before or now_id == before:
+            return None
+        diff = [f"{key}: {before.get(key)!r} -> {now_id.get(key)!r}" for key in ('version', 'executable', 'distributions')
+                if before.get(key) != now_id.get(key)]
+        return ('INTERPRETER CHANGED since the last recorded iteration (' + '; '.join(diff) + '). Seals and baselines '
+                'computed earlier may be stale; confirm the environment is intended and run tools/esx/loop_gate.py --doctor.')
+
+    def check_start(self, late_reason=None):
+        with team_accounting.phase(self.root, self.read('issue-start.json')['id'], 'orientation', role='arch'):
+            return self._check_start(late_reason)
+
+    def _check_start(self, late_reason=None):
+        """Validate the prepared start and save its receipt.
+
+        The check belongs before any dispatch or edit: it proves the coordinator's
+        orientation matched the tree the work started from. Run after work has
+        changed the oriented targets, that comparison can no longer be made, so a
+        late check needs ``late_reason``. It validates the orientation as recorded
+        at --prepare and marks the receipt late, which closeout then reports.
+        """
+        team_retrospective.require_clear(self.root)
+        start = self.read('issue-start.json')
+        team_retrospective.require_followup(self.root, start['id'], start['workflow'].get('kind'))
+        opened, _, _ = validate_records(self.root, self.ledger_overrides)
+        require(start['id'] in opened and opened[start['id']]['state'] != 'blocked', 'start issue is not selectable')
+        self.check_diagnosis(start, json_lines(local(self.root, f'{STATE}/loop_history.jsonl')))
+        errors = workflow.validate_workflow(start['workflow']) + maintenance.check_start(self.root, start)
+        require(not errors, '; '.join(errors))
+        if late_reason is not None:
+            require(isinstance(late_reason, str) and len(late_reason.strip()) >= 40,
+                    'a late --check-start needs --late-reason of at least 40 characters saying why it was not run '
+                    'before the work began')
+            maintenance.validate_orientation(self.root, start['maintenance']['orientation'], start['id'],
+                                             start['maintenance']['baseline'], 'arch', fresh=False)
+        else:
+            try:
+                maintenance.validate_orientation(self.root, start['maintenance']['orientation'], start['id'],
+                                                 start['maintenance']['baseline'], 'arch')
+            except ValueError as exc:
+                if not str(exc).startswith('stale arch orientation'):
+                    raise
+                # A correction round necessarily stales the prepare-time
+                # orientation, because the work has changed the targets it was
+                # written against. That is not a skipped gate, and treating it
+                # as one left no honest move: --late-reason overwrites an
+                # on-time receipt with one asserting the gate was skipped, and
+                # --prepare destroys the round's review history
+                # (TEAM-LOOPGATE-CHECKSTART-CORRECTION-ROUND-001).
+                #
+                # So: if authorization was already established for this
+                # iteration -- a validated receipt exists -- accept a freshly
+                # re-navigated orientation instead, which is the remedy the
+                # refusal itself recommends. With no prior receipt the work
+                # began unauthorized, and that still requires --late-reason.
+                refreshed = None
+                if loop_iteration.start_status(self.root, start)['validated']:
+                    refreshed = maintenance.latest_orientation(
+                        self.root, start['id'], start['maintenance']['baseline'], 'arch')
+                if refreshed is None:
+                    raise ValueError(
+                        'the start orientation no longer matches the working tree. If no work on this issue has '
+                        'begun, run --prepare again. If work has already changed these targets and this iteration '
+                        'has no start receipt yet, --check-start was skipped: rerun it as `loop_gate.py '
+                        '--check-start --late-reason "<why it was not run before the work began>"`, which '
+                        'validates the orientation as recorded at --prepare and marks the receipt late. If the '
+                        'iteration already passed --check-start and this is a correction round, record a fresh '
+                        'orientation with `doc_contract.py navigate` and rerun --check-start, which accepts it '
+                        'without marking the receipt late. Details: ' + str(exc)) from exc
+                start['maintenance']['orientation'] = refreshed
+                atomic_json(local(self.root, f'{STATE}/issue-start.json'), start)
+        announcement(start)
+        notifications.synchronize(self.root)
+        require(not notifications.pending(self.root), notifications.notice(self.root) or 'pending communication')
+        loop_iteration.record_start(self.root, start, late=late_reason.strip() if late_reason else None)
+        return start
+
+    def check_diagnosis(self, start, history):
+        """Require a reproduced premise decision after two failed correction rounds."""
+        if start.get('workflow', {}).get('execution_version') != 1:
+            return
+        earlier = [row for row in history if (row.get('id'), row.get('timestamp')) != (start.get('id'), start.get('timestamp'))]
+        rounds = workflow_records.rejected_correction_rounds(earlier, start['id'])
+        if len(rounds) >= 2:
+            errors = workflow_records.validate_checkpoint(self.root, start.get('diagnosis_checkpoint'), start['id'], max(rounds))
+            require(not errors, '; '.join(errors))
+
+    def check_done(self):
+        """Validate the closeout; accepting completed work moves its open entry.
+
+        The ledger move is a consequence of acceptance, never a precondition:
+        the staged move must pass this gate before either ledger is written.
+        """
+        start = self.read('issue-start.json')
+        moved, accepted_at = None, now()
+        if self.ledger_overrides is None:
+            draft = self.read('issue-done.json')
+            if draft.get('outcome') == 'completed' and draft.get('id') == start['id']:
+                import ledger_transaction
+                moved = ledger_transaction.close_on_acceptance(self.root, start['id'], accepted_at,
+                                                               draft.get('summary', ''), start['timestamp'])
+        try:
+            with team_accounting.phase(self.root, start['id'], 'closeout', role='arch'):
+                done = self._check_done()
+        except BaseException:
+            if moved:
+                import ledger_transaction
+                ledger_transaction.revert(self.root, *moved)
+            raise
+        if done['outcome'] == 'completed':
+            done['open_issues_md_updated'] = True
+        if moved:
+            done['closed_at'] = accepted_at
+        return done
+
+    def _check_done(self, done=None):
+        """Validate complete, partial or blocked work without manufacturing PASS.
+
+        Completed work requires configured final checks and sealed documentation.
+        Partial/blocked work retains observations and a concrete next step. Every
+        claimed agent completion is correlated to its actual hook-captured footer.
+        """
+        audit.check(self.root, self.ledger_overrides)
+        start = self.read('issue-start.json')
+        done = self.read('issue-done.json') if done is None else done
+        require((done.get('id'), done.get('timestamp')) == (start['id'], start['timestamp']),
+                'done must preserve start id and iteration timestamp')
+        done['start_validation'] = loop_iteration.start_status(self.root, start)
+        if start.get('state_version', 1) >= 2 or done.get('state_version', 1) >= 2:
+            require(loop_iteration.matches(start, done), 'closeout must preserve exact iteration identity')
+            require(done['start_validation']['validated'], 'successful --check-start receipt required for this iteration')
+        require(done.get('outcome') in ('completed', 'partial', 'blocked') and done.get('summary'), 'record outcome and summary')
+        errors = workflow.validate_workflow(start['workflow']) + workflow.validate_workflow(done.get('workflow', {}))
+        errors += workflow.validate_transition(start['workflow'], done.get('workflow'), done.get('workflow_amendment'))
+        errors += workflow.validate_scope_decisions(done.get('scope_decisions', []), done['outcome'] == 'completed')
+        errors += maintenance.check_start(self.root, start)
+        require(not errors, '; '.join(errors))
+        self.check_diagnosis(start, json_lines(local(self.root, f'{STATE}/loop_history.jsonl')))
+        require((done.get('maintenance') or {}).get('baseline') == start['maintenance']['baseline'], 'completion must preserve original maintenance baseline')
+        policy = done['workflow']
+        for key in ('verify_signature_at_start', 'numerical_signature_at_start'):
+            require(policy[key] == start['workflow'][key], 'workflow amendment must preserve measured initial signatures')
+        opened, closed, lessons = validate_records(self.root, self.ledger_overrides)
+        if done['outcome'] == 'completed':
+            require(done['id'] in closed and done['id'] not in opened, 'completed issue must be in closed_issues.md')
+            if source_signature(self.root, scientific=True) != policy['numerical_signature_at_start']:
+                require(policy['kind'] == 'scientific_change', 'scientific source/tests/configuration changed: amend workflow kind')
+        else:
+            require(done['id'] in opened and done.get('next_step'), 'incomplete work needs its open entry and next_step')
+            if done['outcome'] == 'blocked':
+                require(opened[done['id']]['state'] == 'blocked' and done.get('blocked_by') == opened[done['id']]['blocker'], 'record the exact open-entry blocker')
+        require(set(done.get('lessons', [])).issubset(lessons), 'claimed lesson is missing from index/evidence')
+        announcement(done)
+        require(not done.get('slack_ts') or done.get('slack_ts') != start.get('slack_ts'), 'start and done need distinct Slack receipts')
+        git = done.get('git')
+        require(isinstance(git, dict) and type(git.get('committed')) is bool, 'record git.committed and SHA or reason')
+        if git['committed']:
+            sha = git.get('sha', '')
+            require(isinstance(sha, str) and re.fullmatch(r'[0-9a-fA-F]{7,40}', sha), 'record a Git commit SHA')
+            result = subprocess.run(['git', 'merge-base', '--is-ancestor', sha, 'HEAD'], cwd=self.root, capture_output=True)
+            require(result.returncode == 0, 'recorded commit does not exist in this repository')
+        else:
+            require(isinstance(git.get('reason'), str) and len(git['reason'].strip()) >= 20, 'explain the uncommitted disposition')
+        records = json_lines(local(self.root, f'{STATE}/dispatch_log.jsonl'))
+        history = json_lines(local(self.root, f'{STATE}/loop_history.jsonl'))
+        subs = done.get('subagents', {})
+        require(isinstance(subs, dict) and set(subs).issubset(ROLES[1:]), 'subagents must map known roles to completion arrays')
+        used, agents = set(), {}
+        for role, entries in subs.items():
+            require(isinstance(entries, list), f'{role}: completions must be a list')
+            agents[role] = set()
+            for entry in entries:
+                matches = [r for r in records if r.get('event_id') == entry.get('dispatch_event_id')
+                           and r.get('agent_id') == entry.get('dispatch_id') and r.get('agent_type') == role]
+                require(len(matches) == 1 and matches[0]['event_id'] not in used, f'{role}: missing or duplicated exact completion')
+                event = matches[0]
+                used.add(event['event_id'])
+                agents[role].add(event['agent_id'])
+                if not workflow.completed(event):
+                    if done['outcome'] == 'completed':
+                        require(workflow.resolved_dispatch(event, records, done), f'{role}: failed or incomplete turn remains unresolved')
+                    else:
+                        require(entry.get('status') == event.get('status'), f'{role}: preserve the failed turn status')
+                    continue
+                footer = event.get('footer')
+                require(isinstance(footer, dict) and footer.get('agent') == role and footer.get('issue_id') == done['id']
+                        and workflow.known_completion_iteration(event, start, history), f'{role}: footer belongs to another role/iteration')
+                for key in ('verdict', 'must_fix', 'independent_check', 'orientation', 'candidate_signature', 'documentation_review'):
+                    if key in entry:
+                        require(entry[key] == footer.get(key), f'{role}: copied {key} differs from captured footer')
+                maintenance.validate_orientation(self.root, footer.get('orientation'), done['id'],
+                                                 start['maintenance']['baseline'], role, fresh=False)
+        continuity = done.get('agent_continuity', {})
+        require(isinstance(continuity, dict), 'agent_continuity must be an object')
+        parallel_errors = workflow.validate_parallel(continuity)
+        require(not parallel_errors, '; '.join(parallel_errors))
+        for role in ('bob', 'richard'):
+            if agents.get(role):
+                assignment = continuity.get(role, [])
+                require(isinstance(assignment, list) and set(assignment) == agents[role],
+                        f'record stable {role} runtime identities: agent_continuity.{role} must list exactly the '
+                        f'dispatch_ids already in subagents.{role}, originals first: {sorted(agents[role])}')
+                problems = [f'{c}: {m}' for ident in sorted(agents[role]) for c, m in project.model_findings(
+                    self.root, role, [r for r in records if r.get('agent_id') == ident and r.get('agent_type') == role],
+                    self.cfg.get('role_models') or {}) ]
+                require(not problems, '; '.join(problems))
+                initial_count = 1 if role == 'bob' else max(1, policy['minimum_reviewers'])
+                parallel = workflow.parallel_ids(done, records, role)
+                for replacement_id in assignment[initial_count:]:
+                    if replacement_id in parallel:
+                        continue  # declared parallel and dispatched for this iteration: not a replacement
+                    require(any(isinstance(r, dict) and r.get('role') == role
+                                and r.get('new_id') == replacement_id and r.get('old_id') in agents[role]
+                                and r.get('old_id') != replacement_id and r.get('reason')
+                                for r in continuity.get('replacements', [])), f'{role}: explain each replacement runtime identity')
+        require(not agents.get('bob', set()) & agents.get('richard', set()), 'implementation and review require distinct runtime identities')
+        failed = continuity.get('unsuccessful_since_checkpoint', 0)
+        require(type(failed) is int and failed >= 0, 'invalid unsuccessful correction count')
+        if failed >= 2 and done['outcome'] == 'completed':
+            checkpoint = continuity.get('diagnosis_checkpoint', {})
+            require(all(checkpoint.get(k) for k in ('evidence', 'premise', 'next_change', 'acceptance')),
+                    'two unsuccessful corrections require the diagnosis checkpoint')
+        candidate = source_signature(self.root)
+        if done['outcome'] == 'completed':
+            for role in policy['required_roles']:
+                require(agents.get(role), f'missing required role: {role}')
+            review_errors = workflow.validate_reviews(done, records, candidate)
+            require(not review_errors, '; '.join(review_errors))
+            for role_entries in subs.values():
+                for entry in role_entries:
+                    event = next(r for r in records if r['event_id'] == entry['dispatch_event_id'])
+                    if not workflow.completed(event):
+                        continue
+                    footer = event['footer']
+                    if workflow.current_review(event, records, done, candidate) and footer.get('verdict') in ('APPROVE', 'APPROVE_WITH_FIXES'):
+                        check = verify.load_evidence(self.root, footer.get('independent_check', {}).get('evidence'))
+                        require(check['owner'] == event['agent_id'] and check['started_at'] >= start['timestamp'],
+                                'independent check must have been executed by this reviewer during this iteration')
+            required = ['structural'] + (['scientific'] if policy['kind'] == 'scientific_change' else [])
+            verification = done.get('verification', {})
+            require(verification.get('final_owner') == policy['final_verify_owner'], 'record the assigned final verification owner')
+            for suite in required:
+                require(isinstance(verification.get(suite), dict), workflow.verification_reference_message(policy['kind'], suite))
+                evidence = verify.load_evidence(self.root, verification.get(suite))
+                require(evidence['suite'] == suite and evidence['commands'] == self.cfg['verification'][suite],
+                        f'{suite}: evidence must run the complete configured suite')
+            if policy.get('execution_version') == 1 and policy['kind'] == 'scientific_change':
+                import final_verification
+                final_verification.check_receipt(self.root, done)
+            errors = maintenance.check_done(self.root, start, done, records, candidate)
+            require(not errors, '; '.join(errors))
+        errors = workflow_records.check_milestone(self.root, done, allow_legacy=policy.get('execution_version') != 1)
+        require(not errors, '; '.join(errors))
+        done.setdefault('start_timestamp', start['timestamp'])
+        if start.get('interpreter'):
+            done.setdefault('interpreter', start['interpreter'])
+        prior = next((row for row in json_lines(local(self.root, f'{STATE}/loop_history.jsonl'))
+                      if loop_iteration.matches(start, row)), {})
+        done.setdefault('closed_at', prior.get('closed_at') or now())
+        return done
+
+    def self_assessment_notice(self, window=SELF_ASSESSMENT_WINDOW):
+        """Advisory only; never blocks --next. See loop_contract.md's lesson-recording step.
+
+        Counts completed loop_history.jsonl rows newer than lessons_learned.md's
+        own last edit. This is a cheap proxy for "iterations since a process
+        lesson was last recorded" -- it cannot tell whether a real retrospective
+        happened without a code edit, only that none was saved.
+        """
+        lessons = local(self.root, 'lessons_learned.md')
+        if not lessons.exists():
+            return None
+        since = dt.datetime.fromtimestamp(lessons.stat().st_mtime, dt.timezone.utc).isoformat()
+        history = json_lines(local(self.root, f'{STATE}/loop_history.jsonl'))
+        count = sum(1 for row in history if str(row.get('start_timestamp') or row.get('timestamp') or '') > since)
+        if count >= window:
+            # Advisory, so it must not carry a "before continuing" obligation, and
+            # it must not demand an invented entry when there is nothing to record
+            # (esx-fix.md C).
+            return (f'SELF-ASSESSMENT (advisory, does not block): {count} loop iterations completed since '
+                    f'lessons_learned.md was last updated (threshold {window}). If these iterations taught a '
+                    f'process lesson, record it -- see ARCHITECT.md#closure-and-communication; if not, nothing is '
+                    f'required. '
+                    f'A process lesson is about the loop itself, not the science: e.g. repeated correction rounds on '
+                    f'the same footer field, discarded review identities, or a recurring dispatch failure mode.')
+        return None
+
+    def lesson_notices(self):
+        """Active lessons with their triggers, shown when an issue is prepared.
+
+        A lesson only recorded is not applied: one recurred a single issue after it
+        was written. Active lessons are short by design, so all are shown and the
+        coordinator states in the brief which triggers apply.
+        """
+        path = local(self.root, 'lessons_learned.md')
+        if not path.exists():
+            return []
+        lines, notices = path.read_text().splitlines(), []
+        for index, line in enumerate(lines):
+            match = re.match(r'\s*-\s*\[(LL-[A-Za-z0-9-]+)\]\s*(.+)', line)
+            if not match or '<' in match[2]:
+                continue
+            following = lines[index + 1].strip() if index + 1 < len(lines) else ''
+            trigger = following[len('Trigger:'):].strip() if following.startswith('Trigger:') else ''
+            notices.append(f'LESSON [{match[1]}] {match[2].strip()}' + (f' Trigger: {trigger}' if trigger else ''))
+        if notices:
+            notices.append('State in the brief which of these triggers apply to this issue and how each is applied.')
+        return notices
+
+    def defective_completions(self, start):
+        """Agent turns of this iteration whose completion was not captured.
+
+        `agent_runtime` validates every completion at capture time -- footer
+        identity, required references -- and records the exact error, then tells
+        nobody. On RUNOFF-013 all four completions of one reviewer were recorded
+        `incomplete` with "missing, malformed, or mismatched structured footer",
+        because the footer's `agent` field said `richard-a` (a descriptive name
+        Arch had used in every brief) rather than the registered `agent_type`.
+        Four correct reviews were unavailable to the closeout packet, and it
+        surfaced only hours later when closure needed them
+        (TEAM-BRIEF-UNVALIDATED-INTERFACE-001).
+
+        So the gate reports them on the turn after they happen, while the agent
+        is still resumable and a short follow-up fixes the record.
+
+        A defect is suppressed once the record shows it was repaired, because a
+        notice that cannot clear teaches the operator to read past it, and the
+        next real one is skipped too. Two forms of repair are recognised, both
+        measured on RUNOFF-030 where this method reported two defects for the
+        whole iteration and BOTH were false
+        (TEAM-GATE-DEFECT-NOTICE-NOT-SUPERSEDED-001):
+
+        * **Re-emission.** A later `completed` record for the same agent AND the
+          same correction round means the agent already re-emitted what this
+          record complains about. The log held one `incomplete` bob round-1
+          record followed by three `completed` round-1 records, and the gate was
+          still advising a resume to re-emit a footer re-emitted five records
+          earlier. The sibling method below, ``rejection_streak``, already keys
+          per round so the latest state wins; this now does the same.
+
+        * **A footer-less turn the agent later superseded.** A record with no
+          footer at all carries no round, so it cannot be matched per round. The
+          richard record of that iteration dated to the diagnosis checkpoint,
+          where the brief said verbatim "Answer in plain prose. No footer, no
+          orientation receipt, no suite run." That is not a defective completion
+          at all -- it is a turn correctly instructed to produce none, and the
+          capture gate cannot tell it from a malformed footer. A consultation
+          turn is the cheapest correct way to hold a checkpoint, so logging it
+          as a permanent defect penalises the best practice the loop has. Any
+          later `completed` record from the same agent on this issue settles it:
+          the agent demonstrably reported, so nothing is uncaptured. A turn that
+          never reported again is still flagged, which is the case the notice
+          exists for.
+
+        * **A footer-less turn that belongs to no iteration.** Such a record
+          carries neither an issue nor an iteration, so the filter below admits
+          it to EVERY iteration -- while its agent's superseding completions
+          name their own issue and are filtered out of every iteration but that
+          one. The suppression above therefore held for exactly one iteration
+          and then inverted: a closed RUNOFF-030 reviewer's consultation turn
+          (whose report ends "no footer, per your instruction") was re-flagged
+          on RUNOFF-040, RUNOFF-016 and RUNOFF-042, with a remedy that would
+          have attached that reviewer to an issue it never reviewed
+          (TEAM-GATE-CONSULTATION-NOTICE-PERMANENT-001). For such a record the
+          agent's whole log is consulted instead: a LATER completion on any
+          issue proves it reported again. One that never did is still flagged.
+        """
+        dispatches = json_lines(local(self.root, f'{STATE}/dispatch_log.jsonl'))
+        later_completion = set()
+        for position in range(len(dispatches) - 1, -1, -1):
+            record = dispatches[position]
+            record['_reported_later'] = (record.get('agent_type'), record.get('agent_id')) in later_completion
+            if record.get('status') == 'completed':
+                later_completion.add((record.get('agent_type'), record.get('agent_id')))
+        records = []
+        for record in dispatches:
+            if record.get('agent_type') not in ROLES or not record.get('agent_id'):
+                continue
+            footer = record.get('footer') if isinstance(record.get('footer'), dict) else {}
+            # A defective footer may carry no issue id at all, so fall back to
+            # the recorded issue on the dispatch itself.
+            issue = footer.get('issue_id') or record.get('issue_id')
+            if issue not in (None, start['id']):
+                continue
+            if footer.get('iteration_timestamp') not in (None, start['timestamp']):
+                continue
+            records.append(record)
+
+        repaired, reported = set(), set()
+        for position, record in enumerate(records):
+            if record.get('status') != 'completed':
+                continue
+            agent = (record['agent_type'], record['agent_id'])
+            repaired.add(agent + (record.get('correction_round'),))
+            reported.add(agent)
+
+        broken = {}
+        for record in records:
+            if record.get('status') not in ('incomplete', 'failed'):
+                continue
+            agent = (record['agent_type'], record['agent_id'])
+            round_number = record.get('correction_round')
+            if agent + (round_number,) in repaired:
+                continue
+            if not isinstance(record.get('footer'), dict) and agent in reported:
+                continue
+            if (not isinstance(record.get('footer'), dict) and record.get('issue_id') is None
+                    and record.get('iteration_timestamp') is None and record['_reported_later']):
+                continue
+            broken[agent + (round_number,)] = (record['agent_type'], record['agent_id'], round_number,
+                                               record.get('error') or record['status'])
+        return list(broken.values())
+
+    def rejection_streak(self, start):
+        """Correction rounds of the active iteration whose latest review rejected, trailing.
+
+        Two in a row is the point at which another correction is more likely to
+        repeat the dispute than to settle it, whatever the individual findings were.
+        """
+        verdicts = {}
+        for record in json_lines(local(self.root, f'{STATE}/dispatch_log.jsonl')):
+            footer = record.get('footer') if isinstance(record.get('footer'), dict) else {}
+            if (record.get('agent_type') != 'richard' or footer.get('issue_id') != start['id']
+                    or footer.get('iteration_timestamp') != start['timestamp']):
+                continue
+            number = footer.get('correction_round')
+            if type(number) is int and footer.get('verdict'):
+                verdicts[number] = footer['verdict'] == 'REJECT' or bool(footer.get('must_fix'))
+        streak = []
+        for number in sorted(verdicts, reverse=True):
+            if not verdicts[number]:
+                break
+            streak.append(number)
+        return sorted(streak)
+
+    def pause_pending(self):
+        """(reason, until) while the loop is paused, else None."""
+        loop = local(self.root, '.claude/esx-loop.local.md')
+        if not loop.exists():
+            return None
+        import ralph_stop
+        try:
+            return ralph_stop.pause_request(ralph_stop.parse_state(loop.read_text()))
+        except (ValueError, UnicodeError):
+            return None
+
+    def provider_limit_notice(self):
+        """Advice to pause when the last role turn of the active issue was refused for a usage limit."""
+        start_path = local(self.root, f'{STATE}/issue-start.json')
+        if not start_path.exists():
+            return None
+        issue = json.loads(start_path.read_text()).get('id')
+        last = next((r for r in reversed(json_lines(local(self.root, f'{STATE}/dispatch_log.jsonl')))
+                     if r.get('issue_id') == issue), None)
+        refused = (last or {}).get('provider_limit')
+        if not isinstance(refused, dict):
+            return None
+        reset = refused.get('reset_at')
+        try:
+            pending = reset is None or dt.datetime.fromisoformat(reset) > dt.datetime.now(dt.timezone.utc)
+        except (ValueError, TypeError):
+            pending = True
+        if not pending:
+            return None
+        return (f"LIMIT: the provider refused the last {last.get('agent_type')} turn for a usage limit"
+                + (f' that resets at {reset}' if reset else '') + '. The turn did no work; do not correct or '
+                'replace the role. Pause until then: tools/esx/loop_control.py pause --reason "provider usage limit"'
+                + (f' --until {reset}' if reset else '') + ', then end the turn and resume the same session later.')
+
+    def cancel_pending(self):
+        """The owner's reason when the loop is to end after the current iteration, else None."""
+        loop = local(self.root, '.claude/esx-loop.local.md')
+        if not loop.exists():
+            return None
+        import ralph_stop
+        try:
+            return ralph_stop.cancel_request(ralph_stop.parse_state(loop.read_text()))
+        except (ValueError, UnicodeError):
+            return None
+
+    def next(self):
+        """Report the next instruction, with any communication demand alongside it.
+
+        The communication notice used to print and return, so the gate refused to
+        say what the actual work was until the provider demand was satisfied. On
+        RUNOFF-013 that made every idle cycle pay a probe toll before learning
+        there was nothing new to do, and 73 of 100 loop iterations went to a
+        provider that had never been configured
+        (TEAM-NOTIFY-OUTAGE-NO-BACKOFF-001). The demand is still reported --
+        events must not be lost -- but it no longer hides the work.
+        """
+        self._deferred_notice = None
+        try:
+            return self._next_instruction()
+        finally:
+            if self._deferred_notice:
+                print(self._deferred_notice)
+
+    def _next_instruction(self):
+        for notice in team_retrospective.rule_notices(self.root):
+            print(notice)
+        audit.check(self.root, self.ledger_overrides)
+        try:
+            facts = notifications.loop_status(self.root)
+        except (ValueError, OSError, KeyError, TypeError):
+            facts = None
+        if facts:
+            # For the owner's screen, not the chat channel: relay it when a long
+            # wait or run means they have seen nothing for a while.
+            print('STATUS: ' + facts['text'])
+        held = self.pause_pending()
+        if held is not None:
+            reason, until = held
+            when = ('until ' + dt.datetime.fromtimestamp(until, dt.timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+                    if until is not None else 'with no end time')
+            print(f'PAUSED: the loop is paused ({reason}), {when}. Start no work and dispatch nothing. '
+                  'End the turn; resume with /esx-loop (tools/esx/loop_control.py run) when work is possible again.')
+            return 0
+        limit = self.provider_limit_notice()
+        if limit:
+            print(limit)
+        opened, closed, _ = validate_records(self.root, self.ledger_overrides)
+        notifications.synchronize(self.root)
+        # Held and printed after the primary instruction rather than instead of
+        # it; see next().
+        self._deferred_notice = notifications.notice(self.root)
+        start_path = local(self.root, f'{STATE}/issue-start.json')
+        history = json_lines(local(self.root, f'{STATE}/loop_history.jsonl'))
+        if start_path.exists():
+            start = json.loads(start_path.read_text())
+            if not history or (history[-1]['id'], history[-1]['timestamp']) != (start['id'], start['timestamp']):
+                changed = self.interpreter_notice(start, history)
+                if changed:
+                    print(changed)
+                if start.get('state_version', 1) >= 2 and not loop_iteration.start_status(self.root, start)['validated']:
+                    # Closeout refuses an iteration without this receipt, and the
+                    # check cannot be made honestly once the work has changed the
+                    # oriented targets (TEAM-LOOP-CHECK-START-RECOVERY-001).
+                    print(f"NEXT: run --check-start for {start['id']} now, before any dispatch or edit; "
+                          'the iteration has no start receipt')
+                    return 0
+                streak = self.rejection_streak(start)
+                if len(streak) >= 2:
+                    print(f"CHECKPOINT: review rejected {start['id']} in rounds {', '.join(map(str, streak))} in a row. "
+                          'Before another correction, hold a diagnosis checkpoint with the same agents: reproduce '
+                          'the dispute, name the mistaken or unproven premise, and agree the next bounded change '
+                          'and its acceptance (ARCHITECT.md). Closeout requires it after two unsuccessful corrections.')
+                for role, agent, round_number, error in self.defective_completions(start):
+                    print(f'UNCAPTURED COMPLETION: {role} {agent} (round {round_number}) is recorded '
+                          f'"{record_error(error)}", so closeout cannot count it. Resume that agent and ask '
+                          'it to re-emit its footer; the footer\'s "agent" field must be exactly the '
+                          f'registered agent_type "{role}", and every reference it cites must resolve.')
+                import final_verification
+                pending = final_verification.pending_notice(self.root)
+                if pending:
+                    print('VERIFICATION: ' + pending)
+                print(f"NEXT: finish active iteration {start['id']} and run --check-done")
+                return 0
+        due = team_retrospective.pending(self.root)
+        if due:
+            print('NEXT: RETROSPECTIVE for ' + due['id'] + '; run --draft-retro, review, then --check-retro')
+            return 0
+        cancelled = self.cancel_pending()
+        if cancelled is not None:
+            print(f'NEXT: the owner cancelled the loop ({cancelled}) and the iteration that was active is finished. '
+                  'Tell the owner what was completed and what remains open, then end the turn. Do not select an '
+                  'issue, start process follow-up or dispatch agents; the loop ends when this turn does.')
+            return 0
+        followup = team_retrospective.followup_due(self.root)
+        if followup:
+            print('NEXT: PROCESS FOLLOW-UP: ' + ', '.join(followup) + ' blocks all work; run '
+                  'tools/esx/self_improvement.py plan and record a fix or a deferral with a trigger')
+            return 0
+        # Information, never an instruction: recurrence surfaces evidence and a
+        # triage recommendation, not a mandatory repair (esx-fix.md C).
+        for uuid, scope in team_retrospective.scoped_blockers(self.root):
+            print(f'PROCESS BLOCKER: {uuid} blocks {scope} only; other work may proceed')
+        advisory = team_retrospective.advisories(self.root)
+        if advisory:
+            print('PROCESS ADVISORY: recurring, non-blocking: ' + ', '.join(advisory)
+                  + '; triage when convenient (self_improvement.py plan), or defer with a trigger')
+        for retro_id in team_retrospective.pending_commentary(self.root):
+            print(f'RETROSPECTIVE COMMENTARY PENDING: {retro_id}; complete it when convenient with '
+                  '--complete-retro. It does not block work.')
+        actionable = [row for row in opened.values() if row['state'] != 'blocked']
+        for row in opened.values():
+            if row['blocker'] and row['blocker'].split(' — ', 1)[0] in closed:
+                print(f"UNBLOCKABLE: {row['id']}; inspect the dependency and update its status")
+        if actionable:
+            import project
+            missing = project.missing_inputs(self.root, config(self.root))
+            if missing:
+                # Every verification suite fingerprints these first; implementing
+                # now would produce work that cannot reach review on this checkout
+                # (TEAM-VERIFY-EXTERNAL-INPUTS-PREFLIGHT-001).
+                print(f'NEXT: ENVIRONMENT BLOCKER: {len(missing)} configured external_inputs are missing, so '
+                      'verify.py cannot produce evidence here. Restore them (or run on a checkout that has them); '
+                      'otherwise mark each actionable issue Blocked-By: EXTERNAL with this reason, then run --next.')
+                for name in missing[:10]:
+                    print('  missing: ' + name)
+                if len(missing) > 10:
+                    print(f'  ... {len(missing) - 10} more')
+                return 0
+            notice = self.self_assessment_notice()
+            if notice:
+                print(notice)
+            print('NEXT: select an issue by impact, dependency and bounded acceptance')
+            for row in actionable:
+                print(f"  {row['id']}: {row['title']}")
+            return 0
+        notifications.synchronize(self.root, terminal='no actionable work')
+        # Held and printed after the primary instruction rather than instead of
+        # it; see next().
+        self._deferred_notice = notifications.notice(self.root)
+        if self._deferred_notice:
+            # Work-first ordering must not extend to COMPLETION. Deferring the
+            # notice behind the work is right everywhere else, but here there is no
+            # work left, so emitting the promise would end the loop with a required
+            # notification never attempted. Measured against ESX-Team's own suite:
+            # test_autonomous_loop::test_required_pending_prevents_completion_until_attempt
+            # failed (rc 3 where 0 was required) after TEAM-NOTIFY-OUTAGE-NO-BACKOFF-001
+            # deferred the notice past this branch. esx-fix.md D: the delivery-
+            # attempt policy stays enforced.
+            print(f'NEXT: no actionable work; {len(opened)} blocked issue(s) remain. Deliver or dispose of the '
+                  'pending notification below before the loop can complete.')
+            return 0
+        print(f'NEXT: no actionable work; {len(opened)} blocked issue(s) remain')
+        loop = local(self.root, '.claude/esx-loop.local.md')
+        if loop.exists() and re.search(r'(?m)^active:\s*true\s*$', loop.read_text()):
+            print(PROMISE)
+            return 3
+        print('Loop inactive; no completion promise emitted.')
+        return 4
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[2])
+    mode = parser.add_mutually_exclusive_group(required=True)
+    for name in ('next', 'check-start', 'check-done', 'closeout-doctor', 'doctor', 'code-sig', 'draft-retro', 'check-retro',
+                 'complete-retro', 'timings'):
+        mode.add_argument('--' + name, action='store_true')
+    mode.add_argument('--prepare', metavar='ISSUE')
+    parser.add_argument('--kind', choices=workflow.KINDS, default='investigation')
+    parser.add_argument('--risk', choices=workflow.RISKS, action='append', default=[])
+    parser.add_argument('--owner', choices=('arch', 'bob', 'richard'), default='arch')
+    parser.add_argument('--priority')
+    parser.add_argument('--budget-kind', choices=tuple(team_budget.DEFAULTS), help='allocation class; scientific_small retains full scientific review')
+    parser.add_argument('--map', default='docs/code_map.md#pipeline')
+    parser.add_argument('--target', action='append', default=[])
+    parser.add_argument('--doc', action='append', default=[])
+    parser.add_argument('--use')
+    parser.add_argument('--diagnosis', type=json.loads, help='agreed diagnosis checkpoint JSON after repeated failed corrections')
+    parser.add_argument('--done', help='--closeout-doctor: draft closeout to inspect instead of loop_state/issue-done.json')
+    parser.add_argument('--late-reason', help='--check-start: why the check was not run before work on the issue began; '
+                                              'validates the orientation as recorded at --prepare and marks the receipt late')
+    args = parser.parse_args()
+    try:
+        gate = Gate(args.root)
+        if args.next:
+            return gate.next()
+        if args.draft_retro:
+            result = team_retrospective.draft(gate.root)
+            atomic_json(local(gate.root, f'{STATE}/retrospective-draft.json'), result)
+        elif args.complete_retro:
+            # The human commentary for a retrospective accepted with it pending.
+            result = team_retrospective.complete_commentary(gate.root, gate.read('retrospective-commentary.json'))
+        elif args.check_retro:
+            with team_accounting.phase(gate.root, gate.read('retrospective.json')['id'], 'retrospective', role='arch'):
+                result = team_retrospective.accept(gate.root, gate.read('retrospective.json'))
+        elif args.timings:
+            result = team_accounting.summary(gate.root)
+        elif args.closeout_doctor:
+            # Read-only dry run: lists every unmet closeout requirement at once.
+            import closeout_doctor
+            result = closeout_doctor.diagnose(gate, args.done)
+            print(json.dumps(result, indent=2))
+            return 0 if result['status'] == 'ready' else 1
+        elif args.doctor:
+            result = audit.check(gate.root)
+        elif args.code_sig:
+            result = {'candidate_signature': source_signature(gate.root)}
+        elif args.prepare:
+            result = gate.prepare(args.prepare, args.kind, args.risk, args.owner, args.priority,
+                                  args.map, args.target, args.doc, args.use, args.diagnosis, args.budget_kind)
+            for notice in gate.notices + list(gate.lesson_notices()):
+                print(notice, file=sys.stderr)
+        elif args.check_start:
+            result = gate.check_start(args.late_reason)
+        else:
+            result = gate.check_done()
+            atomic_json(local(gate.root, f'{STATE}/issue-done.json'), result)
+            save_history(gate.root, result)
+            notifications.synchronize(gate.root)
+            if notifications.notice(gate.root):
+                print(notifications.notice(gate.root), file=sys.stderr)
+        print(json.dumps(result, indent=2))
+        return 0
+    except (ValueError, OSError, KeyError, TypeError, SyntaxError, subprocess.SubprocessError) as exc:
+        print(f'ESX gate: BLOCKED: {exc}', file=sys.stderr)
+        if not any((args.next, args.draft_retro, args.check_retro, args.complete_retro, args.timings, args.closeout_doctor,
+                    args.doctor, args.code_sig, args.prepare, args.check_start)):
+            # --check-done stops at its first unmet condition. The read-only
+            # closeout doctor already evaluates them all independently, but
+            # nothing pointed to it, so RUNOFF-042's closeout was discovered
+            # one refusal at a time -- six in a row (esx-fix.md E). Show them
+            # all now; a doctor failure must never mask the original refusal.
+            try:
+                import closeout_doctor
+                diagnosis = closeout_doctor.diagnose(gate)
+                blocked = [row for row in diagnosis['findings'] if row['status'] == 'blocked']
+                if blocked:
+                    print(f'ESX gate: all {len(blocked)} unmet closeout requirement(s), from the closeout doctor:',
+                          file=sys.stderr)
+                    for row in blocked:
+                        print(f"  {row['code']} {row['field']}: {row['recovery']}", file=sys.stderr)
+            except Exception as doctor_error:   # noqa: BLE001 -- diagnostic only
+                print(f'ESX gate: (closeout doctor unavailable: {doctor_error})', file=sys.stderr)
+        return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

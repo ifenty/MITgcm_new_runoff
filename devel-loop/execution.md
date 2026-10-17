@@ -67,6 +67,11 @@ investigation; never relabel these events as successful. A replacement needs its
 actual predecessor ID, reason and transferred findings. Runtime history supports
 recovery without requiring another agent to reconstruct prior conversations.
 
+Before any resume that follows a `failed` task-notification, run
+`python3 tools/esx/agent_runtime.py turn-status --agent-id ID --since TS` (TS is the
+notification's time): ADVISORY means the agent's own completed turn is already in the
+dispatch log or its transcript, so cite it instead of resuming; RESUME means resume.
+
 A retained session's cost per turn grows with its context. Replacing a role
 because of that cost is a legitimate replacement and needs no failure: have the
 outgoing agent write a handoff summary (findings so far, decisions, open
@@ -152,6 +157,13 @@ entry with role, old_id and (when unambiguous) new_id prefilled and `reason` and
 `evidence_refs` empty: the gates refuse it until Arch supplies both. Never resolve a
 failed reviewer by marking it `waived`; that erases a review that did not happen. Never edit a footer
 hash to manufacture an approval. The start timestamp remains the iteration identity.
+
+Pass `--packet <review-packet.json>` to `prepare-done` to copy the packet's candidate,
+map_delta and documentation/orientation references verbatim and to list the stable agent
+identities; only judgments stay pending. Completed reviews of an earlier iteration are
+listed under `preparation.prior`, not in `subagents`. Edit the closeout record with
+`loop_lifecycle.py add-replacement`, `add-parallel` (a deliberate second reviewer that the
+dispatch log shows ran this iteration) and `amend-kind`, never by hand.
 
 For a milestone, `workflow_records.py milestone --heading 'Exact heading'` returns
 a hash of the precise section in current_status.md. Appending unrelated sections

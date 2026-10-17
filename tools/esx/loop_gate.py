@@ -13,6 +13,7 @@ import subprocess
 import sys
 
 import audit
+import project
 import notifications
 import doc_contract as maintenance
 import workflow_policy as workflow
@@ -54,21 +55,15 @@ def kind_contradiction(root, cfg, kind, targets):
 
     Closeout refuses a non-scientific kind once the scientific signature has
     moved. An owning target inside that inventory makes the move LIKELY, not
-    certain: an investigation reads its owner without changing it. An earlier
-    version of this docstring said "certain", and the check refused on it. RUNOFF-042 was prepared as
-    harness_change with all three targets under tests/, and the gate said so only
-    at --check-done, after two implementation rounds and four reviews
-    (TEAM-PREPARE-KIND-UNCHECKED-001).
-
-    The boundary is the scientific inventory, which since esx-fix.md F1 excludes
-    `framework_test_paths`: an ESX-test-only issue is a harness change. (Under F1
-    RUNOFF-042's own owning target, the footprint sweep, is such a test; the
-    issue still had to be scientific because it also edited a scientific oracle
-    and `esx/project.json`, which closeout measures from the changed files.)
+    certain: an investigation reads its owner without changing it, so this only
+    informs; closeout, which measures the files that actually changed, decides.
+    It was found late once: a harness_change prepared with all three targets under
+    tests/ was refused only at --check-done, after two implementation rounds and
+    four reviews (TEAM-PREPARE-KIND-UNCHECKED-001).
 
     Only the OWNING target -- the first, by the convention --prepare already
     states -- is held to this: a documentation issue may orient on a test as its
-    consumer without editing it, and refusing that would be a false refusal.
+    consumer without editing it, and a notice for that would be noise.
     """
     if kind == 'scientific_change' or not targets:
         return None
@@ -98,13 +93,9 @@ class Gate:
         opened, _, _ = validate_records(self.root, self.ledger_overrides)
         require(issue in opened and opened[issue]['state'] != 'blocked', 'select an actionable open issue')
         require(opened[issue]['anchors'], 'file source/test anchors in the issue before preparing work')
-        # A NOTICE, never a refusal. Whether the work will EDIT its owning target
-        # is unknown here: an investigation or documentation issue legitimately
-        # orients on a scientific source it only reads, and closeout -- which
-        # measures the files that actually changed -- remains the authoritative
-        # refusal. This was a refusal for one release and it refused 44 of
-        # ESX-Team's own regression fixtures, every one an `investigation` over
-        # a source file (TEAM-PREPARE-KIND-UNCHECKED-001, corrected).
+        # A NOTICE, never a refusal: whether the work will EDIT its owning target is
+        # unknown here, and an investigation legitimately orients on a scientific
+        # source it only reads. Closeout remains the authoritative refusal.
         contradiction = kind_contradiction(self.root, self.cfg, kind, targets)
         if contradiction:
             self.notices.append('KIND NOTICE: ' + contradiction + '. Ignore this if the work only reads it.')
@@ -132,6 +123,11 @@ class Gate:
                  'communication': {'status': 'pending', 'detail': 'Arch will record authorized delivery or its disposition.'}}
         if diagnosis is not None:
             start['diagnosis_checkpoint'] = diagnosis
+        # Optional: start files written before 1.6.7 carry no identity and stay valid.
+        start['interpreter'] = project.interpreter_identity(self.cfg)
+        changed = self.interpreter_notice(start, hist)
+        if changed:
+            self.notices.append(changed)
         self.check_diagnosis(start, hist)
         require(not workflow.validate_workflow(policy), 'invalid workflow decision')
         previous_done = local(self.root, f'{STATE}/issue-done.json')
@@ -144,6 +140,26 @@ class Gate:
             previous_done.unlink()
         atomic_json(state, start)
         return start
+
+    @staticmethod
+    def interpreter_notice(start, history):
+        """Advisory line when the interpreter differs from the last recorded iteration's.
+
+        Compares with the newest loop_history row that carries an identity;
+        iterations recorded before 1.6.7 carry none and are skipped. Never a
+        refusal: a deliberate environment change is legitimate, an unnoticed one
+        is what failed RUNOFF-008 hours in (TEAM-ENV-INTERPRETER-DRIFT-001).
+        """
+        now_id = start.get('interpreter')
+        before = next((row['interpreter'] for row in reversed(history)
+                       if row.get('interpreter') and (row.get('id'), row.get('timestamp')) != (start.get('id'), start.get('timestamp'))),
+                      None)
+        if not now_id or not before or now_id == before:
+            return None
+        diff = [f"{key}: {before.get(key)!r} -> {now_id.get(key)!r}" for key in ('version', 'executable', 'distributions')
+                if before.get(key) != now_id.get(key)]
+        return ('INTERPRETER CHANGED since the last recorded iteration (' + '; '.join(diff) + '). Seals and baselines '
+                'computed earlier may be stale; confirm the environment is intended and run tools/esx/loop_gate.py --doctor.')
 
     def check_start(self, late_reason=None):
         with team_accounting.phase(self.root, self.read('issue-start.json')['id'], 'orientation', role='arch'):
@@ -331,14 +347,23 @@ class Gate:
                                                  start['maintenance']['baseline'], role, fresh=False)
         continuity = done.get('agent_continuity', {})
         require(isinstance(continuity, dict), 'agent_continuity must be an object')
+        parallel_errors = workflow.validate_parallel(continuity)
+        require(not parallel_errors, '; '.join(parallel_errors))
         for role in ('bob', 'richard'):
             if agents.get(role):
                 assignment = continuity.get(role, [])
                 require(isinstance(assignment, list) and set(assignment) == agents[role],
                         f'record stable {role} runtime identities: agent_continuity.{role} must list exactly the '
                         f'dispatch_ids already in subagents.{role}, originals first: {sorted(agents[role])}')
+                problems = [f'{c}: {m}' for ident in sorted(agents[role]) for c, m in project.model_findings(
+                    self.root, role, [r for r in records if r.get('agent_id') == ident and r.get('agent_type') == role],
+                    self.cfg.get('role_models') or {}) ]
+                require(not problems, '; '.join(problems))
                 initial_count = 1 if role == 'bob' else max(1, policy['minimum_reviewers'])
+                parallel = workflow.parallel_ids(done, records, role)
                 for replacement_id in assignment[initial_count:]:
+                    if replacement_id in parallel:
+                        continue  # declared parallel and dispatched for this iteration: not a replacement
                     require(any(isinstance(r, dict) and r.get('role') == role
                                 and r.get('new_id') == replacement_id and r.get('old_id') in agents[role]
                                 and r.get('old_id') != replacement_id and r.get('reason')
@@ -382,6 +407,8 @@ class Gate:
         errors = workflow_records.check_milestone(self.root, done, allow_legacy=policy.get('execution_version') != 1)
         require(not errors, '; '.join(errors))
         done.setdefault('start_timestamp', start['timestamp'])
+        if start.get('interpreter'):
+            done.setdefault('interpreter', start['interpreter'])
         prior = next((row for row in json_lines(local(self.root, f'{STATE}/loop_history.jsonl'))
                       if loop_iteration.matches(start, row)), {})
         done.setdefault('closed_at', prior.get('closed_at') or now())
@@ -657,6 +684,9 @@ class Gate:
         if start_path.exists():
             start = json.loads(start_path.read_text())
             if not history or (history[-1]['id'], history[-1]['timestamp']) != (start['id'], start['timestamp']):
+                changed = self.interpreter_notice(start, history)
+                if changed:
+                    print(changed)
                 if start.get('state_version', 1) >= 2 and not loop_iteration.start_status(self.root, start)['validated']:
                     # Closeout refuses an iteration without this receipt, and the
                     # check cannot be made honestly once the work has changed the
@@ -675,6 +705,10 @@ class Gate:
                           f'"{record_error(error)}", so closeout cannot count it. Resume that agent and ask '
                           'it to re-emit its footer; the footer\'s "agent" field must be exactly the '
                           f'registered agent_type "{role}", and every reference it cites must resolve.')
+                import final_verification
+                pending = final_verification.pending_notice(self.root)
+                if pending:
+                    print('VERIFICATION: ' + pending)
                 print(f"NEXT: finish active iteration {start['id']} and run --check-done")
                 return 0
         due = team_retrospective.pending(self.root)
