@@ -1253,7 +1253,9 @@ def test_verification_hold_releases_and_does_not_stall(tmp_path, monkeypatch):
     pid = _detached(tmp_path, script)
     try:
         assert _wait_for(lambda: ralph_stop.verification_running(tmp_path))
-        assert ralph_stop.parent_pid(pid) == 1, 'the launch must reproduce the detached form'
+        # Orphans are adopted by PID 1 or, under WSL2 and some containers, by a
+        # subreaper; either way the run must not descend from this session.
+        assert not ralph_stop.descends_from(pid, os.getpid()), 'the launch must reproduce the detached form'
         assert [r['pid'] for r in ralph_stop.untracked_runs(ralph_stop.verification_running(tmp_path))] == [pid]
         result = ralph_stop._step_locked(tmp_path, {})
         assert result.get('decision') == 'block', result
