@@ -338,28 +338,6 @@ Phase 1 default: every process reads the full record. Owner to decide whether a 
 
 From RUNOFF-002 (review A): this issue owns the measured chunking read benchmark (docs/runoff_schema.md §8, docs/model_contract.md scale requirement). The converter writes the §8 default layout: one record per chunk, deflate, about 4 MB pieces along `source`.
 
-## UNRESOLVED: exf runoff-temperature range check tests the wrong array
-
-**Date Identified**: 2026-10-06T07:20:00Z
-**Status**: Unresolved
-**UUID**: RUNOFF-037
-**Anchors**: MITgcm/pkg/exf/exf_check_range.F::<module>
-
-### Issue or research question
-`EXF_CHECK_RANGE`'s runoff-temperature check compares the wrong array. At `exf_check_range.F:264-271`, inside `#ifdef ALLOW_RUNOFTEMP`, the upper bound reads `runoff(i,j,bi,bj) .GT. 36` where it means `runoftemp`, and the message then prints `runoff` rather than the temperature it is reporting on. The lower bound of the same `IF` does test `runoftemp`.
-
-### Evidence
-Found by the implementer during RUNOFF-030 (2026-10-06) while relaxing the runoff upper bound in the same routine, and deliberately left untouched there because RUNOFF-030 is scoped to one guard relaxation. This is upstream MITgcm code, not `pkg/rnf`.
-
-### Scientific or engineering impact
-Two defects in one condition, in opposite directions. A runoff temperature above 36 degC is **not** caught, because the array tested is a volume flux in m/s and never exceeds 36. And a *volume flux* above 36 m/s would be reported as a temperature error with a misleading message. Neither is likely to be hit by a realistic configuration — which is why it has survived — but the check silently does not do what its name and message claim, and `pkg/rnf` is about to make `runoftemp` configurations more common.
-
-### Scope note
-Out of RUNOFF-030's scope by construction: that issue relaxes a guard, and this would tighten a different one. It also affects the dense `runoffFile` + `runoftempfile` path identically, so it is a candidate for the eventual upstream report rather than a `pkg/rnf` change.
-
-### Proposed action and acceptance
-Compare `runoftemp` in both halves of the condition and print `runoftemp` in the message. Acceptance: a `runoftemp` above 36 degC with `useExfCheckRange` at its default is refused and the message names the temperature and its value; a volume flux of any magnitude is not reported as a temperature error; `tests/rnf/exf_heat_check.py` still passes at its measured 5.834e-16 over 7 cells (3.559e-16 before RUNOFF-031). [**2026-10-09, RUNOFF-031:** this issue matters more now: the sparse heat goes through `runoftemp`, so the misnamed test applies to sparse runoff too, and every lab_sea instrument that carries a temperature (`tendency_term_check`, `budget_check`, `exf_heat_check`, `kpp_heat_check`) builds with `ALLOW_RUNOFTEMP`; cs32 always did.] Since this is upstream code, decide with the owner whether to carry it as a local fix or report it upstream only.
-
 ## BLOCKED: support pkg/longstep with LS_nIter > 1 for runoff tracers (average the tracer input over the long step)
 
 **Date Identified**: 2026-10-09T09:30:00Z

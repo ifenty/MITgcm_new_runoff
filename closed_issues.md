@@ -1524,3 +1524,30 @@ Unblocked 2026-10-03: RUNOFF-012 closed (pkg/rnf skeleton, fork ac33291aa).
 ### Gate acceptance
 
 Accepted by `loop_gate.py --check-done` at 2026-10-16T23:47:22.353015+00:00 for iteration 2026-10-16T21:15:38.364694+00:00. Wrote the MITgcm manual section for pkg/rnf, MITgcm/doc/phys_pkgs/rnf.rst (752 lines), and wired it into the Ocean Packages toctree in phys_pkgs.rst after exf.rst: scope and the two routes, CPP options and array bounds, the input file, the RNF_PARM01 parameters, range checks against pkg/exf, time handling, diagnostics and monitor, examples from the real lab_sea and cs32 verification inputs, the Python tools, and verification and limits. Acceptance met: the whole-manual Sphinx build succeeds with warnings identical to the unmodified baseline (one pre-existing numpy warning from the isolated build venv), reproduced independently by Arch and twice by Richard; Richard re-derived every parameter name and default, CPP option, refusal, diagnostic, monitor name, time mode, example and tool description from the code, the verification inputs and each tool's --help and found no wrong statement. Corrected the USE_OLD_EXTERNAL_FORCING refusal text (refused only on the legacy route, rnf_check.F:337-351) in docs/package_design.md, docs/code_map.md and docs/verification_matrix.md; Bob had also corrected pkg/rnf/README.md, but pkg/rnf is a configuration path, so that edit turned this documentation issue into a scientific change at closeout; Arch reverted it, saved the diff as devel-loop/loop_state/README-rnf-fix-from-RUNOFF-026.patch and filed it as RUNOFF-051. The design's 'no 3D addMass runoff yet' was Arch's error; the section follows the code (RNF_ADD_MASS, schema 1.1 target_level, RUNOFF-046). Limits: documentation only, no model run; MITgcm/doc is outside the esx inventory so rnf.rst and phys_pkgs.rst are in the review candidate only as explicit witness paths and the sealed documentation plan covers the three tracked project docs; the 4 sources / 7 targets and 1189 sources figures come from data.rnf comments, not from opening the .nc files; pkg/rnf/README.md still carries the older unqualified refusal wording (RUNOFF-051). Process: both Bob's and Richard's first footers after text edits were recorded incomplete because they cited focused-suite evidence made stale by the edits; each re-ran the suite and re-emitted. A Sphinx build venv was created at /tmp/sphinx_docs_venv because no Sphinx existed on the host.
+
+## 🟢 RESOLVED: exf runoff-temperature range check tests the wrong array
+
+**Date Identified**: 2026-10-06T07:20:00Z
+**Date Resolved**: 2026-10-18T06:02:39.755428+00:00
+**Status**: Resolved
+**UUID**: RUNOFF-037
+**Anchors**: MITgcm/pkg/exf/exf_check_range.F::<module>
+
+### Issue or research question
+`EXF_CHECK_RANGE`'s runoff-temperature check compares the wrong array. At `exf_check_range.F:264-271`, inside `#ifdef ALLOW_RUNOFTEMP`, the upper bound reads `runoff(i,j,bi,bj) .GT. 36` where it means `runoftemp`, and the message then prints `runoff` rather than the temperature it is reporting on. The lower bound of the same `IF` does test `runoftemp`.
+
+### Evidence
+Found by the implementer during RUNOFF-030 (2026-10-06) while relaxing the runoff upper bound in the same routine, and deliberately left untouched there because RUNOFF-030 is scoped to one guard relaxation. This is upstream MITgcm code, not `pkg/rnf`.
+
+### Scientific or engineering impact
+Two defects in one condition, in opposite directions. A runoff temperature above 36 degC is **not** caught, because the array tested is a volume flux in m/s and never exceeds 36. And a *volume flux* above 36 m/s would be reported as a temperature error with a misleading message. Neither is likely to be hit by a realistic configuration — which is why it has survived — but the check silently does not do what its name and message claim, and `pkg/rnf` is about to make `runoftemp` configurations more common.
+
+### Scope note
+Out of RUNOFF-030's scope by construction: that issue relaxes a guard, and this would tighten a different one. It also affects the dense `runoffFile` + `runoftempfile` path identically, so it is a candidate for the eventual upstream report rather than a `pkg/rnf` change.
+
+### Proposed action and acceptance
+Compare `runoftemp` in both halves of the condition and print `runoftemp` in the message. Acceptance: a `runoftemp` above 36 degC with `useExfCheckRange` at its default is refused and the message names the temperature and its value; a volume flux of any magnitude is not reported as a temperature error; `tests/rnf/exf_heat_check.py` still passes at its measured 5.834e-16 over 7 cells (3.559e-16 before RUNOFF-031). [**2026-10-09, RUNOFF-031:** this issue matters more now: the sparse heat goes through `runoftemp`, so the misnamed test applies to sparse runoff too, and every lab_sea instrument that carries a temperature (`tendency_term_check`, `budget_check`, `exf_heat_check`, `kpp_heat_check`) builds with `ALLOW_RUNOFTEMP`; cs32 always did.] Since this is upstream code, decide with the owner whether to carry it as a local fix or report it upstream only.
+
+### Gate acceptance
+
+Accepted by `loop_gate.py --check-done` at 2026-10-18T06:02:39.755428+00:00 for iteration 2026-10-18T03:52:14.255652+00:00. EXF_CHECK_RANGE's runoff-temperature check now tests and prints runoftemp (fork 9a5b0391a). New tests/rnf/runoftemp_range_check.py: 12 of 12 on the fixed serial and -mpi 2 builds; the unfixed mutant fails exactly the 7 expected cases (Richard reproduced with independent inputs). Standard suite (11 commands, 346 s under 4 CPUs / 4 GB) EXECUTED PASS. Also, by owner direction, verification is now two-tier: the 11-command standard suite closes issues and the 71-command suite is verification.full. RUNOFF-052 filed (full omits the new test).

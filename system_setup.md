@@ -142,6 +142,18 @@ final-verification evidence, and the evidence is bound to the machine's toolchai
 - An iteration abandoned midway cannot be resumed elsewhere: its review packets and evidence are not in git.
   Reopen the issue and start it again.
 
+## 8b. Resource limits and the PATH fingerprint
+
+On a shared machine the owner may cap Claude's load (the 2026-10-17 rule was 4 CPUs and 4 GB). Host commands are pinned with
+`taskset -c 0-3`. Containers need `--cpus` and `--memory` on `docker run`; the harness scripts are protected, so a small
+`docker` wrapper that adds those flags to `run` (`~/.local/bin/claude-capped/docker`, put first on `PATH`) does it.
+
+`PATH` is one of the `environment_variables` in `esx/project.json`, so it is part of every verification fingerprint. Evidence taken
+under one `PATH` is "stale" under another. Run **every** gate, `verify.py` and `final_verification.py` command of one iteration with
+the same `PATH`, and expect retained agents (whose shells do not inherit it) to produce evidence under the plain one.
+If the two have to meet, take the evidence that must match (`--check-done`, `--closeout-doctor`, `rebind-receipt`) under the
+`PATH` the final suite was taken with.
+
 ## 9. Where to read next
 
 `CLAUDE.md` (goal and rules), `current_status.md`, `open_issues.md` (the `RUNOFF-*` entries),
