@@ -1551,3 +1551,27 @@ Compare `runoftemp` in both halves of the condition and print `runoftemp` in the
 ### Gate acceptance
 
 Accepted by `loop_gate.py --check-done` at 2026-10-18T06:02:39.755428+00:00 for iteration 2026-10-18T03:52:14.255652+00:00. EXF_CHECK_RANGE's runoff-temperature check now tests and prints runoftemp (fork 9a5b0391a). New tests/rnf/runoftemp_range_check.py: 12 of 12 on the fixed serial and -mpi 2 builds; the unfixed mutant fails exactly the 7 expected cases (Richard reproduced with independent inputs). Standard suite (11 commands, 346 s under 4 CPUs / 4 GB) EXECUTED PASS. Also, by owner direction, verification is now two-tier: the 11-command standard suite closes issues and the 71-command suite is verification.full. RUNOFF-052 filed (full omits the new test).
+
+## 🟢 RESOLVED: verification.full omits tests/rnf/runoftemp_range_check.py
+
+**Date Identified**: 2026-10-18T00:00:00Z
+**Date Resolved**: 2026-10-18T16:27:47.991438+00:00
+**Status**: Resolved
+**UUID**: RUNOFF-052
+**Anchors**: esx/project.json::<module>; tests/rnf/runoftemp_range_check.py::<module>
+
+### Issue or research question
+RUNOFF-037 added `tests/rnf/runoftemp_range_check.py` and put it in the **standard** suite (`verification.scientific_groups`, group `standard`). The **full** suite (`verification.full`) is the old 71 commands unchanged, so it does not run that test. The two-tier policy in `esx/project_profile.md` says the full suite is the larger of the two; as configured, it is not a superset of the standard one.
+
+### Evidence
+Found by Richard in correction round 1 of RUNOFF-037 (optional finding): "full equals the old 71 commands exactly ... full omits the new runoftemp test". Confirmed by comparing the two lists in `esx/project.json`.
+
+### Scientific or engineering impact
+Low. A full run still checks everything it checked before; it would miss only a regression of the RUNOFF-037 range check that the standard suite already catches on every issue. The gap matters for the policy's claim that the full suite is the wider net, and grows with each test added to the standard suite alone.
+
+### Proposed action and acceptance
+Add the `runoftemp_range_check.py --build` command to `verification.full`, and decide the rule that keeps `full` a superset of `standard` (for example a structural test that fails when a standard command is missing from `full`). Acceptance: every command of `verification.scientific_groups` appears in `verification.full`, and a test fails if one is dropped. Because `esx/project.json` is a scientific path this is a `scientific_change` closed against the standard suite.
+
+### Gate acceptance
+
+Accepted by `loop_gate.py --check-done` at 2026-10-18T16:27:47.991438+00:00 for iteration 2026-10-18T15:24:55.738086+00:00. verification.full now contains runoftemp_range_check (72 commands) and the new tests/esx/test_full_contains_standard.py (6 tests) fails when any standard command is missing from full; 9 of the 11 standard commands are reduced forms of full ones and are listed explicitly with a reason each. Richard confirmed all 9 against the scripts and caught 4 mutations Bob did not try. Round 1 corrected two false counts (ten -> nine; one -> two). Standard suite EXECUTED PASS.
