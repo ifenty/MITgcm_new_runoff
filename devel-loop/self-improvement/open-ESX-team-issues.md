@@ -1612,7 +1612,7 @@ Zero false refusals when Arch's own orientation targets ESX tooling; the refusal
 **Severity**: Low
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-18-agent-permission-denials/assessment.md
 **Anchors**: tools/esx/agent_runtime.py::role_permission_mode; tests/esx/test_role_permission_mode.py
-**Implementation-Reference**: WORKTREE
+**Implementation-Reference**: ESX-Team 3ee1bb7 (1.7.3, branch esx-team-fixes); project commits e1edc62, 0e83007, 9524002
 
 ### Issue
 Nine of nine retained turns in three consecutive iterations (RUNOFF-037, RUNOFF-052, RUNOFF-022) recorded permission denials, one to fourteen per turn. The checker refuses compound commands (`cd` plus a write), heredocs with braces and quotes, variables, redirections outside the project, and any command prefixed with `taskset`.
