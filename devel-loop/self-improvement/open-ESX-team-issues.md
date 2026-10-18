@@ -1603,15 +1603,16 @@ An orientation with two or more `--target` entries under `tools/esx/` builds a b
 ### Expected Effect
 Zero false refusals when Arch's own orientation targets ESX tooling; the refusal still fires for a real bad flag in the brief's instructions.
 
-## 🔴 PROPOSED: retained agents hit permission-check denials on most turns, partly from the taskset prefix the briefs ask for
+## 🟡 IMPLEMENTED: retained agents hit permission-check denials on most turns because the launcher ignores permissions.defaultMode
 
 **Date Identified**: 2026-10-18  17:45
-**Status**: Proposed
+**Status**: Implemented — awaiting publication/effectiveness evidence
 **UUID**: TEAM-AGENT-PERMISSION-DENIALS-001
 **Category**: permissions
 **Severity**: Low
 **Assessment**: devel-loop/self-improvement/assessments/2026-10-18-agent-permission-denials/assessment.md
-**Anchors**: .claude/settings.local.json; tools/esx/brief.py; tools/esx/agent_runtime.py
+**Anchors**: tools/esx/agent_runtime.py::role_permission_mode; tests/esx/test_role_permission_mode.py
+**Implementation-Reference**: WORKTREE
 
 ### Issue
 Nine of nine retained turns in three consecutive iterations (RUNOFF-037, RUNOFF-052, RUNOFF-022) recorded permission denials, one to fourteen per turn. The checker refuses compound commands (`cd` plus a write), heredocs with braces and quotes, variables, redirections outside the project, and any command prefixed with `taskset`.
@@ -1622,8 +1623,12 @@ Counts per turn and the repeated reasons are in the assessment. In RUNOFF-037 th
 ### Potential Impact
 Each denial costs a retry or a rewrite of the command, and agents spend turn time on workarounds. A denied evidence command (the `verify.py` run under the reviewer's own identity) can leave a footer without independent-check evidence, which the closeout refuses. The cost is time, not correctness.
 
+### Root cause (measured 2026-10-18)
+A headless `claude --print` does not apply `permissions.defaultMode` from the settings files: the init event reports `default`, so every compound, redirected or variable-bearing command is denied. The same compound command ran with zero denials once `--permission-mode bypassPermissions` was passed, with the launcher's exact arguments (`--agent bob`, `--tools`, `--settings`). The launcher in `agent_runtime.py` passed no permission mode. This project's `.claude/settings.local.json` sets `defaultMode: bypassPermissions`, which the roles never saw. The `taskset` denials are one symptom of the same cause, not a separate one.
+
 ### Proposed Fix
-1. Stop asking agents to prefix `taskset` in briefs and designs. `agent_runtime.py` is started under `taskset -c 0-3`, which its children inherit; record that as the way the CPU cap reaches agents.
+0. Implemented: `role_permission_mode(root)` reads the merged `permissions.defaultMode` (local over project over user) and the role launch passes it as `--permission-mode`; a project that sets none keeps the CLI default. Under `bypassPermissions` the PreToolUse hook still enforces settings `deny` rules, tool budgets and the Bash time bound. To be upstreamed to ESX-Team.
+1. (Secondary) Stop asking agents to prefix `taskset` in briefs and designs. `agent_runtime.py` is started under `taskset -c 0-3`, which its children inherit; record that as the way the CPU cap reaches agents.
 2. Put the working command patterns in the generated briefs: one command per call, multi-line scripts in a file under `devel-loop/loop_state/scratch/` run with the project interpreter, no `cd` plus redirection in one call.
 3. Review the allow rules in `.claude/settings.local.json` for the project's own tool commands, as the owner decides.
 

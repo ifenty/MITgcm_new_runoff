@@ -586,6 +586,34 @@ def role_runtime_settings(root):
     return {"enabledPlugins": disabled}
 
 
+PERMISSION_MODES = ("acceptEdits", "bypassPermissions", "default", "dontAsk", "plan")
+
+
+def role_permission_mode(root):
+    """The permissions.defaultMode the owner configured, or None.
+
+    A headless ``claude --print`` does not apply ``permissions.defaultMode`` from the settings
+    files: the init event reports ``default`` and every compound, redirected or variable-bearing
+    command is denied (measured 2026-10-18: nine of nine role turns, one to fourteen denials
+    each; the same command ran with zero denials once ``--permission-mode`` was passed). The
+    launcher therefore passes the configured mode explicitly. Local settings win over project
+    settings, which win over user settings, as in Claude Code. Nothing is invented: a project
+    that sets no mode keeps the CLI default. Under ``bypassPermissions`` the PreToolUse hook
+    still enforces settings ``deny`` rules, tool budgets and the Bash time bound.
+    """
+    config_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR", str(Path.home() / ".claude")))
+    mode = None
+    for path in (config_dir / "settings.json", root / ".claude/settings.json",
+                 root / ".claude/settings.local.json"):
+        try:
+            value = json.loads(path.read_text()).get("permissions", {}).get("defaultMode")
+        except (OSError, ValueError, AttributeError):
+            continue
+        if value in PERMISSION_MODES:
+            mode = value
+    return mode
+
+
 def replacement_record(root, agent_id, role, issue, reason):
     """Require an observed same-role assignment and a reason for a new correction identity."""
     if not agent_id or not reason or len(reason.strip()) < 20:
@@ -1053,6 +1081,8 @@ def _run_turn(root, *, model=None, role=None, issue=None, prompt, session=None, 
             command += ["--agent", role, "--tools", fields["tools"],
                         "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
                         "--settings", json.dumps(role_runtime_settings(root))]
+            if role_permission_mode(root):
+                command += ["--permission-mode", role_permission_mode(root)]
             if chosen and chosen != "inherit":
                 command += ["--model", chosen]
             deadline = datetime.now(timezone.utc) + timedelta(seconds=timeout)
