@@ -24,11 +24,12 @@ documented interpreter.
 - Budget: run `python3 tools/esx/loop_control.py run --max-iterations N` with the
   validated positive integer. An existing loop retains its budget; if different,
   report that fact and continue it with `run` without an override.
-- Permissions: `--permissions MODE`, alone or with a budget, where MODE is exactly one of `inherit`, `auto`,
-  `acceptEdits`, `bypassPermissions`, `dontAsk`, `plan` or `manual`. Add `--permissions MODE` to the `run` command.
-  It sets the permission mode of the retained Bob/Richard sessions for this loop and may be given on a running
-  loop (it applies from the next dispatch; a turn already running keeps its mode). `inherit`, and no option at all,
-  means the owner's `permissions.defaultMode` from the settings files. Report the mode `run` prints.
+- Permissions: `--permissions MODE`, alone or with a budget, where MODE is exactly one of `auto`,
+  `bypassPermissions` or `inherit`. Add `--permissions MODE` to the `run` command. It sets the permission mode of
+  the retained Bob/Richard sessions for this loop and may be given on a running loop (it applies from the next
+  dispatch; a turn already running keeps its mode). `auto` is the default, also with no option at all;
+  `bypassPermissions` runs every command without a check (the hook still enforces `deny` rules, tool budgets and
+  time bounds); `inherit` uses `permissions.defaultMode` from the settings files. Report the mode `run` prints.
 - `status`: run `python3 tools/esx/loop_control.py status` and report (it shows the permission mode); do not start.
 - `pause`: run `python3 tools/esx/loop_control.py pause --reason 'Owner paused through /esx-loop'`. The loop
   stays alive and spends none of its budget: turns end normally and nothing advances. Tell the owner what is

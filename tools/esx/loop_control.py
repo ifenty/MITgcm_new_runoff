@@ -72,17 +72,17 @@ def start(root, prompt, max_iterations=30, completion_promise='ESX-LOOP-NO-ACTIO
         return {'status': 'active', 'state': STATE, 'iteration': 1, 'max_iterations': max_iterations}
 
 
-PERMISSION_CHOICES = ('inherit', 'auto', 'acceptEdits', 'bypassPermissions', 'dontAsk', 'plan', 'manual')
+PERMISSION_CHOICES = ('auto', 'bypassPermissions', 'inherit')
 
 
 def set_permissions(root, mode):
-    """Record the permission mode retained role sessions are launched with ('inherit' clears it)."""
+    """Record the permission mode retained role sessions are launched with ('auto', the default, clears it)."""
     if mode not in PERMISSION_CHOICES:
         raise ValueError('permissions must be one of: ' + ', '.join(PERMISSION_CHOICES))
     with loop_lock(root):
         state = local(root, STATE)
         parsed = parse_state(state.read_text())
-        header = set_field(parsed['header'], 'permission_mode', None if mode == 'inherit' else mode)
+        header = set_field(parsed['header'], 'permission_mode', None if mode == 'auto' else mode)
         atomic_bytes(state, ('---\n' + header + '\n---\n' + parsed['prompt']).encode())
 
 
@@ -90,8 +90,8 @@ def run(root, max_iterations=None, permissions=None):
     """Start or continue without resetting an existing budget or prompt.
 
     ``permissions`` (default: leave as it is) chooses the permission mode of the retained role
-    sessions. Unset or ``inherit`` means the owner's ``permissions.defaultMode`` from the settings
-    files; anything else overrides it for this loop.
+    sessions: ``auto`` (the default), ``bypassPermissions``, or ``inherit`` (the owner's
+    ``permissions.defaultMode`` from the settings files).
     """
     root = Path(root).resolve()
     if permissions is not None and permissions not in PERMISSION_CHOICES:
@@ -139,12 +139,12 @@ def run(root, max_iterations=None, permissions=None):
 
 
 def permissions_of(root):
-    """The loop's permission-mode override, or 'inherit'."""
+    """The loop's permission mode: the stored choice, else 'auto'."""
     try:
         value = parse_state(local(root, STATE).read_text())['header_fields'].get('permission_mode')
     except (OSError, ValueError):
         value = None
-    return value if value in PERMISSION_CHOICES else 'inherit'
+    return value if value in PERMISSION_CHOICES else 'auto'
 
 
 def status(root):
@@ -157,7 +157,7 @@ def status(root):
         result = {'status': 'active' if parsed['active'] == 'true' else 'inactive', 'state': STATE,
                   'iteration': parsed['iteration'], 'max_iterations': parsed['limit'],
                   'completion_promise': parsed['promise'],
-                  'permissions': parsed['header_fields'].get('permission_mode') or 'inherit'}
+                  'permissions': parsed['header_fields'].get('permission_mode') or 'auto'}
         pending = cancel_request(parsed)
         if pending is not None:
             result.update(cancelling=True, cancel_reason=pending, finishing=work_in_progress(root))
@@ -339,7 +339,7 @@ def main(argv=None):
     launch = sub.add_parser('run')
     launch.add_argument('--max-iterations', type=int)
     launch.add_argument('--permissions', choices=PERMISSION_CHOICES,
-                        help='permission mode of the retained role sessions; inherit (the default) follows permissions.defaultMode in the settings files')
+                        help='permission mode of the retained role sessions: auto (the default), bypassPermissions, or inherit (permissions.defaultMode of the settings files)')
     create = sub.add_parser('start')
     create.add_argument('--prompt-file', type=Path, required=True)
     create.add_argument('--max-iterations', type=int, default=30)

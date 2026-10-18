@@ -586,34 +586,15 @@ def role_runtime_settings(root):
     return {"enabledPlugins": disabled}
 
 
-PERMISSION_MODES = ("acceptEdits", "auto", "bypassPermissions", "dontAsk", "manual", "plan")
-LEGACY_DEFAULT_MODES = ("default",)
+# Modes a retained role can work in. Measured headless (claude --print, role launch, 2026-10-18) with a
+# compound command, a heredoc, a redirection into the repo, taskset and docker: auto and bypassPermissions ran
+# everything with no denial; acceptEdits, dontAsk and manual denied the shell commands, and plan is read-only.
+PERMISSION_MODES = ("auto", "bypassPermissions")
+DEFAULT_PERMISSION_MODE = "auto"
 
 
-def role_permission_mode(root):
-    """The permission mode retained role sessions are launched with, or None for the CLI default.
-
-    A headless ``claude --print`` does not apply ``permissions.defaultMode`` from the settings
-    files: the init event reports ``default`` and every compound, redirected or variable-bearing
-    command is denied (measured 2026-10-18: nine of nine role turns, one to fourteen denials
-    each; the same command ran with zero denials once ``--permission-mode`` was passed). So the
-    launcher passes a mode explicitly:
-
-    1. the loop's own choice, ``permission_mode`` in ``.claude/esx-loop.local.md`` (set by
-       ``loop_control.py run --permissions MODE``); ``inherit`` or absent falls through;
-    2. else the owner's ``permissions.defaultMode`` from the settings files, local over project
-       over user, as in Claude Code.
-
-    Nothing is invented: with neither set the CLI default applies. Under ``bypassPermissions``
-    the PreToolUse hook still enforces settings ``deny`` rules, tool budgets and the Bash time bound.
-    """
-    try:
-        for line in (root / ".claude/esx-loop.local.md").read_text().split("\n---\n", 1)[0].splitlines():
-            key, _, value = line.partition(":")
-            if key.strip() == "permission_mode" and value.strip() in PERMISSION_MODES:
-                return value.strip()
-    except OSError:
-        pass
+def settings_permission_mode(root):
+    """permissions.defaultMode from the settings files (local over project over user), if usable by a role."""
     config_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR", str(Path.home() / ".claude")))
     mode = None
     for path in (config_dir / "settings.json", root / ".claude/settings.json",
@@ -624,9 +605,37 @@ def role_permission_mode(root):
             continue
         if value in PERMISSION_MODES:
             mode = value
-        elif value in LEGACY_DEFAULT_MODES:
-            mode = None
     return mode
+
+
+def role_permission_mode(root):
+    """The permission mode retained role sessions are launched with: ``auto`` unless the owner chose otherwise.
+
+    A headless ``claude --print`` does not apply ``permissions.defaultMode`` from the settings files:
+    the init event reports ``default`` and every compound, redirected or variable-bearing command is denied
+    (measured 2026-10-18: nine of nine role turns, one to fourteen denials each). So the launcher passes a mode.
+
+    * ``permission_mode`` in ``.claude/esx-loop.local.md`` (``loop_control.py run --permissions MODE``):
+      ``auto`` or ``bypassPermissions`` as given; ``inherit`` means the owner's ``permissions.defaultMode``
+      from the settings files, or ``auto`` when that is unset or not usable by a role.
+    * Nothing set: ``auto``, whatever the settings files say.
+
+    Under ``bypassPermissions`` the PreToolUse hook still enforces settings ``deny`` rules, tool budgets
+    and the Bash time bound.
+    """
+    chosen = None
+    try:
+        for line in (root / ".claude/esx-loop.local.md").read_text().split("\n---\n", 1)[0].splitlines():
+            key, _, value = line.partition(":")
+            if key.strip() == "permission_mode":
+                chosen = value.strip()
+    except OSError:
+        pass
+    if chosen in PERMISSION_MODES:
+        return chosen
+    if chosen == "inherit":
+        return settings_permission_mode(root) or DEFAULT_PERMISSION_MODE
+    return DEFAULT_PERMISSION_MODE
 
 
 def replacement_record(root, agent_id, role, issue, reason):
@@ -1096,8 +1105,7 @@ def _run_turn(root, *, model=None, role=None, issue=None, prompt, session=None, 
             command += ["--agent", role, "--tools", fields["tools"],
                         "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
                         "--settings", json.dumps(role_runtime_settings(root))]
-            if role_permission_mode(root):
-                command += ["--permission-mode", role_permission_mode(root)]
+            command += ["--permission-mode", role_permission_mode(root)]
             if chosen and chosen != "inherit":
                 command += ["--model", chosen]
             deadline = datetime.now(timezone.utc) + timedelta(seconds=timeout)
