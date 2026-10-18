@@ -72,9 +72,30 @@ def start(root, prompt, max_iterations=30, completion_promise='ESX-LOOP-NO-ACTIO
         return {'status': 'active', 'state': STATE, 'iteration': 1, 'max_iterations': max_iterations}
 
 
-def run(root, max_iterations=None):
-    """Start or continue without resetting an existing budget or prompt."""
+PERMISSION_CHOICES = ('inherit', 'auto', 'acceptEdits', 'bypassPermissions', 'dontAsk', 'plan', 'manual')
+
+
+def set_permissions(root, mode):
+    """Record the permission mode retained role sessions are launched with ('inherit' clears it)."""
+    if mode not in PERMISSION_CHOICES:
+        raise ValueError('permissions must be one of: ' + ', '.join(PERMISSION_CHOICES))
+    with loop_lock(root):
+        state = local(root, STATE)
+        parsed = parse_state(state.read_text())
+        header = set_field(parsed['header'], 'permission_mode', None if mode == 'inherit' else mode)
+        atomic_bytes(state, ('---\n' + header + '\n---\n' + parsed['prompt']).encode())
+
+
+def run(root, max_iterations=None, permissions=None):
+    """Start or continue without resetting an existing budget or prompt.
+
+    ``permissions`` (default: leave as it is) chooses the permission mode of the retained role
+    sessions. Unset or ``inherit`` means the owner's ``permissions.defaultMode`` from the settings
+    files; anything else overrides it for this loop.
+    """
     root = Path(root).resolve()
+    if permissions is not None and permissions not in PERMISSION_CHOICES:
+        raise ValueError('permissions must be one of: ' + ', '.join(PERMISSION_CHOICES))
     if os.environ.get('ESX_AGENT_RUNTIME_CHILD') == '1':
         raise ValueError('retained role sessions cannot own an ESX loop')
     from check_ralph_hook import check
@@ -107,11 +128,23 @@ def run(root, max_iterations=None):
     else:
         prompt = local(root, 'devel-loop/autonomous_prompt.md').read_text()
         result = dict(start(root, prompt, 30 if max_iterations is None else max_iterations), action='started')
+    if permissions is not None:
+        set_permissions(root, permissions)
+    result['permissions'] = permissions_of(root)
     import notifications
     notifications.synchronize(root)
     result['next'] = 'Run tools/esx/loop_gate.py --next now and execute its instruction autonomously.'
     result['notifications'] = notifications.notice(root)
     return result
+
+
+def permissions_of(root):
+    """The loop's permission-mode override, or 'inherit'."""
+    try:
+        value = parse_state(local(root, STATE).read_text())['header_fields'].get('permission_mode')
+    except (OSError, ValueError):
+        value = None
+    return value if value in PERMISSION_CHOICES else 'inherit'
 
 
 def status(root):
@@ -123,7 +156,8 @@ def status(root):
         parsed = parse_state(state.read_text())
         result = {'status': 'active' if parsed['active'] == 'true' else 'inactive', 'state': STATE,
                   'iteration': parsed['iteration'], 'max_iterations': parsed['limit'],
-                  'completion_promise': parsed['promise']}
+                  'completion_promise': parsed['promise'],
+                  'permissions': parsed['header_fields'].get('permission_mode') or 'inherit'}
         pending = cancel_request(parsed)
         if pending is not None:
             result.update(cancelling=True, cancel_reason=pending, finishing=work_in_progress(root))
@@ -304,6 +338,8 @@ def main(argv=None):
     sub = parser.add_subparsers(dest='action', required=True)
     launch = sub.add_parser('run')
     launch.add_argument('--max-iterations', type=int)
+    launch.add_argument('--permissions', choices=PERMISSION_CHOICES,
+                        help='permission mode of the retained role sessions; inherit (the default) follows permissions.defaultMode in the settings files')
     create = sub.add_parser('start')
     create.add_argument('--prompt-file', type=Path, required=True)
     create.add_argument('--max-iterations', type=int, default=30)
@@ -324,7 +360,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         if args.action == 'run':
-            result = run(args.root, args.max_iterations)
+            result = run(args.root, args.max_iterations, args.permissions)
         elif args.action == 'start':
             result = start(args.root, args.prompt_file.read_text(), args.max_iterations, args.completion_promise)
         elif args.action == 'cancel':

@@ -586,21 +586,34 @@ def role_runtime_settings(root):
     return {"enabledPlugins": disabled}
 
 
-PERMISSION_MODES = ("acceptEdits", "bypassPermissions", "default", "dontAsk", "plan")
+PERMISSION_MODES = ("acceptEdits", "auto", "bypassPermissions", "dontAsk", "manual", "plan")
+LEGACY_DEFAULT_MODES = ("default",)
 
 
 def role_permission_mode(root):
-    """The permissions.defaultMode the owner configured, or None.
+    """The permission mode retained role sessions are launched with, or None for the CLI default.
 
     A headless ``claude --print`` does not apply ``permissions.defaultMode`` from the settings
     files: the init event reports ``default`` and every compound, redirected or variable-bearing
     command is denied (measured 2026-10-18: nine of nine role turns, one to fourteen denials
-    each; the same command ran with zero denials once ``--permission-mode`` was passed). The
-    launcher therefore passes the configured mode explicitly. Local settings win over project
-    settings, which win over user settings, as in Claude Code. Nothing is invented: a project
-    that sets no mode keeps the CLI default. Under ``bypassPermissions`` the PreToolUse hook
-    still enforces settings ``deny`` rules, tool budgets and the Bash time bound.
+    each; the same command ran with zero denials once ``--permission-mode`` was passed). So the
+    launcher passes a mode explicitly:
+
+    1. the loop's own choice, ``permission_mode`` in ``.claude/esx-loop.local.md`` (set by
+       ``loop_control.py run --permissions MODE``); ``inherit`` or absent falls through;
+    2. else the owner's ``permissions.defaultMode`` from the settings files, local over project
+       over user, as in Claude Code.
+
+    Nothing is invented: with neither set the CLI default applies. Under ``bypassPermissions``
+    the PreToolUse hook still enforces settings ``deny`` rules, tool budgets and the Bash time bound.
     """
+    try:
+        for line in (root / ".claude/esx-loop.local.md").read_text().split("\n---\n", 1)[0].splitlines():
+            key, _, value = line.partition(":")
+            if key.strip() == "permission_mode" and value.strip() in PERMISSION_MODES:
+                return value.strip()
+    except OSError:
+        pass
     config_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR", str(Path.home() / ".claude")))
     mode = None
     for path in (config_dir / "settings.json", root / ".claude/settings.json",
@@ -611,6 +624,8 @@ def role_permission_mode(root):
             continue
         if value in PERMISSION_MODES:
             mode = value
+        elif value in LEGACY_DEFAULT_MODES:
+            mode = None
     return mode
 
 
