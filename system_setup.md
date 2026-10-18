@@ -10,7 +10,7 @@ machine used `/home/ifenty/CProjects`. If your home or user name differs, read s
 |---|---|---|
 | Project records, `tools/esx`, tests, docs, `esx/`, `ESX-team-local/` | yes (`origin main`) | clone |
 | MITgcm code (`pkg/rnf`, exf changes, verification inputs) | yes (fork `ifenty/MITgcm`, branch `new_runoff`) | clone inside the project |
-| ESX-Team kit (framework master, used for upgrades) | yes (`ifenty/ESX-Team`, branch `esx-team-fixes`) | clone beside the project |
+| ESX-Team kit (framework master, used for upgrades) | yes (`ifenty/ESX-Team`) | clone beside the project |
 | Verification harness scripts | yes (`ifenty/MITgcm_verification_docker`) | clone beside the project, run `setup_links.sh` |
 | Conda env `mitgcm_rnf`, container image `mitgcm:latest`, docker shim, podman config | no | rebuild (sections 3 and 4) |
 | `devel-loop/loop_state/` (active issue, review packets, **verification evidence**, accounting) | **no** (gitignored) | not portable; see section 8 |
@@ -33,7 +33,7 @@ machine used `/home/ifenty/CProjects`. If your home or user name differs, read s
 mkdir -p ~/CProjects && cd ~/CProjects
 git clone git@github.com:ifenty/MITgcm_new_runoff.git
 git clone https://github.com/ifenty/MITgcm_verification_docker
-git clone git@github.com:ifenty/ESX-Team.git && git -C ESX-Team checkout esx-team-fixes
+git clone git@github.com:ifenty/ESX-Team.git
 cd MITgcm_new_runoff
 git clone -b new_runoff git@github.com:ifenty/MITgcm.git MITgcm        # ignored by the project repo
 git -C MITgcm remote add upstream https://github.com/MITgcm/MITgcm.git
