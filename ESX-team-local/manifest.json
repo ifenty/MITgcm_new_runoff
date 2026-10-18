@@ -49,9 +49,9 @@
       "ownership": "framework"
     },
     ".claude/commands/esx-loop.md": {
-      "baseline_sha256": "0d4f00f5cc98110d68c180d4ba38de7791a1b371cf93d4898f7ffc241008e305",
-      "installed_sha256": "0d4f00f5cc98110d68c180d4ba38de7791a1b371cf93d4898f7ffc241008e305",
-      "master_sha256": "0d4f00f5cc98110d68c180d4ba38de7791a1b371cf93d4898f7ffc241008e305",
+      "baseline_sha256": "1a725e0aca5146f107c35ee1372db5707b26254a2ae3b68011edaabeacda9a93",
+      "installed_sha256": "1a725e0aca5146f107c35ee1372db5707b26254a2ae3b68011edaabeacda9a93",
+      "master_sha256": "1a725e0aca5146f107c35ee1372db5707b26254a2ae3b68011edaabeacda9a93",
       "ownership": "framework"
     },
     ".claude/settings.json": {
@@ -559,9 +559,9 @@
       "ownership": "framework"
     }
   },
-  "master_fingerprint": "d446b0d11d1ef3a6cd3804a3388f621c370483973624deed57e57e7bef8cc813",
+  "master_fingerprint": "1c21df079c6a98ebe28c4107fd6348280a1d5874e7fdb56ef7dc1bc79eb6abec",
   "master_repository": "external-master",
   "schema_version": 1,
-  "updated_at": "2026-10-18T18:59:25.424095+00:00",
-  "version": "1.7.3"
+  "updated_at": "2026-10-18T19:02:28.481318+00:00",
+  "version": "1.7.4"
 }

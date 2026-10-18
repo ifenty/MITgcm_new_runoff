@@ -1,6 +1,6 @@
 ---
 description: Start or continue the autonomous project ESX work loop
-argument-hint: [--max-iterations N] [--permissions MODE] | status | pause | resume | cancel | abort
+argument-hint: "[--max-iterations N] [--permissions MODE] | status | pause | resume | cancel | abort"
 disable-model-invocation: true
 ---
 
