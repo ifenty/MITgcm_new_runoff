@@ -375,11 +375,9 @@ This is the scientific contract agents read. Executable paths and commands are i
     run after that addition (`exf_getforcing.F:199` then `:348`), but of its
     tests on the runoff array the upper bound is skipped with `useRNF` and
     the `sflux` one adds the runoff back, leaving the negative test — the
-    sign, at `nIter0` — and, only where `ALLOW_RUNOFTEMP` is compiled (cs32
-    defines it, lab_sea does not), a 36 m/s ceiling that the
-    runoff-*temperature* test reads from the `runoff` array where it means
-    `runoftemp`, an upstream misnaming not conditioned on `useRNF` and
-    6.5e4 times above `RNF_cellVolMax` on the lab_sea cell. Nothing
+    sign, at `nIter0`. (Until RUNOFF-037 the runoff-*temperature* test,
+    compiled only with `ALLOW_RUNOFTEMP`, also read a 36 m/s ceiling from
+    the `runoff` array; it now tests `runoftemp`.) Nothing
     therefore bounds the magnitude of `xx_runoff`; that is a
     `pkg/ctrl` question and was deliberately kept out of scope. Measured
     by execution (`refusal_check.py --case cell_above_vol_max`, review B's
@@ -435,6 +433,25 @@ This is the scientific contract agents read. Executable paths and commands are i
 - Full scientific qualification matrix, including relevant hardware/configurations:
   [docs/verification_matrix.md](../docs/verification_matrix.md). It covers
   single-process and MPI runs, and the no-change experiments.
+- Two verification tiers (owner decision, 2026-10-17: a minor fix cannot wait hours):
+  - **Standard** (`verification.scientific_groups`, one group `standard`): 11 commands,
+    about 6 minutes warm and at most 15 minutes after a source change forces rebuilds, on
+    4 CPUs and 4 GB. This is the `scientific` suite every `scientific_change` is closed
+    against. It covers: package off changes nothing (`lab_sea input`), sparse = dense
+    serial and `-mpi 2`, the cubed sphere on 4 processes (`cs32x15 input.rnof_sp_icedyn`),
+    the daily time mode (applied field and timing), the volume/heat/salt/tracer budget,
+    exf's runoff-temperature path, six refusal and control cases, and the runoff unit
+    tests. It does **not** cover the other time modes, the tendency and level terms, KPP
+    and sea-ice heat, the diagnostics and mutants, the other MITgcm experiments, or
+    `pkg/rnf` on any grid beyond `lab_sea` and `cs32`.
+  - **Full** (`verification.full`, 71 commands, about 2 hours on 64 idle cores and longer
+    on a shared one): the previous four scientific groups, reserved for special
+    occasions. Run it before pushing a release or an upstream pull request, after a change
+    to shared kernels, the file reader, time handling or `pkg/exf` physics, and when the
+    standard suite starts to look too narrow for what changed. Run it with
+    `verify.py --suite full --owner <id>`. It is not an issue-closing requirement, so the
+    owner or Arch must decide to run it. A fix that touches only what the standard suite
+    does not exercise has not been verified until the full suite has run.
 - Stochastic seeds/replicates, uncertainty intervals and train/test separation:
   not applicable. The model is deterministic, and the oracles are exact reference
   runs.
