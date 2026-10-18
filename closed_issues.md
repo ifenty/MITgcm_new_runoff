@@ -1,5 +1,6 @@
 # Closed issues
 
+Write new text in ASD-STE100 (see devel-loop/writing_standard.md).
 `loop_gate.py --check-done` moves a completed entry here, with its original UUID,
 only when it accepts the closeout. Status is Resolved or False Positive. Preserve the evidence and the scientific bounds of the conclusion.
 

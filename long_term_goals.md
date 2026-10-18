@@ -1,5 +1,6 @@
 # Long-term directions
 
+Write in ASD-STE100: short sentences and the active voice (see devel-loop/writing_standard.md).
 Record proposed scientific capabilities and research directions. Promote bounded actionable work into open_issues.md.
 
 - **3D and subsurface runoff** (phase 2): route sources with `k > 1` through the core `addMass` (`selectAddFluid`; `MITgcm/model/src/apply_forcing.F`, `integr_continuity.F`), with per-source T and S instead of the domain-wide `temp_addMass` / `salt_addMass`. Phase 1 stores `k` so this isn't designed out. **Brought forward and delivered by RUNOFF-046 (owner decision 2026-10-10):** the generalized route, now the default, puts every target's volume in `addMass` at its own level and its T, S and tracers in as per-level tendencies, the model's domain-wide `temp_addMass`/`salt_addMass` term on the runoff share cancelled; schema 1.1 gives `target_level` as an absolute level. What remains long-term: targets under an ice shelf (RUNOFF-020, which needs an exf variant of isomip).

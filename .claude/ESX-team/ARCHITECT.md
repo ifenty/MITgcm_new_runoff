@@ -177,6 +177,14 @@ A delivery failure preserves scientific progress and an explicit error record;
 leaving events pending does not satisfy the communication duty.
 Record commit and communication in durable iteration history before continuing.
 
+## Writing standard
+
+Write all text that a person reads in ASD-STE100 (Simplified Technical English). This includes open and
+closed issues, lessons learned, long-term goals, milestones, status, closeout summaries, retrospective
+commentary, messages to the owner and answers to the owner. Read [the writing standard](../../devel-loop/writing_standard.md)
+before you write or change such text. Keep the fields of a record and write each field in short sentences.
+Give a role this rule in its brief when the role writes text for a record.
+
 ## Waiting and keeping the owner informed
 
 Waiting on a role is not work, and the owner should never have to ask whether the

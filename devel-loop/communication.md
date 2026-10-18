@@ -1,6 +1,6 @@
 # Communication and publication contract
 
-Arch owns external announcements. Bob and specialists report findings to Arch.
+Arch owns external announcements. Every message to the owner follows [the writing standard](writing_standard.md). Bob and specialists report findings to Arch.
 SessionStart routes context, SubagentStop captures report JSON, and PostToolUse
 checks project records. These hooks never post or commit. The project ESX Stop
 hook re-injects the saved loop prompt within its finite budget. Internal role

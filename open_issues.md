@@ -1,5 +1,6 @@
 # Open issues
 
+Write each entry in ASD-STE100: short sentences and the active voice (see devel-loop/writing_standard.md).
 Fenced examples are templates and are excluded by the gate. Use stable unique IDs.
 Statuses: Unresolved, Investigating, Blocked. A blocked entry requires Blocked-By:
 a project issue ID, EXTERNAL or OWNER-DECISION, followed by ` — ` and an explanation.

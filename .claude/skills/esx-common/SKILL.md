@@ -16,6 +16,10 @@ Keep commands, inputs, environment, outputs and limits reproducible. Use focused
 checks while iterating and the assigned owner's full final result. External
 communication and Git commits belong to Arch within applicable authorization.
 
+Write every text that a person reads in ASD-STE100: short sentences, active voice, one meaning for
+each word. This covers issue entries, lessons, summaries, `limits` and `reason` fields, and every
+report to the owner. Read devel-loop/writing_standard.md.
+
 Preserve issue and iteration identity in every report. Code, documentation and
 map use are equal acceptance requirements. Follow the owning maintenance contract.
 Report a concise outcome, decisive evidence, files changed, remaining findings,

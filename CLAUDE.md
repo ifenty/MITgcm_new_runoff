@@ -2,6 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Writing standard
+
+Write all text that a person reads in ASD-STE100 (Simplified Technical English). This covers issues, lessons,
+long-term goals, status, summaries, messages and answers to the owner. The rules are in
+[devel-loop/writing_standard.md](devel-loop/writing_standard.md). Check a text with `python3 tools/esx/ste_lint.py FILE`.
+New and changed entries follow the standard. Do not rewrite closed history only to change its style.
+
 ## Project goal
 
 Add a new, sparse way to specify runoff forcing in MITgcm, as a new package `pkg/rnf` that feeds `pkg/exf` ([docs/package_design.md](docs/package_design.md)). Runoff is a volumetric water flux, optionally with temperature, salinity (default 0) and any number of passive tracers.
