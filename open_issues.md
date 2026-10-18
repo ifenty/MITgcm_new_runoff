@@ -490,3 +490,22 @@ Documentation inconsistency only: the README overstates a refusal. No code is wr
 
 ### Proposed action and acceptance
 Apply the saved patch to `pkg/rnf/README.md` (a one-row edit) when the next scientific change to `pkg/rnf` is made, or on its own as a `scientific_change` once the final-verification cap is dealt with. Acceptance: the README row equals the code's behaviour and the other documents; the patch is no longer needed.
+
+## UNRESOLVED: verification.full omits tests/rnf/runoftemp_range_check.py
+
+**Date Identified**: 2026-10-18T00:00:00Z
+**Status**: Unresolved
+**UUID**: RUNOFF-052
+**Anchors**: esx/project.json::<module>; tests/rnf/runoftemp_range_check.py::<module>
+
+### Issue or research question
+RUNOFF-037 added `tests/rnf/runoftemp_range_check.py` and put it in the **standard** suite (`verification.scientific_groups`, group `standard`). The **full** suite (`verification.full`) is the old 71 commands unchanged, so it does not run that test. The two-tier policy in `esx/project_profile.md` says the full suite is the larger of the two; as configured, it is not a superset of the standard one.
+
+### Evidence
+Found by Richard in correction round 1 of RUNOFF-037 (optional finding): "full equals the old 71 commands exactly ... full omits the new runoftemp test". Confirmed by comparing the two lists in `esx/project.json`.
+
+### Scientific or engineering impact
+Low. A full run still checks everything it checked before; it would miss only a regression of the RUNOFF-037 range check that the standard suite already catches on every issue. The gap matters for the policy's claim that the full suite is the wider net, and grows with each test added to the standard suite alone.
+
+### Proposed action and acceptance
+Add the `runoftemp_range_check.py --build` command to `verification.full`, and decide the rule that keeps `full` a superset of `standard` (for example a structural test that fails when a standard command is missing from `full`). Acceptance: every command of `verification.scientific_groups` appears in `verification.full`, and a test fails if one is dropped. Because `esx/project.json` is a scientific path this is a `scientific_change` closed against the standard suite.

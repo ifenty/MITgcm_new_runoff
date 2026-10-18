@@ -196,8 +196,9 @@ alone is tens of GB in `float32`, and T, S and each tracer add about the same.
   `exf_getffields.F:531-534`, so neither package bound sees the controlled
   field, and that of the tests `EXF_CHECK_RANGE` makes on the runoff array —
   it does run after that addition — only the negative one still constrains
-  it, at `nIter0`, plus a 36 m/s ceiling that the runoff-*temperature* test
-  reads from the `runoff` array where `ALLOW_RUNOFTEMP` is compiled. Nothing
+  it, at `nIter0`. (The runoff-*temperature* test, where `ALLOW_RUNOFTEMP` is
+  compiled, tests `runoftemp` against -2 and 36 degC since RUNOFF-037; it
+  used to read a 36 m/s ceiling from the `runoff` array.) Nothing
   bounds the magnitude of `xx_runoff` in any way that binds.
 - Read the static index and fraction arrays (~10⁶ entries) once at init.
 

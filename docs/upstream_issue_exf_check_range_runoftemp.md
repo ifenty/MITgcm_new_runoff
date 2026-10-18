@@ -2,6 +2,8 @@
 
 Draft for https://github.com/MITgcm/MITgcm/issues. **Not posted.** Posting to MITgcm/MITgcm needs the
 owner's go-ahead (see esx/project_profile.md). Local tracking entry: RUNOFF-037 in open_issues.md.
+The fork's `new_runoff` branch carries the fix (RUNOFF-037, test `tests/rnf/runoftemp_range_check.py`);
+the code quoted below is upstream `master`, not the fork.
 
 ---
 
@@ -56,11 +58,21 @@ not the model state.
 ## How it was found / status of evidence
 
 Found by reading the code while working on a separate runoff package; confirmed by reading the file on
-`master`. **I have not run a reproduction** (a build with `ALLOW_RUNOFTEMP` and a `runoftemp` above 36 degC
-that should abort and does not). A reproduction would need that build, e.g. a `lab_sea` variant with
-`ALLOW_RUNOFTEMP` defined and a `runoftempfile` holding a temperature above 36. Run that before posting if the
-maintainers will want a test.
+`master`. The defect has since been reproduced and the fix tested in the fork (RUNOFF-037) with
+`tests/rnf/runoftemp_range_check.py`, a `lab_sea` build with `ALLOW_RUNOFTEMP` defined, on the dense
+`runoffFile` + `runoftempfile` path and on the sparse `pkg/rnf` path:
 
-The one-line fix has not been built or tested upstream-side either; locally the tracking entry (RUNOFF-037)
-records the intended acceptance: a `runoftemp` above 36 degC is refused with a message naming the temperature
-and its value, and a volume flux of any magnitude is not reported as a temperature error.
+- **Fixed build:** 12 of 12 cases pass, serial and `-mpi 2`. A `runoftemp` of 36.5, 100 or -3 degC at a wet cell
+  stops the run with `ABNORMAL END: S/R EXF_CHECK_RANGE` and a message naming `runoftemp` and its value; exactly
+  36 and -2 (dense), 35.9 and -2 (sparse) and 100 degC at a dry cell are accepted; a volume flux of 40 m/s with
+  10 degC is refused by the runoff-volume check and is not reported as a temperature error.
+- **Unfixed build** (the fix reversed textually): it fails exactly the 7 expected cases. 36.5 and 100 degC on both
+  paths are not caught; the 40 m/s flux is reported as a temperature error; and -3 degC is refused but the message
+  prints the runoff (4.0e-07 dense, 6.4e-07 sparse) instead of the temperature.
+- The reviewer's own run agreed: 36.01 degC dense, a flux of 100 with 10 degC, and 20 degC behaved as required.
+  Caveat: a dense `runoftemp` file is float32, so 36.01 is stored as 36.0099983, and the test's 1e-9 comparison of
+  the printed value is an artifact of the chosen test inputs (36.5, 100 and -3 are exact in float32), not a
+  property of the fix. On the sparse path `(m*T)/m` for T = 36 lands one ulp above 36 and is refused, so the
+  exact boundary is only asserted on the dense path.
+
+Not run against upstream `master` itself, only against the fork.

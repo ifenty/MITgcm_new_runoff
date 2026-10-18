@@ -816,12 +816,10 @@ without NetCDF. `RNF_READPARMS`, called from `PACKAGES_READPARMS`
     (`exf_getforcing.F:199` then `:348`), but of its tests on the runoff
     array the upper bound is skipped with `useRNF` and the `sflux` one adds
     the runoff back. That leaves the negative test — the **sign**, at
-    `nIter0` — and, only where `ALLOW_RUNOFTEMP` is compiled (cs32 defines
-    it, lab_sea does not), a 36 m/s ceiling that the runoff-**temperature**
-    test reads from the `runoff` array where it means `runoftemp`: an
-    upstream misnaming, not conditioned on `useRNF`, and 6.5·10⁴ times above
-    `RNF_cellVolMax` on the lab_sea cell, so it constrains nothing in
-    practice. Nothing therefore bounds the magnitude of `xx_runoff`; that is
+    `nIter0`. (Until RUNOFF-037 the runoff-**temperature** test, compiled
+    only with `ALLOW_RUNOFTEMP`, also read a 36 m/s ceiling from the
+    `runoff` array where it means `runoftemp`; it now tests `runoftemp`
+    and no longer constrains the runoff.) Nothing therefore bounds the magnitude of `xx_runoff`; that is
     a `pkg/ctrl` question, deliberately not in this issue's scope.
     It bounds magnitude only, not the temperature, salinity or tracer
     concentrations the water carries, and not the sign. It cannot tell one
