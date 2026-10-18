@@ -137,29 +137,6 @@ LLC is a main production grid (2 km target); mapping errors there are a top risk
 ### Proposed action and acceptance
 Acceptance: either a runnable LLC test with sparse runoff and budget checks, or a documented, owner-visible blocker with the exact missing input.
 
-## UNRESOLVED: Pickup/restart reproducibility with sparse runoff
-
-**Date Identified**: 2026-10-02T22:30:00Z
-**Status**: Unresolved
-**UUID**: RUNOFF-022
-**Anchors**: MITgcm/model/src/the_model_main.F::<module>
-
-### Issue or research question
-A run restarted from a pickup in mid-record (and across a yearly-file boundary) must reproduce the continuous run exactly.
-
-### Evidence
-Owner direction 2026-10-02 (owner away for several days): develop and test the new runoff program across many MITgcm configurations, with and without T, S and tracer contributions, in every time mode, as a robust, documented MITgcm package following MITgcm coding standards; T/S fluxes follow the shelfice/icefront tendency pattern.
-
-### Scientific or engineering impact
-Production runs always restart; record state must be re-derived correctly.
-
-### Proposed action and acceptance
-Acceptance: continuous vs restarted runs identical to the digit threshold for daily, monthly and yearly modes.
-
-Synchronous restart case (RUNOFF-010 review, 2026-10-03): add a restart without `staggerTimeStep` in nonlinear-free-surface, real-freshwater mode across a record boundary, with temperature present; the first step after the restart needs the package fields at `myTime − deltaT` (docs/package_design.md, decision 3, time level).
-
-Unblocked 2026-10-05: RUNOFF-005 closed (sparse time handling, all five modes plus hold-exact; fork `a81f290f0`, final verification receipt `6e2a5194`, all 57 scientific commands passing). Record selection is delegated to the `pkg/exf` routines themselves, and the suite measures 0 of 49/769/1465/1465/1201 forcing steps disagreeing with `pkg/exf`, largest weight error 0.0e+00.
-
 ## UNRESOLVED: Thread, MPI and tile-layout independence (do_tst_2+2)
 
 **Date Identified**: 2026-10-02T22:30:00Z

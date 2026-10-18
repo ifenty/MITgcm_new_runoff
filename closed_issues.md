@@ -1575,3 +1575,31 @@ Add the `runoftemp_range_check.py --build` command to `verification.full`, and d
 ### Gate acceptance
 
 Accepted by `loop_gate.py --check-done` at 2026-10-18T16:27:47.991438+00:00 for iteration 2026-10-18T15:24:55.738086+00:00. verification.full now contains runoftemp_range_check (72 commands) and the new tests/esx/test_full_contains_standard.py (6 tests) fails when any standard command is missing from full; 9 of the 11 standard commands are reduced forms of full ones and are listed explicitly with a reason each. Richard confirmed all 9 against the scripts and caught 4 mutations Bob did not try. Round 1 corrected two false counts (ten -> nine; one -> two). Standard suite EXECUTED PASS.
+
+## 🟢 RESOLVED: Pickup/restart reproducibility with sparse runoff
+
+**Date Identified**: 2026-10-02T22:30:00Z
+**Date Resolved**: 2026-10-18T17:42:28.007187+00:00
+**Status**: Resolved
+**UUID**: RUNOFF-022
+**Anchors**: MITgcm/model/src/the_model_main.F::<module>
+
+### Issue or research question
+A run restarted from a pickup in mid-record (and across a yearly-file boundary) must reproduce the continuous run exactly.
+
+### Evidence
+Owner direction 2026-10-02 (owner away for several days): develop and test the new runoff program across many MITgcm configurations, with and without T, S and tracer contributions, in every time mode, as a robust, documented MITgcm package following MITgcm coding standards; T/S fluxes follow the shelfice/icefront tendency pattern.
+
+### Scientific or engineering impact
+Production runs always restart; record state must be re-derived correctly.
+
+### Proposed action and acceptance
+Acceptance: continuous vs restarted runs identical to the digit threshold for daily, monthly and yearly modes.
+
+Synchronous restart case (RUNOFF-010 review, 2026-10-03): add a restart without `staggerTimeStep` in nonlinear-free-surface, real-freshwater mode across a record boundary, with temperature present; the first step after the restart needs the package fields at `myTime − deltaT` (docs/package_design.md, decision 3, time level).
+
+Unblocked 2026-10-05: RUNOFF-005 closed (sparse time handling, all five modes plus hold-exact; fork `a81f290f0`, final verification receipt `6e2a5194`, all 57 scientific commands passing). Record selection is delegated to the `pkg/exf` routines themselves, and the suite measures 0 of 49/769/1465/1465/1201 forcing steps disagreeing with `pkg/exf`, largest weight error 0.0e+00.
+
+### Gate acceptance
+
+Accepted by `loop_gate.py --check-done` at 2026-10-18T17:42:28.007187+00:00 for iteration 2026-10-18T16:30:16.058227+00:00. A restarted run reproduces the continuous run with sparse runoff. New tests/rnf/restart_check.py: daily, month, yearly, yearly_after and sync_stagger are bitwise (applied runoff and pickup); the synchronous RNF_lagFlds case is at 10.7 digits on prognostic state with the applied runoff bitwise, and the dense twin without pkg/rnf is equally non-bitwise (11.6 digits), so the loss is the model's own freshwater rebuild. Bob's mutants time and lag fail, Richard's mutant 'first' fails, the wrong-pickup control is detected. No pkg/rnf behavior change (comment only, fork f08d640c8). Daily restart case added to the 12-command standard suite, all cases in full. Standard suite EXECUTED PASS.
