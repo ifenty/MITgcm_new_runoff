@@ -1602,3 +1602,33 @@ An orientation with two or more `--target` entries under `tools/esx/` builds a b
 
 ### Expected Effect
 Zero false refusals when Arch's own orientation targets ESX tooling; the refusal still fires for a real bad flag in the brief's instructions.
+
+## 🔴 PROPOSED: retained agents hit permission-check denials on most turns, partly from the taskset prefix the briefs ask for
+
+**Date Identified**: 2026-10-18  17:45
+**Status**: Proposed
+**UUID**: TEAM-AGENT-PERMISSION-DENIALS-001
+**Category**: permissions
+**Severity**: Low
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-18-agent-permission-denials/assessment.md
+**Anchors**: .claude/settings.local.json; tools/esx/brief.py; tools/esx/agent_runtime.py
+
+### Issue
+Nine of nine retained turns in three consecutive iterations (RUNOFF-037, RUNOFF-052, RUNOFF-022) recorded permission denials, one to fourteen per turn. The checker refuses compound commands (`cd` plus a write), heredocs with braces and quotes, variables, redirections outside the project, and any command prefixed with `taskset`.
+
+### Evidence
+Counts per turn and the repeated reasons are in the assessment. In RUNOFF-037 the first Bob turn ended after its edit because the project interpreter had no allow rule; the owner added it and `Bash(taskset *)` on 2026-10-17, and `taskset`-prefixed commands were still refused afterwards (richard-resume1-RUNOFF-037, richard-start-RUNOFF-022).
+
+### Potential Impact
+Each denial costs a retry or a rewrite of the command, and agents spend turn time on workarounds. A denied evidence command (the `verify.py` run under the reviewer's own identity) can leave a footer without independent-check evidence, which the closeout refuses. The cost is time, not correctness.
+
+### Proposed Fix
+1. Stop asking agents to prefix `taskset` in briefs and designs. `agent_runtime.py` is started under `taskset -c 0-3`, which its children inherit; record that as the way the CPU cap reaches agents.
+2. Put the working command patterns in the generated briefs: one command per call, multi-line scripts in a file under `devel-loop/loop_state/scratch/` run with the project interpreter, no `cd` plus redirection in one call.
+3. Review the allow rules in `.claude/settings.local.json` for the project's own tool commands, as the owner decides.
+
+### Acceptance Criteria
+Over the next three iterations the mean number of `permission_denials` per retained turn is below 3, counted the same way as in the assessment, and no turn records a `taskset` denial.
+
+### Expected Effect
+Fewer workaround retries per turn; no change in verification coverage.
