@@ -344,6 +344,12 @@
           ],
           [
             "{python}",
+            "tests/rnf/restart_check.py",
+            "--case",
+            "daily"
+          ],
+          [
+            "{python}",
             "tests/rnf/budget_check.py",
             "--build",
             "--case",
@@ -710,6 +716,20 @@
         "daily",
         "--case",
         "clim_long"
+      ],
+      [
+        "{python}",
+        "tests/rnf/restart_check.py",
+        "--build",
+        "--control"
+      ],
+      [
+        "{python}",
+        "tests/rnf/restart_check.py",
+        "--build",
+        "--control",
+        "--mpi",
+        "2"
       ],
       [
         "{python}",

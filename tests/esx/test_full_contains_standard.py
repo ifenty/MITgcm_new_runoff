@@ -12,9 +12,10 @@ What "contains" means
 Matching is by exact argv list, ignoring order, EXCEPT for the commands in
 ``REDUCED`` below.  The standard group is built from deliberately reduced or
 resource-tuned forms of commands that full carries in its plain form, so only
-2 of the 11 standard commands are exact members (``applied_field_check.py
+2 of the 12 standard commands are exact members (``applied_field_check.py
 --case lab_sea_daily`` and ``runoftemp_range_check.py --build``, the latter
-added by RUNOFF-052; before it, 1) and the other 9 are in ``REDUCED``.
+added by RUNOFF-052; before it, 1) and the other 10 are in ``REDUCED``
+(``restart_check.py --case daily`` of RUNOFF-022 is the 10th).
 Each exception names the full command(s), themselves required to be exact
 members of full, that run everything the standard form runs, and says why.
 A drop of the covering command is therefore still caught.
@@ -57,6 +58,11 @@ REDUCED = {
         [[PY, "tests/rnf/timing_field_check.py", "--case", "daily",
           "--case", "month", "--case", "month1"]],
         "full runs the daily case together with two more cases"),
+    (PY, "tests/rnf/restart_check.py", "--case", "daily"): (
+        [[PY, "tests/rnf/restart_check.py", "--build", "--control"]],
+        "full runs every case (daily, month, yearly, sync...) with the "
+        "wrong-pickup control; standard keeps the daily mid-record case "
+        "(about 20 s)"),
     (PY, "tests/rnf/budget_check.py", "--build", "--case", "lab_sea",
      "--mpi", "0"): (
         [[PY, "tests/rnf/budget_check.py", "--build"]],
@@ -118,9 +124,9 @@ def test_reduced_entries_are_live():
 
 def test_full_keeps_its_commands_after_the_addition():
     ver = load()
-    assert len(ver["full"]) == 72
-    assert len(standard_commands(ver)) == 11
-    assert len(set(map(tuple, ver["full"]))) == 72
+    assert len(ver["full"]) == 74
+    assert len(standard_commands(ver)) == 12
+    assert len(set(map(tuple, ver["full"]))) == 74
 
 
 def test_detects_the_pre_fix_state():

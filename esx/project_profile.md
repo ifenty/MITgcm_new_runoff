@@ -434,19 +434,20 @@ This is the scientific contract agents read. Executable paths and commands are i
   [docs/verification_matrix.md](../docs/verification_matrix.md). It covers
   single-process and MPI runs, and the no-change experiments.
 - Two verification tiers (owner decision, 2026-10-17: a minor fix cannot wait hours):
-  - **Standard** (`verification.scientific_groups`, one group `standard`): 11 commands,
+  - **Standard** (`verification.scientific_groups`, one group `standard`): 12 commands,
     about 6 minutes warm and at most 15 minutes after a source change forces rebuilds, on
     4 CPUs and 4 GB. This is the `scientific` suite every `scientific_change` is closed
     against. It covers: package off changes nothing (`lab_sea input`), sparse = dense
     serial and `-mpi 2`, the cubed sphere on 4 processes (`cs32x15 input.rnof_sp_icedyn`),
-    the daily time mode (applied field and timing), the volume/heat/salt/tracer budget,
+    the daily time mode (applied field, timing and a mid-record restart, RUNOFF-022), the volume/heat/salt/tracer budget,
     exf's runoff-temperature path, six refusal and control cases, and the runoff unit
     tests. It does **not** cover the other time modes, the tendency and level terms, KPP
     and sea-ice heat, the diagnostics and mutants, the other MITgcm experiments, or
     `pkg/rnf` on any grid beyond `lab_sea` and `cs32`.
-  - **Full** (`verification.full`, 72 commands, about 2 hours on 64 idle cores and longer
+  - **Full** (`verification.full`, 74 commands, about 2 hours on 64 idle cores and longer
     on a shared one): the previous four scientific groups (71 commands) plus
-    `runoftemp_range_check.py --build` (RUNOFF-052), reserved for special
+    `runoftemp_range_check.py --build` (RUNOFF-052) and the two `restart_check.py` runs
+    (RUNOFF-022, single-process and `-mpi 2`), reserved for special
     occasions. Run it before pushing a release or an upstream pull request, after a change
     to shared kernels, the file reader, time handling or `pkg/exf` physics, and when the
     standard suite starts to look too narrow for what changed. Run it with

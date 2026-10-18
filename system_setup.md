@@ -135,7 +135,7 @@ final-verification evidence, and the evidence is bound to the machine's toolchai
   and the fork's `new_runoff`. Confirm with `git status` and `git log origin/<branch>..` in both repos.
 - On the new machine: `git pull` in all three repos, run section 5, then `/esx-loop` (or
   `python3 tools/esx/loop_control.py run`). The scientific evidence must be retaken there. Every issue closes
-  against the **standard** suite (`verification.scientific_groups`, 11 commands, about 6 minutes warm, 15 at most),
+  against the **standard** suite (`verification.scientific_groups`, 12 commands, about 6 minutes warm, 15 at most),
   run by `final_verification.py run`. The **full** 72-command suite (`verification.full`, hours) is reserved for
   special occasions: `verify.py --suite full --owner <id>`. See `esx/project_profile.md` for when.
 - Do not run the loop on two machines against the same remote branches at once.

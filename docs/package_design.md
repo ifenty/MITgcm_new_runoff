@@ -1379,8 +1379,9 @@ and independent of the scheme (measured: two runs differing only in
 `tracForcingOutAB` give bitwise identical volume, salt and tracer residuals).
 Its heat sum runs over the sources whose temperature is **present** in every
 record used, which is the restriction the "Missing temperature" paragraph
-states; omitting it breaks the closure by 1.9e-1. RUNOFF-022 adds a restart in
-synchronous branch N across a record boundary. RUNOFF-024 now records the
+states; omitting it breaks the closure by 1.9e-1. RUNOFF-022 added a restart in
+synchronous branch N across a record boundary
+(`tests/rnf/restart_check.py`, case `sync`). RUNOFF-024 now records the
 inherited behaviour of the dense path rather than a difference from it: under
 `pkg/seaice` with `SEAICE_EXTERNAL_FLUXES` only `(1 − A)` of the whole runoff
 heat term reaches ocean and ice, so `A·[(mT) − m_T·θ]μ` is delivered nowhere
@@ -1881,8 +1882,9 @@ read the monitor sums, which do not exist yet, and it did not need them.
 its fill is observed by both. Because it is numbered by runoff tracer and filled
 from that runoff tracer's sums whichever ptracer it is added to, it cannot see
 the runoff-tracer-to-ptracer mapping; `budget_check` reads the ptracers' own
-`ForcTrNN` for that (RUNOFF-008). RUNOFF-022 needs no pickup file and tests the
-restart of the record state.
+`ForcTrNN` for that (RUNOFF-008). RUNOFF-022 confirmed that no pickup file is needed:
+`tests/rnf/restart_check.py` restarts from the model's pickup alone and the
+applied runoff is bitwise the continuous run's.
 
 ## Decision 9: TAF and adjoint
 
