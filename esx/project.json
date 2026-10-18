@@ -729,6 +729,11 @@
       ],
       [
         "{python}",
+        "tests/rnf/runoftemp_range_check.py",
+        "--build"
+      ],
+      [
+        "{python}",
         "tests/rnf/kpp_heat_check.py",
         "--build"
       ],

@@ -22,7 +22,7 @@ machine used `/home/ifenty/CProjects`. If your home or user name differs, read s
 
 - Linux x86_64 (the image uses gfortran, optfile `linux_amd64_gfortran`), git, an SSH key registered with GitHub
   (remotes use `git@github.com:`; the harness repo uses https), podman or Docker, about 20 GB free disk, 8+ cores
-  (the full 71-command suite takes about 2 hours on the original 64-core host under light load; the standard suite takes minutes).
+  (the full 72-command suite takes about 2 hours on the original 64-core host under light load; the standard suite takes minutes).
 - Miniforge/conda (conda-forge channel).
 - Claude Code CLI, logged in. Hooks use the system `python3` (stdlib only, 3.11+).
 - `git config --global user.name` and `user.email` set (the original used `ifenty`).
@@ -136,7 +136,7 @@ final-verification evidence, and the evidence is bound to the machine's toolchai
 - On the new machine: `git pull` in all three repos, run section 5, then `/esx-loop` (or
   `python3 tools/esx/loop_control.py run`). The scientific evidence must be retaken there. Every issue closes
   against the **standard** suite (`verification.scientific_groups`, 11 commands, about 6 minutes warm, 15 at most),
-  run by `final_verification.py run`. The **full** 71-command suite (`verification.full`, hours) is reserved for
+  run by `final_verification.py run`. The **full** 72-command suite (`verification.full`, hours) is reserved for
   special occasions: `verify.py --suite full --owner <id>`. See `esx/project_profile.md` for when.
 - Do not run the loop on two machines against the same remote branches at once.
 - An iteration abandoned midway cannot be resumed elsewhere: its review packets and evidence are not in git.

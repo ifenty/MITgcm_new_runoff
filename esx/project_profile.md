@@ -444,14 +444,21 @@ This is the scientific contract agents read. Executable paths and commands are i
     tests. It does **not** cover the other time modes, the tendency and level terms, KPP
     and sea-ice heat, the diagnostics and mutants, the other MITgcm experiments, or
     `pkg/rnf` on any grid beyond `lab_sea` and `cs32`.
-  - **Full** (`verification.full`, 71 commands, about 2 hours on 64 idle cores and longer
-    on a shared one): the previous four scientific groups, reserved for special
+  - **Full** (`verification.full`, 72 commands, about 2 hours on 64 idle cores and longer
+    on a shared one): the previous four scientific groups (71 commands) plus
+    `runoftemp_range_check.py --build` (RUNOFF-052), reserved for special
     occasions. Run it before pushing a release or an upstream pull request, after a change
     to shared kernels, the file reader, time handling or `pkg/exf` physics, and when the
     standard suite starts to look too narrow for what changed. Run it with
     `verify.py --suite full --owner <id>`. It is not an issue-closing requirement, so the
     owner or Arch must decide to run it. A fix that touches only what the standard suite
     does not exercise has not been verified until the full suite has run.
+  - **Superset rule** (RUNOFF-052): every command of `verification.scientific_groups` must be
+    run by `verification.full`. "Run" means an exact argv member, or, for the nine standard
+    commands that are reduced or resource-tuned forms of a plain full command (`-j 4`,
+    `-k "not test_scale_"`, a case subset), a named covering full command listed with its
+    reason in `tests/esx/test_full_contains_standard.py`. That test fails when a standard
+    command, or a covering command, is absent from full; it is part of `pytest -q tests/esx`.
 - Stochastic seeds/replicates, uncertainty intervals and train/test separation:
   not applicable. The model is deterministic, and the oracles are exact reference
   runs.
