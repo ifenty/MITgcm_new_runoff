@@ -309,6 +309,19 @@ Owner clarification, 2026-10-18. It sets the acceptance for the default route:
 - Acceptance for the default route: that budget closes to a stated tolerance with the ice term included. A control without the ice term fails it.
 - `pkg/seaice` and `pkg/thsice` still see none of the runoff volume on this route (accepted in RUNOFF-046). So the freshwater side of the budget needs no ice term.
 
+Part 1 is done (partial closeout, 2026-10-19). It covers the default route on lab_sea with `pkg/seaice` on:
+- `tests/rnf/ice_heat_check.py` runs lab_sea on `build_esx_addm` with the runoff source on a fully ice-covered cell. It compares a run with a warm runoff temperature with a run without one.
+- The delivered heat is the sum of `RNFgT` over the cells and the steps. The budget is `delivered = change in ocean heat content + melt heat of the ice and snow lost`. The ice heat content has no change, because the ice model has no enthalpy state.
+- Measured: the ocean takes 0.352 of the delivered heat and the melt of ice takes 0.663. The residual is 0.011 to 0.023 of the delivered heat. A run pair with `pkg/seaice` off has a residual of the same size, so the residual does not come from the ice. Its cause is unknown.
+- The tolerance is 0.03. Three controls fail: no ice term (0.648), the wrong sign (1.311) and the snow density for the ice (0.407). Errors of the ice term inside -6.9 to +2.2 percent still pass.
+- The snow term is not verified. No tested cell gave a failing snow control.
+- The check is not in a suite of `esx/project.json`.
+Remaining for this issue:
+- The same budget on cs32 with `pkg/seaice`.
+- The legacy route: `pkg/seaice` with `SEAICE_EXTERNAL_FLUXES`, `pkg/seaice` without it, and `pkg/thsice`.
+- A start state with snow at the target cell, so that a snow control fails.
+- The cause of the residual of 0.011 to 0.023, and a decision on adding the check to the standard or the full suite.
+
 Carry forward from RUNOFF-010 review B, restated:
 - The scaling above belongs to `pkg/seaice` with `SEAICE_EXTERNAL_FLUXES`.
 - Without that option, `pkg/seaice` computes its own open-water flux. It does not use exf `Qnet` at all (`seaice_budget_ocean.F:110-149`). So none of the exf runoff heat arrives, on either path.
