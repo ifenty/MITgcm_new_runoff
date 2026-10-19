@@ -386,6 +386,17 @@ Carry forward from RUNOFF-012:
 
 Unblocked 2026-10-03: RUNOFF-012 closed (pkg/rnf skeleton, fork commit `ac33291aa`).
 
+Part 1 finished (partial closeout, 2026-10-19):
+- `tests/runoff/test_fortran_standards.py` is a static lint with nine rules. It reads `pkg/rnf` and the added lines of the hook files (the diff against `upstream/master`). It is part of the standard suite, because `tests/runoff` runs under `pytest -q`.
+- Each rule fails on a mutant. Three named exceptions carry a reason. The hook part reports `HOOK LINT NOT RUN` as a warning on a clone without the `upstream` remote.
+- The sweep fixed 82 findings in `pkg/rnf` (51 tracker ids or URLs, 23 CPP comments, 8 long comment lines) and 13 in the hook lines. It changed comments, line breaks, `#endif` comments, one `ALLOW_RNF` guard and one message text. A statement-level diff by Richard A found no other change.
+- `docs/code_standards_checklist.md` is the reviewer checklist.
+Open for this issue:
+- TAF: store directives, `rnf_ad_diff.list` and `rnf_ad.flow` need a TAF build. This includes the RUNOFF-010 review B item on the state of the previous-step fields.
+- Manual items: the choice between `_RL` and `_RS` per variable, the `bi,bj` loops, thread safety, and the contribution items outside the code.
+- About 44 comments that cite the package design and 21 pointers to files of the development repository remain in `pkg/rnf` and `doc/phys_pkgs/rnf.rst`. Richard B recommends removing them or making them self-contained before an upstream pull request.
+- The text of rule i still occurs in `doc/phys_pkgs/rnf.rst` (a URL) and in 5 lines of `utils/python/MITgcmutils/MITgcmutils/runoff/*.py`. A strict expected failure in the lint tracks them.
+
 ## BLOCKED: Upstream readiness: full testreport master vs branch, MPI and 2+2
 
 **Date Identified**: 2026-10-02T22:30:00Z
