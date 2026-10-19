@@ -543,6 +543,143 @@ def test_every_write_item_of_pkg_rnf_is_classified():
     assert not [f for f in check_package() if "no known type" in f[2]]
 
 
+# ---------------------------------------------------------------------------
+# Width of the diagnostics names and titles (RUNOFF-047)
+
+DIAG_FILE = os.path.join(PKG, "rnf_diagnostics_init.F")
+DIAG_LIMITS = {"diagName": 8, "diagTitle": 80}
+
+
+def _fortran_string(text):
+    """Return the value of a quoted Fortran literal (doubled quote = one)."""
+    return text[1:-1].replace("''", "'")
+
+
+def _joined_statements(path):
+    """Yield ``(line number, statement)`` with continuations joined."""
+    raw = open(path).read().split("\n")
+    i = 0
+    while i < len(raw):
+        line = raw[i]
+        if line.startswith(("C", "c", "*", "#", "!")) or not line.strip():
+            i += 1
+            continue
+        stmt, j = line[6:], i + 1
+        while j < len(raw) and len(raw[j]) > 5 and raw[j][5] not in (" ", ""):
+            stmt += " " + raw[j][6:]
+            j += 1
+        yield i + 1, stmt.strip()
+        i = j
+
+
+def guard_limit(path):
+    """Return N of the ``IF ( RNF_nTr .GT. N )`` guard, or None if absent."""
+    for _, stmt in _joined_statements(path):
+        m = re.match(r"IF\s*\(\s*RNF_nTr\s*\.GT\.\s*(\d+)\s*\)\s*THEN",
+                     stmt, re.I)
+        if m:
+            return int(m.group(1))
+    return None
+
+
+def diag_widths(path):
+    """Return ``[(line, variable, longest text, problem)]`` for the file.
+
+    Every ``diagName = '...'``, ``diagTitle = '...' // '...'`` and
+    ``WRITE(diagName|diagTitle,'(...)') items`` is evaluated. A loop index
+    ``iTr`` takes the largest value the guard allows; an ``I`` field that
+    cannot hold it is reported as a problem (it prints ``**``), and the
+    title is also measured at the largest value its own ``Iw`` field holds.
+    ``problem`` is empty when the field holds the value.
+    """
+    limit = guard_limit(path)
+    out = []
+    for line, stmt in _joined_statements(path):
+        m = re.match(r"(diagName|diagTitle)\s*=\s*(.*)$", stmt)
+        if m:
+            parts = [p.strip() for p in m.group(2).split("//")]
+            if all(p.startswith("'") for p in parts):
+                out.append((line, m.group(1),
+                            "".join(_fortran_string(p) for p in parts), ""))
+            continue
+        m = re.match(r"WRITE\((diagName|diagTitle),'\((.*?)\)'\)\s*(.*)$",
+                     stmt)
+        if not m:
+            continue
+        var, fmt, items = m.groups()
+        values = split_items(items)
+        descs = split_items(fmt)
+        assert len(descs) == len(values), (line, fmt, items)
+        text, problem = "", ""
+        for desc, value in zip(descs, values):
+            if desc == "A" and value.startswith("'"):
+                text += _fortran_string(value)
+                continue
+            d = re.match(r"I(\d+)(?:\.(\d+))?$", desc)
+            assert d and value == "iTr", (line, desc, value)
+            width = int(d.group(1))
+            top = 10 ** width - 1 if var == "diagTitle" else limit
+            if top is None:
+                top = 10 ** width - 1
+                problem = "no guard on RNF_nTr"
+            if top > 10 ** width - 1:
+                problem = ("iTr up to {0} does not fit {1} (prints '*')"
+                           .format(top, desc))
+                digits = "*" * width
+            else:
+                digits = str(top).zfill(int(d.group(2) or 0)).rjust(width)
+            text += digits
+        out.append((line, var, text, problem))
+    return out
+
+
+def diag_findings(path):
+    """Return one message per name or title that is too long or collides."""
+    found = []
+    for line, var, text, problem in diag_widths(path):
+        if problem:
+            found.append("{0}:{1}: {2}: {3}: '{4}'".format(
+                os.path.basename(path), line, var, problem, text))
+        if len(text) > DIAG_LIMITS[var]:
+            found.append("{0}:{1}: {2} '{3}' has {4} characters, limit {5}"
+                         .format(os.path.basename(path), line, var, text,
+                                 len(text), DIAG_LIMITS[var]))
+    return found
+
+
+def test_diagnostics_names_and_titles_fit_their_fields():
+    """diagName <= 8 and diagTitle <= 80 characters, loops at the guard."""
+    rows = diag_widths(DIAG_FILE)
+    assert len([r for r in rows if r[1] == "diagName"]) >= 12, rows
+    assert len([r for r in rows if r[1] == "diagTitle"]) >= 12, rows
+    assert guard_limit(DIAG_FILE) == 99
+    assert not diag_findings(DIAG_FILE), "\n".join(diag_findings(DIAG_FILE))
+
+
+def test_diagnostics_width_check_fails_on_two_mutants(tmp_path):
+    """An 81-character title and a guard at 100 must each be reported.
+
+    The mutants are copies of the real source; the live file is not edited.
+    """
+    real = open(DIAG_FILE).read()
+    title = "'pkg/rnf runoff mass flux, rhoConstFresh*RNFvflx'"
+    assert title in real and "RNF_nTr .GT. 99" in real
+    long_title = "'" + "x" * 81 + "'"
+    mutants = {"title81": real.replace(title, long_title, 1),
+               "guard100": real.replace("RNF_nTr .GT. 99",
+                                        "RNF_nTr .GT. 100")}
+    for name, src in mutants.items():
+        path = tmp_path / (name + ".F")
+        path.write_text(src)
+        found = diag_findings(str(path))
+        assert found, name
+        text = " ".join(found)
+        if name == "title81":
+            assert "diagTitle 'xxxx" in text and "has 81 characters" in text
+        else:
+            assert "diagName" in text and "does not fit I2.2" in text, text
+
+
 def main():
     """Print one line per finding; exit non-zero if there is any."""
     found = check_package()
