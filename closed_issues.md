@@ -1632,3 +1632,34 @@ Acceptance: a title that is too long on purpose aborts with a message that names
 ### Gate acceptance
 
 Accepted by `loop_gate.py --check-done` at 2026-10-19T04:49:00.809604+00:00 for iteration 2026-10-19T04:14:57.067155+00:00. RNF_DIAGNOSTICS_INIT stops with a message that names RNFtfNN, RNFtrNN and the limit 99 when RNF_nTr is above 99 (the I2.2 field printed '**' and DIAGNOSTICS_ADDTOLIST merged the duplicate names without a stop; shown with a lab_sea build at RNF_nTr = 100 by Bob and by the second Richard). The static test in tests/runoff/test_write_formats.py checks that each diagName fits 8 and each diagTitle fits 80 characters; it fails on the mutants of Bob (81-character title, guard limit 100) and of both Richards (9-character names, I3 title overflow, guard removed). The test found a real case: the RNFtemp title had 89 characters and the 80-character field cut it without notice. Arch shortened it to 62 characters. The inventory of the 12 diagnostics is unchanged except that title. Limits: the static test reads the guard limit, not RNF_SIZE.h; the MPI abort is checked by reading the call path. Final verification was run by Arch under the owner label bob, because a retained agent cannot run it while its own turn is active.
+
+## 🟢 RESOLVED: pkg/rnf/README.md misstates the USE_OLD_EXTERNAL_FORCING refusal
+
+**Date Identified**: 2026-10-16T00:00:00Z
+**Date Resolved**: 2026-10-19T05:11:33.744886+00:00
+**Status**: Resolved
+**UUID**: RUNOFF-051
+**Anchors**: MITgcm/pkg/rnf/README.md::<module>; MITgcm/pkg/rnf/rnf_check.F::<module>
+
+### Issue or research question
+The refusal table of `MITgcm/pkg/rnf/README.md` says that the package always refuses `USE_OLD_EXTERNAL_FORCING` when the build defines it. The reason given is "the package has no hooks in the old forcing routines".
+
+`rnf_check.F:337-351` refuses it only when `RNF_applyAsRain` is true, which is the legacy route. The generalized route has its `RNF_TENDENCY_APPLY_T/S` calls in `external_forcing.F`, so the package does not refuse it there.
+
+### Evidence
+Bob found this during RUNOFF-026. Richard checked it against `rnf_check.F`.
+- RUNOFF-026 produced the new row and saved it as `docs/pending_patches/pkg_rnf_README_USE_OLD_EXTERNAL_FORCING.patch`. Apply it with `git -C MITgcm apply`.
+- It was not applied then. `MITgcm/pkg/rnf` is a configuration path in `esx/project.json`. An edit there turns a documentation issue into a scientific change. A scientific change needs final verification, which needed more than the 2 h background cap on 2026-10-16.
+- The new manual section `MITgcm/doc/phys_pkgs/rnf.rst`, `docs/package_design.md`, `docs/code_map.md` and `docs/verification_matrix.md` already state the behavior of the code.
+
+### Scientific or engineering impact
+This is a documentation inconsistency only. The README overstates a refusal. No code is wrong.
+
+### Proposed action and acceptance
+Apply the saved patch to `pkg/rnf/README.md`. It is a one-row edit. Do it in one of two ways. Do it with the next scientific change to `pkg/rnf`. Or do it on its own as a `scientific_change`, now that the standard suite is short.
+
+Acceptance: the README row equals the behavior of the code and the other documents. The patch is not needed any more.
+
+### Gate acceptance
+
+Accepted by `loop_gate.py --check-done` at 2026-10-19T05:11:33.744886+00:00 for iteration 2026-10-19T04:52:50.707320+00:00. The refusal row for USE_OLD_EXTERNAL_FORCING in MITgcm/pkg/rnf/README.md now says that the package refuses the option only with RNF_applyAsRain = .TRUE. (the legacy route), as rnf_check.F does. The generalized route has its RNF_TENDENCY_APPLY_T/S calls in model/src/external_forcing.F (lines 578 and 790) and is not refused; it is unrun because no experiment defines the option together with pkg/rnf. The saved patch file and the directory docs/pending_patches are deleted. Two Richards approved with no must_fix. Documentation only: no code, test or oracle changed. Notes of Richard: rnf.rst lines 160-163 do not say that the generalized route is not refused (optional wording); the phrase 'no experiment compiles that path' needs the reading 'with pkg/rnf'.

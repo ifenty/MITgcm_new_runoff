@@ -627,29 +627,3 @@ Acceptance:
 - A control with an earlier record, or with a repeat cycle, runs.
 
 Somebody can do this together with RUNOFF-022.
-
-## UNRESOLVED: pkg/rnf/README.md misstates the USE_OLD_EXTERNAL_FORCING refusal
-
-**Date Identified**: 2026-10-16T00:00:00Z
-**Status**: Unresolved
-**UUID**: RUNOFF-051
-**Anchors**: MITgcm/pkg/rnf/README.md::<module>; MITgcm/pkg/rnf/rnf_check.F::<module>
-
-### Issue or research question
-The refusal table of `MITgcm/pkg/rnf/README.md` says that the package always refuses `USE_OLD_EXTERNAL_FORCING` when the build defines it. The reason given is "the package has no hooks in the old forcing routines".
-
-`rnf_check.F:337-351` refuses it only when `RNF_applyAsRain` is true, which is the legacy route. The generalized route has its `RNF_TENDENCY_APPLY_T/S` calls in `external_forcing.F`, so the package does not refuse it there.
-
-### Evidence
-Bob found this during RUNOFF-026. Richard checked it against `rnf_check.F`.
-- RUNOFF-026 produced the new row and saved it as `docs/pending_patches/pkg_rnf_README_USE_OLD_EXTERNAL_FORCING.patch`. Apply it with `git -C MITgcm apply`.
-- It was not applied then. `MITgcm/pkg/rnf` is a configuration path in `esx/project.json`. An edit there turns a documentation issue into a scientific change. A scientific change needs final verification, which needed more than the 2 h background cap on 2026-10-16.
-- The new manual section `MITgcm/doc/phys_pkgs/rnf.rst`, `docs/package_design.md`, `docs/code_map.md` and `docs/verification_matrix.md` already state the behavior of the code.
-
-### Scientific or engineering impact
-This is a documentation inconsistency only. The README overstates a refusal. No code is wrong.
-
-### Proposed action and acceptance
-Apply the saved patch to `pkg/rnf/README.md`. It is a one-row edit. Do it in one of two ways. Do it with the next scientific change to `pkg/rnf`. Or do it on its own as a `scientific_change`, now that the standard suite is short.
-
-Acceptance: the README row equals the behavior of the code and the other documents. The patch is not needed any more.
