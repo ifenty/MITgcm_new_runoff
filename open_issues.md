@@ -455,6 +455,21 @@ Reconsidered 2026-10-05, when RUNOFF-005 closed:
 - RUNOFF-005 gives the pattern to extend. `RNF_GETREC` hands each mode to its `pkg/exf` routine. A second series needs the same hand-over, not its own record logic.
 - `tests/runoff/lab_sea_runoff_timing_check.py` already compares the record trace of the model with the exf conventions at every forcing step. Extending it to a second series is the shape of the check for this issue.
 
+Part 1 finished (partial closeout, 2026-10-19). It covers lab_sea and the legacy surface route:
+- `tests/rnf/series_timing_check.py` compares the applied flux, temperature, salinity and one tracer with a direct Python oracle. The oracle uses the sparse file and the record trace of `RNF_FIELDS_LOAD`.
+- The modes are daily, month, month1, clim, yearly and clim_long on one process, and daily and yearly on two processes.
+- The file has distinct, increasing series. It has missing temperatures at chosen records. Every mode uses at least one record with a missing temperature.
+- Measured: the maximum relative deviation is exactly 0 for every series and mode.
+- The hold control fails for all four series. A shift of the temperature, salinity and tracer by one record fails for those three series and leaves the flux unchanged. A code mutant that inverts the temperature weight fails for the temperature only.
+- Richard A showed that the check and `timing_field_check.py` together prove the point. The latter fixes the flux bracket and weight against dense exf. The former shows that the other series use the same bracket and weight.
+- The check is not in a suite of `esx/project.json`.
+Remaining for this issue:
+- `RNF_lagFlds = .TRUE.`: the check refuses it, so the lagged tracer term is not covered.
+- More than one tracer, and the generalized (default) route.
+- The diagnostics `RNFtemp` and `RNFsaln` are the instrument. The applied fields `runoftemp` and `RNF_apXS` have no direct timing check. The tendency checks cover their application.
+- An independent witness for the rule that skips a record of weight 0.
+- A decision on adding the check to the standard or the full suite.
+
 ## UNRESOLVED: cs32 sparse-runoff oracle (exch2 volume path; runoff temperature cell-by-cell)
 
 **Date Identified**: 2026-09-29T21:30:00Z
