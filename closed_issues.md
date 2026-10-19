@@ -1663,3 +1663,34 @@ Acceptance: the README row equals the behavior of the code and the other documen
 ### Gate acceptance
 
 Accepted by `loop_gate.py --check-done` at 2026-10-19T05:11:33.744886+00:00 for iteration 2026-10-19T04:52:50.707320+00:00. The refusal row for USE_OLD_EXTERNAL_FORCING in MITgcm/pkg/rnf/README.md now says that the package refuses the option only with RNF_applyAsRain = .TRUE. (the legacy route), as rnf_check.F does. The generalized route has its RNF_TENDENCY_APPLY_T/S calls in model/src/external_forcing.F (lines 578 and 790) and is not refused; it is unrun because no experiment defines the option together with pkg/rnf. The saved patch file and the directory docs/pending_patches are deleted. Two Richards approved with no must_fix. Documentation only: no code, test or oracle changed. Notes of Richard: rnf.rst lines 160-163 do not say that the generalized route is not refused (optional wording); the phrase 'no experiment compiles that path' needs the reading 'with pkg/rnf'.
+
+## 🟢 RESOLVED: restart-before-first-record refusal in synchronous nonlinear free-surface mode is never executed
+
+**Date Identified**: 2026-10-13T00:00:00Z
+**Date Resolved**: 2026-10-19T05:41:55.655499+00:00
+**Status**: Resolved
+**UUID**: RUNOFF-050
+**Anchors**: MITgcm/pkg/rnf/rnf_fields_load.F::<module>; tests/rnf/refusal_check.py::<module>
+
+### Issue or research question
+This issue was split out of RUNOFF-017. `rnf_fields_load.F:173-190` stops a restart in synchronous nonlinear-free-surface mode when the time minus one step comes before the first record. The code comment (`rnf_fields_load.F:166-169`) says `No case is enrolled`. No experiment configures that branch. The same branch uses `RNF_lagFlds = T`, which has never run (verification matrix, restart rows).
+
+### Evidence
+The scout read the code and `docs/verification_matrix.md:614-621`. Related: RUNOFF-022 (pickup and restart reproducibility).
+
+### Scientific or engineering impact
+Without the stop, the lagged fields would be wrong or zero on a restart. This branch is rare. Its priority is lower than that of RUNOFF-048 and RUNOFF-049.
+
+### Proposed action and acceptance
+Configure branch N (nonlinear free surface, real freshwater flux, no `staggerTimeStep`) with a restart.
+
+Acceptance:
+- The stop fires on a file whose first record comes after t - dt.
+- The stop fails on a mutant without the guard.
+- A control with an earlier record, or with a repeat cycle, runs.
+
+Somebody can do this together with RUNOFF-022.
+
+### Gate acceptance
+
+Accepted by `loop_gate.py --check-done` at 2026-10-19T05:41:55.655499+00:00 for iteration 2026-10-19T05:13:36.381876+00:00. The restart-before-first-record refusal of RNF_FIELDS_LOAD now has a case: sync_refuse in tests/rnf/restart_check.py. A restart in the synchronous mode (nonlinear free surface, real freshwater flux, no staggerTimeStep) from the pickup of the sync file, with a file whose first record is at the restart time (111600 s), stops with 'RNF_FIELDS_LOAD: RNF: the runoff series does not reach t =' and 'ABNORMAL END: S/R RNF_FIELDS_LOAD'. The guard mutant (build_esx_nlfs_mut_guard, test never true) does not stop with that text: it stops later in EXF_GetFFieldRec, so the case fails and the mutant is caught. Control (i), a file with an earlier record, and control (ii), the late file with a repeat cycle, run. The existing cases are unchanged. The comment in rnf_fields_load.F now names the case. Coverage limits: the standard suite does not run sync_refuse (it runs only the daily restart case); the full suite runs sync_refuse but not the guard mutant, which Bob and Richard B ran by hand; the -mpi 2 variant was not run. The older mutant build_esx_nlfs_mut_first does not remove this guard. The boundary (first record exactly at t - deltaT) does not stop, by code reading, not run. Richard B first rejected a duplicated phrase in docs/code_map.md; Arch fixed it and both Richards re-approved.
