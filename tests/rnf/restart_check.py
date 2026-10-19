@@ -79,6 +79,28 @@ the same configuration, with no package fields: it is the model's own
 baseline, not a comparison of values. ``sync_stagger`` is ``sync`` with
 ``staggerTimeStep`` (``RNF_lagFlds`` false).
 
+**The refusal case** (RUNOFF-050). ``sync_refuse`` is the one case that
+must stop. At the first step of a synchronous restart ``RNF_FIELDS_LOAD``
+needs the fields at ``t - deltaT``; a series that is not repeated and whose
+first record is later than that cannot give them, and the package stops
+with ``RNF_FIELDS_LOAD: RNF: the runoff series does not reach t =`` and
+``ABNORMAL END: S/R RNF_FIELDS_LOAD``. A file with such a first record
+also stops a run that starts earlier (``EXF_GetFFieldRec``), so the run
+that reaches the guard is a restart whose pickup comes from another file.
+The case runs: ``cont`` and ``seg1`` on the ``sync`` file (both must end
+normally; ``seg1`` gives the pickup); the restart with the **late** file
+(its first record exactly at the restart time: the time axis is moved and
+the records stay), which must stop with the two texts above; control (i),
+the restart with the ``sync`` file, which must run; and control (ii), the
+restart with the late file and a repeat cycle (``RNF_repCycle``, the 40
+records), which must run. No comparison with the continuous run is made:
+the check is that the run stops or runs. With ``--mutant guard``
+(``build_esx_nlfs_mut_guard``, the code with the test of the guard never
+true) the restart must not stop with the ``RNF`` text, so the case fails
+and the mutant is caught. (The older build ``build_esx_nlfs_mut_first``
+does not remove this guard: it changes the time of the first load, so it is
+not used.)
+
 **Why ``sync`` is judged by digits and not bitwise.** In that
 configuration the model itself does not restart bitwise: the dense twin,
 which has no ``pkg/rnf`` in the loop, differs from its continuous run in
@@ -104,7 +126,7 @@ selection does not exist.
 Usage::
 
     python tests/rnf/restart_check.py [--mpi N] [--case NAME ...]
-        [--control] [--build] [--mutant time|lag] [--use-build DIR]
+        [--control] [--build] [--mutant time|lag|guard] [--use-build DIR]
         [--keep] [--json] [--timeout S]
 """
 import argparse
@@ -168,7 +190,15 @@ CASES = (
     # control that says where the non-bitwise restart of "sync" comes from
     {"name": "sync_stagger", "mode": "daily", "K": 30, "N": 54,
      "sync": True, "stagger": True},
+    # refusal (RUNOFF-050): restart at iteration 31 (2 Jan 07:00) from the
+    # pickup of the sync file, with a file whose first record is at 07:00
+    {"name": "sync_refuse", "mode": "daily", "K": 30, "N": 54, "sync": True,
+     "refuse": True, "dense": False},
 )
+
+#: The text the refusal prints (``RNF_FIELDS_LOAD``) and the stop it ends in.
+REFUSAL_TEXT = "RNF_FIELDS_LOAD: RNF: the runoff series does not reach t ="
+REFUSAL_STOP = "ABNORMAL END: S/R RNF_FIELDS_LOAD"
 
 #: The prognostic state judged against a digit floor (``state_digits``).
 STATE_FIELDS = {"Uvel", "Vvel", "Theta", "Salt", "EtaN", "EtaH"}
@@ -222,6 +252,11 @@ MUTANTS = {
     "lag": ("build_esx_nlfs_mut_lag", "code_rnfsync_mut_lag", [
         ("            CALL RNF_LOAD_AT( tApply, iApply, .FALSE., myThid )\n",
          "C           mutant: the lagged level is not evaluated\n")]),
+    # ``guard``: the test of the first-record refusal is never true, so the
+    # package goes on to RNF_LOAD_AT at a time before the first record
+    "guard": ("build_esx_nlfs_mut_guard", "code_rnfsync_mut_guard", [
+        ("     &           tApply.LT.RNF_recStart ) THEN\n",
+         "     &           tApply.LT.RNF_recStart .AND. .FALSE. ) THEN\n")]),
 }
 
 
@@ -270,6 +305,23 @@ def write_sync_file(path, source):
             salt[k, :] = [1.0 + 0.25 * s + 0.15 * k for s in range(ns)]
 
 
+def make_late(path, seconds):
+    """Move the time axis of the sparse file ``path`` so that record 1 is at
+    ``seconds`` after 1979-01-01 00:00 (the records and their spacing stay).
+    """
+    import datetime
+    import netCDF4
+    import numpy as np
+    when = datetime.datetime(1979, 1, 1) + datetime.timedelta(seconds=seconds)
+    with netCDF4.Dataset(path, "a") as ds:
+        ds.set_auto_maskandscale(False)
+        nt = ds.dimensions["time"].size
+        ds["time"].units = "seconds since " + when.strftime("%Y-%m-%d %H:%M:%S")
+        ds["time"][:] = 86400.0 * np.arange(nt)
+        ds["time_bnds"][:, 0] = 86400.0 * np.arange(nt) - 43200.0
+        ds["time_bnds"][:, 1] = 86400.0 * np.arange(nt) + 43200.0
+
+
 def set_pickup_namelist(data, start, delta, steps, restart_iter=None):
     """Return ``data`` set for a segment of ``steps`` steps.
 
@@ -295,14 +347,16 @@ def set_pickup_namelist(data, start, delta, steps, restart_iter=None):
 
 
 def make_input(case, path, name, steps, restart_from=None, pickup_iter=None,
-               wrong=False):
+               wrong=False, late=None):
     """Build the scratch input of one run; return ``(delta, start)``.
 
     ``steps`` is where the run ends, counted from the case's start.
     ``restart_from`` is a run directory whose final pickup is copied in
     (the segment restarts at ``steps_done = restart_iter``); with
     ``wrong`` the pickup of the lab_sea start is renamed to the restart
-    iteration instead -- the control.
+    iteration instead -- the control. ``late`` (``"plain"`` or ``"cycle"``)
+    moves the first record of the sync file to the restart time, with the
+    repeat cycle of the 40 records for ``"cycle"``.
     """
     source = os.path.join(LAB, "input.rnof_%s%s" % (
         "sp_" if path == "sparse" else "", case["mode"]))
@@ -337,11 +391,17 @@ def make_input(case, path, name, steps, restart_from=None, pickup_iter=None,
         with open(os.path.join(scratch, "data.rnf")) as fh:
             text = fh.read()
         text = replace_line(text, "RNF_file", "  RNF_file = '%s'," % SYNC_FILE)
+        if late == "cycle":
+            text = text.replace("  RNF_file =", "  RNF_repCycle = 3456000.0,\n"
+                                "  RNF_file =", 1)
         with open(os.path.join(scratch, "data.rnf"), "w") as fh:
             fh.write(text)
         write_sync_file(os.path.join(scratch, SYNC_FILE),
                         os.path.join(LAB, "input.rnof_daily",
                                      "runoff_sparse.nc"))
+        if late:
+            make_late(os.path.join(scratch, SYNC_FILE),
+                      start + delta * case["K"])
     restart_iter = n_iter0 + case["K"]
     if restart_from is not None:
         for entry in sorted(os.listdir(restart_from)):
@@ -651,6 +711,87 @@ def check_path(case, path, nproc, build, timeout, keep, min_distinct,
                 shutil.rmtree(run, ignore_errors=True)
 
 
+def check_refusal(case, nproc, build, timeout, keep):
+    """Run the refusal case (RUNOFF-050) on ``build``; return a result dict.
+
+    ``cont`` and ``seg1`` on the sync file must end normally. The restart
+    with the late file must stop with the refusal text; the restart with
+    the sync file (control i) and the one with the late file and a repeat
+    cycle (control ii) must end normally. The restart is run with the
+    pickup of ``seg1`` in all three.
+    """
+    tag = "%s%s%s" % (case["name"], "_mpi%d" % nproc if nproc else "",
+                      "_" + build[build.index("mut"):] if "mut" in build
+                      else "")
+    result = {"case": case["name"], "path": "sparse", "processes": nproc,
+              "build": build, "problems": [], "refusal": {}}
+    names = {k: PREFIX + tag + "_" + k for k in
+             ("cont", "seg1", "late", "early", "cycle")}
+    sfx = "_mpi%d" % nproc if nproc else ""
+    runs = [os.path.join(LAB, "output_esx_" + n + sfx) for n in names.values()]
+    try:
+        make_input(case, "sparse", names["cont"], case["N"])
+        make_input(case, "sparse", names["seg1"], case["K"])
+        if run_checked(names["cont"], nproc, build, timeout, result,
+                       "the continuous run") is None:
+            return result
+        d_seg1 = run_checked(names["seg1"], nproc, build, timeout, result,
+                             "the first segment")
+        if d_seg1 is None:
+            return result
+        for key, late, label in (("late", "plain", "the restart"),
+                                 ("early", None, "control (i)"),
+                                 ("cycle", "cycle", "control (ii)")):
+            make_input(case, "sparse", names[key], case["N"],
+                       restart_from=d_seg1, late=late)
+            if key != "late":
+                if run_checked(names[key], nproc, build, timeout, result,
+                               label + ", a restart that runs") is None:
+                    result["refusal"][key] = "did not run"
+                else:
+                    result["refusal"][key] = "ran"
+                continue
+            run_dir, code, timed_out = run_model(names[key], nproc, build,
+                                                 timeout)
+            logs = "\n".join(filter(None, (read_file(run_dir, n) for n in
+                                           ("output.txt", "mpirun.log",
+                                            "STDERR.0000"))))
+            has_text = REFUSAL_TEXT in logs
+            has_stop = REFUSAL_STOP in logs
+            ended = "Execution ended Normally" in logs
+            stray = re.findall(r"ABNORMAL END: S/R \w+", logs)
+            result["refusal"][key] = {
+                "exit": code, "timed_out": timed_out, "text": has_text,
+                "stop": has_stop, "ended_normally": ended,
+                "other_stop": [s for s in stray if s != REFUSAL_STOP][:2]}
+            if timed_out:
+                result["problems"].append("the restart to finish (it timed "
+                                          "out)")
+            elif ended or code == 0:
+                result["problems"].append(
+                    "the restart with a first record after t - deltaT to stop"
+                    " (it ended normally)")
+            elif not (has_text and has_stop):
+                result["problems"].append(
+                    "the restart to stop with %r and %r (text %s, stop %s, "
+                    "other stop %s)" % (REFUSAL_TEXT, REFUSAL_STOP,
+                                        "found" if has_text else "missing",
+                                        "found" if has_stop else "missing",
+                                        result["refusal"][key]["other_stop"]
+                                        or "none"))
+        return result
+    except (ValueError, OSError) as err:
+        result["problems"].append(str(err))
+        result["unusable"] = True
+        return result
+    finally:
+        for name in names.values():
+            shutil.rmtree(os.path.join(LAB, name), ignore_errors=True)
+        if not keep:
+            for run in runs:
+                shutil.rmtree(run, ignore_errors=True)
+
+
 def run_control(case, path, name, nproc, build, timeout, d_cont, last, runs):
     """Restart from the wrong pickup; the state comparison must see it."""
     out = {"problems": []}
@@ -723,6 +864,11 @@ def main(argv=None):
             if stale:
                 print(stale, file=sys.stderr)
                 return 2
+        if case.get("refuse"):
+            res = check_refusal(case, args.mpi, build, args.timeout, args.keep)
+            results.append(res)
+            print_result(res)
+            continue
         for path in ("sparse", "dense"):
             if path == "dense" and case.get("dense") is False:
                 continue
@@ -753,6 +899,14 @@ def build_ok(build, write_code, nproc):
 def print_result(res):
     """Print the verdict line of one result and what is missing."""
     verdict = "FAIL" if res["problems"] else "PASS"
+    if "refusal" in res:
+        print("%s %s on %s, build %s: refusal %s" % (
+            verdict, res["case"], "%d processes" % res["processes"]
+            if res["processes"] else "1 process", res["build"],
+            res["refusal"]))
+        for msg in res["problems"]:
+            print("     missing: %s" % msg)
+        return
     field = res.get("field", {})
     state = res.get("state", {})
     digit = state.get("digits", {})
