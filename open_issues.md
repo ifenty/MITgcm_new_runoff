@@ -60,6 +60,24 @@ Unblocked 2026-10-04: RUNOFF-004 closed.
 - At that time the reader accepted one constant record only. `rnf_init_fixed.F:199-217` stopped the run for `RNF_useYearlyFiles` or for any `RNF_period` other than 0. The message named RUNOFF-005.
 - RUNOFF-005 closed on 2026-10-05 and added the time handling (see RUNOFF-029).
 
+Part 1 finished (partial closeout, 2026-10-19). It covers lab_sea and the default route:
+- `tests/rnf/fs_matrix_check.py` runs eight configurations: a linear free surface, and `nonlinFreeSurf = 4` with `select_rStar` 0, 1 and 2, each with `useRealFreshWaterFlux` false and true. The model accepts all eight.
+- The model refuses three other settings with its own messages:
+  - a nonlinear free surface without `NONLIN_FRSURF`
+  - a nonlinear free surface without `exactConserv`
+  - a real flux with a nonlinear free surface and `LS_whenToSample = 0`
+  A real flux with a nonlinear free surface needs `LS_whenToSample = 2`.
+- All eight pass the first-step placement (cell-wise 5.2e-13), the step-1 content budget and a 24-step volume closure. The volume residual is at most 0.64 m³ of 1.7e10 m³, against a tolerance of 23 m³ taken from the noise of the zero run.
+- A mutant that skips the cancellation of the generic `temp_addMass` term in the nonlinear branch fails the case `deep_set` in all six nonlinear configurations.
+- On nonlinear grids the salt, heat and tracer budgets after step 1 are 2e-4 to 3e-2 of the injected amount. The check reports them and does not assert them. The model's own `addMass` gives the same fields bit for bit, so this is a model property, not a defect of the package. The residual falls linearly with the flux.
+- With `LS_whenToSample = 0`, virtual flux and a nonlinear free surface, the tracer tendency differs from the thickness ratio by 4.5e-5. This is the model's step order, not a defect of the package. With `LS_whenToSample = 2` it agrees to 6e-15.
+- The check is not in a suite of `esx/project.json`.
+Remaining for this issue:
+- The same configurations on cs32.
+- Cases with `staggerTimeStep` false, with more than one source, and with sea ice.
+- A salt and tracer budget on nonlinear grids that closes to round-off, or an exact identity that explains the residual.
+- A note on `LS_whenToSample = 0` for tracers in `docs/package_design.md`, and a decision on adding the check to the standard or the full suite.
+
 ## UNRESOLVED: global_ocean.90x40x15 and global_oce_latlon sparse runoff testbeds
 
 **Date Identified**: 2026-10-02T22:30:00Z
