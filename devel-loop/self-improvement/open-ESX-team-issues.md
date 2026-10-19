@@ -1695,3 +1695,32 @@ A rejected footer shows its first error text in the dispatch record. A test cove
 
 ### Expected Effect
 Arch finds the cause of a rejected footer from the dispatch record alone.
+
+## 🔴 PROPOSED: reviewers find wording and checker holes that a pre-review step could find, and each fix stales both approvals
+
+**Date Identified**: 2026-10-19  01:30
+**Status**: Proposed
+**UUID**: TEAM-REVIEW-ROUNDS-PREFLIGHT-001
+**Category**: review_rounds
+**Severity**: Low
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-19-review-rounds/assessment.md
+**Anchors**: tools/esx/brief.py::interface_errors; tools/esx/workflow_records.py::main
+
+### Issue
+A reviewer rejects a candidate for a defect that a script can find: a sentence of more than 25 words in the added documentation lines, or a hole in a new checker that a few extra mutants show. The fix changes the sealed documentation report. Then every earlier approval is stale, and each reviewer must review again.
+
+### Evidence
+RUNOFF-024: Richard A rejected rounds 1 and 2 for one long sentence each. RUNOFF-027: Richard B found three holes in a new lint with mutants that its author did not write. The cost was about 40 and 15 minutes.
+
+### Potential Impact
+Each avoidable round costs one retained turn per reviewer, and all stale approvals must be renewed.
+
+### Proposed Fix
+1. Before `review-packet --stage review`, run `ste_lint.py` on the added lines of the documentation and refuse the packet on a hard violation.
+2. In the brief for a new checker, ask the author for mutants with case, spacing and context variants.
+
+### Acceptance Criteria
+In the next three iterations that add documentation, no reviewer rejects for a hard `ste_lint.py` violation.
+
+### Expected Effect
+Fewer correction rounds, and fewer renewals of approvals.
