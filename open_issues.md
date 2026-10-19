@@ -271,7 +271,13 @@ Later updates change these gaps:
 - 2026-10-10, RUNOFF-045 retired the cases `L_set_noatm` and `U_set_noatm`, and the rows T3-NL-set-noatm and T6-U-set-noatm. `RNF_CHECK` now refuses the combination that they built: no `ALLOW_ATM_TEMP` with `temp_EvPrRn` set. Before, the run went on and the test measured the result. No build can pass that case now. Re-measured on the 6 remaining cases: Package figures 0.00e+00 on 6 of 6 cases over 12 of 12 rows. Every other figure above is the same. The case `evprrn_runoff_temp` in `tests/rnf/refusal_check.py` tests the refusal.
 
 Part 1 finished (partial closeout, 2026-10-19). It covers lab_sea and the legacy surface route:
-- `tests/rnf/layout_check.py` runs the sparse and the dense case on five layouts: one tile of 20 x 16; four tiles of 10 x 8 on one process and on two processes; one tile on each of four processes; four tiles of 5 x 4 on four processes. It runs the constant case for 12 steps and the daily case for 48 steps.
+- `tests/rnf/layout_check.py` runs the sparse and the dense case on five layouts:
+  - one tile of 20 x 16
+  - four tiles of 10 x 8 on one process
+  - four tiles of 10 x 8 on two processes
+  - one tile on each of four processes
+  - four tiles of 5 x 4 on four processes
+  It runs the constant case for 12 steps and the daily case for 48 steps.
 - It compares the 10 layout pairs. The package fields are bitwise equal in all pairs. The monitor sums agree to 1e-12.
 - The state differences between layouts equal the differences of the dense runs without the package (ratio 1.00). The largest is 1.3e-4 K in `Theta` between different tile sizes. Equal tile sizes give bitwise equal states.
 - A source with cells on different tiles and on different processes occurs in two layouts (the sources baffin and labrador).
