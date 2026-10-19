@@ -1604,3 +1604,31 @@ Unblocked 2026-10-05: RUNOFF-005 closed (sparse time handling, all five modes pl
 ### Gate acceptance
 
 Accepted by `loop_gate.py --check-done` at 2026-10-18T17:42:28.007187+00:00 for iteration 2026-10-18T16:30:16.058227+00:00. A restarted run reproduces the continuous run with sparse runoff. New tests/rnf/restart_check.py: daily, month, yearly, yearly_after and sync_stagger are bitwise (applied runoff and pickup); the synchronous RNF_lagFlds case is at 10.7 digits on prognostic state with the applied runoff bitwise, and the dense twin without pkg/rnf is equally non-bitwise (11.6 digits), so the loss is the model's own freshwater rebuild. Bob's mutants time and lag fail, Richard's mutant 'first' fails, the wrong-pickup control is detected. No pkg/rnf behavior change (comment only, fork f08d640c8). Daily restart case added to the 12-command standard suite, all cases in full. Standard suite EXECUTED PASS.
+
+## 🟢 RESOLVED: no diagnosability for a diagTitle fixed-width overflow in rnf_diagnostics_init.F
+
+**Date Identified**: 2026-10-05T08:30:00Z
+**Date Resolved**: 2026-10-19T04:49:00.809604+00:00
+**Status**: Resolved
+**UUID**: RUNOFF-047
+**Anchors**: MITgcm/pkg/rnf/rnf_diagnostics_init.F::<module>; tests/runoff/test_write_formats.py::<module>
+
+### Issue or research question
+This issue was split out of RUNOFF-034. It comes from a carry forward of RUNOFF-013 review B, correction round 1, 2026-10-05. We file it here so that it is not lost when RUNOFF-034 closes.
+
+`rnf_diagnostics_init.F` writes diagnostic names and titles in fixed-width fields. `test_write_formats.py` does not check that a title fits its field.
+
+### Evidence
+Review B (RUNOFF-013, correction round 1) measured that the model already catches this class of error loudly, not silently. Every runoff experiment sets `useDiagnostics=.TRUE.`, so an overflow aborts all of them. This is the opposite of a silent pass. What is missing is diagnosability: the abort does not say which title overflowed.
+
+### Scientific or engineering impact
+Low. This is explicitly not a detection gap, because the model already catches the class. A fix gives a better message, not new coverage. Keep this distinction. If we recorded it as a detection gap, we would overstate the risk.
+
+### Proposed action and acceptance
+Give `RNF_DIAGNOSTICS_INIT` (or the diagnostics setup around it) a message that names the `diagTitle` or `diagName` that overflowed its fixed field. Use the existing abort path.
+
+Acceptance: a title that is too long on purpose aborts with a message that names it. The existing abort on overflow does not change for every other title.
+
+### Gate acceptance
+
+Accepted by `loop_gate.py --check-done` at 2026-10-19T04:49:00.809604+00:00 for iteration 2026-10-19T04:14:57.067155+00:00. RNF_DIAGNOSTICS_INIT stops with a message that names RNFtfNN, RNFtrNN and the limit 99 when RNF_nTr is above 99 (the I2.2 field printed '**' and DIAGNOSTICS_ADDTOLIST merged the duplicate names without a stop; shown with a lab_sea build at RNF_nTr = 100 by Bob and by the second Richard). The static test in tests/runoff/test_write_formats.py checks that each diagName fits 8 and each diagTitle fits 80 characters; it fails on the mutants of Bob (81-character title, guard limit 100) and of both Richards (9-character names, I3 title overflow, guard removed). The test found a real case: the RNFtemp title had 89 characters and the 80-character field cut it without notice. Arch shortened it to 62 characters. The inventory of the 12 diagnostics is unchanged except that title. Limits: the static test reads the guard limit, not RNF_SIZE.h; the MPI abort is checked by reading the call path. Final verification was run by Arch under the owner label bob, because a retained agent cannot run it while its own turn is active.

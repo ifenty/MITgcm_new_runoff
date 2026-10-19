@@ -544,29 +544,6 @@ Acceptance:
 
 Kind: scientific_change, risk supported_semantics (two Richards). Size: comparable to RUNOFF-008.
 
-## UNRESOLVED: no diagnosability for a diagTitle fixed-width overflow in rnf_diagnostics_init.F
-
-**Date Identified**: 2026-10-05T08:30:00Z
-**Status**: Unresolved
-**UUID**: RUNOFF-047
-**Anchors**: MITgcm/pkg/rnf/rnf_diagnostics_init.F::<module>; tests/runoff/test_write_formats.py::<module>
-
-### Issue or research question
-This issue was split out of RUNOFF-034. It comes from a carry forward of RUNOFF-013 review B, correction round 1, 2026-10-05. We file it here so that it is not lost when RUNOFF-034 closes.
-
-`rnf_diagnostics_init.F` writes diagnostic names and titles in fixed-width fields. `test_write_formats.py` does not check that a title fits its field.
-
-### Evidence
-Review B (RUNOFF-013, correction round 1) measured that the model already catches this class of error loudly, not silently. Every runoff experiment sets `useDiagnostics=.TRUE.`, so an overflow aborts all of them. This is the opposite of a silent pass. What is missing is diagnosability: the abort does not say which title overflowed.
-
-### Scientific or engineering impact
-Low. This is explicitly not a detection gap, because the model already catches the class. A fix gives a better message, not new coverage. Keep this distinction. If we recorded it as a detection gap, we would overstate the risk.
-
-### Proposed action and acceptance
-Give `RNF_DIAGNOSTICS_INIT` (or the diagnostics setup around it) a message that names the `diagTitle` or `diagName` that overflowed its fixed field. Use the existing abort path.
-
-Acceptance: a title that is too long on purpose aborts with a message that names it. The existing abort on overflow does not change for every other title.
-
 ## UNRESOLVED: refusals that need an open-boundary or blank-tile build (maskInC = 0 target, blank-tile target)
 
 **Date Identified**: 2026-10-13T00:00:00Z

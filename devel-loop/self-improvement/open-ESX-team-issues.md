@@ -1637,3 +1637,61 @@ Over the next three iterations the mean number of `permission_denials` per retai
 
 ### Expected Effect
 Fewer workaround retries per turn; no change in verification coverage.
+
+## 🔴 PROPOSED: a retained agent that owns final verification cannot run it, because its own turn blocks the run
+
+**Date Identified**: 2026-10-18  21:45
+**Status**: Proposed
+**UUID**: TEAM-FINAL-OWNER-RETAINED-001
+**Category**: workflow_policy
+**Severity**: Low
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-18-runoff-047-process/assessment.md
+**Anchors**: tools/esx/final_verification.py::run; tools/esx/loop_gate.py::prepare
+
+### Issue
+`loop_gate.py --prepare` accepts `--owner bob`. The gate then needs the final verification to run under the owner `bob`. `final_verification.py run` refuses to start while a retained assignment runs. The turn in which Bob would run the suite is that assignment. So the owner `bob` can never run the suite itself.
+
+### Evidence
+RUNOFF-047, 2026-10-18. Bob (round 4) ran `final_verification.py ... --owner bob run`. The command ended with: `running retained assignments prevent final verification: agent bob`. Arch then ran the suite with the owner label `bob`. This took about 4 minutes of extra work. All 11 earlier iterations used the owner `arch`.
+
+### Potential Impact
+The owner label and the executor differ. The record then names an accountable owner that did not run the suite.
+
+### Proposed Fix
+1. In `--prepare`, accept only `arch` as `--owner` for a `scientific_change`, or print a warning that a retained role cannot run the suite.
+2. Or let the run record the real executor next to the owner label.
+
+### Acceptance Criteria
+`--prepare --owner bob` on a `scientific_change` is refused or warns. A test covers it.
+
+### Expected Effect
+No iteration records a final-verification owner that cannot run the suite.
+
+## 🔴 PROPOSED: a retained footer that copies an old correction_round is rejected without a message to the agent
+
+**Date Identified**: 2026-10-18  21:45
+**Status**: Proposed
+**UUID**: TEAM-FOOTER-ROUND-COPY-001
+**Category**: footer_contract
+**Severity**: Low
+**Assessment**: devel-loop/self-improvement/assessments/2026-10-18-runoff-047-process/assessment.md
+**Anchors**: tools/esx/footer_contract.py::validate; tools/esx/agent_runtime.py::run_turn
+
+### Issue
+A follow-up turn gets a new `correction_round`. The agent re-emits its previous footer and keeps the old value of `correction_round`. Capture then records the turn as `incomplete` with the general text "missing, malformed, or mismatched report footer". The text does not say which field is wrong. The agent also cannot see the rejection until Arch reads the dispatch log.
+
+### Evidence
+RUNOFF-047, 2026-10-18. Bob's footers of rounds 1 and 2 were rejected. Round 1 cited a documentation report that Bob's own edit made stale. Round 2 kept a wrong `correction_round`. `footer_contract.validate` gave `footer must use dispatcher correction_round`. Arch found it only by running `validate` by hand. Two extra rounds cost about 8 minutes.
+
+### Potential Impact
+Each silent rejection costs one retained turn and the time to find the cause.
+
+### Proposed Fix
+1. Put the exact `correction_round` and the current sealed documentation reference in the generated follow-up prompt.
+2. Write the `validate` errors into the dispatch record, in the field `error`.
+
+### Acceptance Criteria
+A rejected footer shows its first error text in the dispatch record. A test covers a wrong `correction_round`.
+
+### Expected Effect
+Arch finds the cause of a rejected footer from the dispatch record alone.
